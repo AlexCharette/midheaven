@@ -425,19 +425,18 @@ const DATA = /*__DATA__*/null;
   }
   el('circle', { cx: CX, cy: CY, r: 3, class: 'engrave-strong' }, hub);
 
-  // sign bands (identity: verdigris) over per-element washes
-  const ELEMENTS = ['fire', 'earth', 'air', 'water'];
+  // sign bands (identity: verdigris) over per-element washes; the element
+  // ships on each sign in DATA (contract Ref.element)
   const bands = el('g', { class: 'fade-mid' }, wheel);
   DATA.signs.forEach((s, i) => {
     const lon = i * 30;
     const d = sector(lon, lon + 30, R.signIn, R.bandOut);
-    const element = ELEMENTS[i % 4];
-    el('path', { d, class: `wash wash-${element}` }, bands);
+    el('path', { d, class: `wash wash-${s.element}` }, bands);
     const band = el('path', {
       d,
       class: 'sign-band', 'data-tag': s.id,
     }, bands);
-    svgTitle(band, `${s.name} — ${element}`);
+    svgTitle(band, `${s.name} — ${s.element}`);
     band.addEventListener('click', () => toggle(s.id));
     taggable.push(band);
     const [gx, gy] = pt(lon + 15, 325);

@@ -174,10 +174,11 @@ fn ascendant_point(asc_deg: f64) -> Body {
 fn sign_refs() -> Vec<Ref> {
     SIGNS_ALL
         .iter()
-        .map(|&(id, glyph, name)| Ref {
+        .map(|&(id, glyph, name, element)| Ref {
             id: format!("sign:{id}"),
             glyph: glyph.to_string(),
             name: name.to_string(),
+            element: element.to_string(),
         })
         .collect()
 }

@@ -29,7 +29,7 @@ pub fn coalesce(excerpts: Vec<Excerpt>, transcript: &Transcript) -> Vec<Excerpt>
     for ex in &mut out {
         ex.text = transcript.text[ex.span[0]..ex.span[1]].to_string();
     }
-    super::renumber(&mut out, 0);
+    super::renumber(&mut out, 1);
     out
 }
 

@@ -111,6 +111,8 @@ pub struct Ref {
     pub id: String,
     pub glyph: String,
     pub name: String,
+    /// The sign's classical element (fire/earth/air/water).
+    pub element: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

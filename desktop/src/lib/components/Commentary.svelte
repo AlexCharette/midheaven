@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { addExcerpt, correctExcerpt, mergeUp } from "$lib/api";
+  import { ask } from "@tauri-apps/plugin-dialog";
+  import { addExcerpt, correctExcerpt, deleteExcerpt, mergeUp } from "$lib/api";
   import { SvelteSet } from "svelte/reactivity";
   import type { ChartData, Excerpt } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
@@ -7,7 +8,8 @@
 
   let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
 
-  const lookup = $derived(new Map(elementsOf(chart).map((e) => [e.tag, e])));
+  const elements = $derived(elementsOf(chart));
+  const lookup = $derived(new Map(elements.map((e) => [e.tag, e])));
 
   // Curation only when unfiltered: adjacency in the visible list then equals
   // adjacency in the chart's list, so "merge ↑" is unambiguous.
@@ -45,13 +47,30 @@
     }
   }
 
-  function amendKeys(e: KeyboardEvent) {
+  // one key-chord contract for both textareas: Esc cancels, ⌘/Ctrl-Enter commits
+  const escCommit = (cancel: () => void, commit: () => void) => (e: KeyboardEvent) => {
     if (e.key === "Escape") {
-      editing = null;
+      cancel();
       e.preventDefault();
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      saveAmend();
+      commit();
       e.preventDefault();
+    }
+  };
+  const amendKeys = escCommit(() => (editing = null), saveAmend);
+  const rowsFor = (t: string) => Math.max(2, Math.ceil(t.length / 70));
+
+  async function remove(exId: string, preview: string) {
+    const sure = await ask(`Remove this passage?\n\n“${preview}”\n\nIts words are not recoverable.`, {
+      title: "Midheaven",
+      kind: "warning",
+    });
+    if (!sure) return;
+    try {
+      app.chart = await deleteExcerpt(exId);
+      app.status = "passage removed";
+    } catch (e) {
+      app.status = `✗ ${e}`;
     }
   }
 
@@ -77,15 +96,7 @@
     }
   }
 
-  function composerKeys(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      composing = false;
-      e.preventDefault();
-    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      fileIt();
-      e.preventDefault();
-    }
-  }
+  const composerKeys = escCommit(() => (composing = false), fileIt);
 </script>
 
 <h2 class="rubric">Commentary</h2>
@@ -105,13 +116,21 @@
           >merge ↑</button
         >
       {/if}
+      {#if curatable}
+        <button
+          class="curate destructive"
+          title="remove this passage (asks first)"
+          onclick={() => remove(ex.id, ex.text.length > 80 ? ex.text.slice(0, 80) + "…" : ex.text)}
+          >remove</button
+        >
+      {/if}
     </div>
     {#if editing === ex.id}
       <!-- svelte-ignore a11y_autofocus -->
       <textarea
         class="amend-box"
         bind:value={draft}
-        rows={Math.max(2, Math.ceil(draft.length / 70))}
+        rows={rowsFor(draft)}
         autofocus
         onkeydown={amendKeys}
         onblur={saveAmend}
@@ -147,13 +166,13 @@
       <textarea
         class="compose-box"
         bind:value={draftText}
-        rows={Math.max(2, Math.ceil(draftText.length / 70))}
+        rows={rowsFor(draftText)}
         autofocus
         placeholder="a passage in the astrologer's words…"
         onkeydown={composerKeys}
       ></textarea>
       <div class="tag-row">
-        {#each elementsOf(chart) as el (el.tag)}
+        {#each elements as el (el.tag)}
           <button
             class="ref"
             aria-pressed={draftTags.has(el.tag)}
@@ -223,8 +242,8 @@
     margin-left: 0.6em;
     white-space: nowrap;
   }
-  .amend-box {
-    grid-column: 2;
+  .amend-box,
+  .compose-box {
     font: inherit;
     font-size: 1.04rem;
     line-height: 1.75;
@@ -236,9 +255,19 @@
     max-width: 62ch;
     padding: 0;
   }
-  .amend-box:focus {
+  .amend-box {
+    grid-column: 2;
+  }
+  .compose-box {
+    width: 100%;
+  }
+  .amend-box:focus,
+  .compose-box:focus {
     outline: none;
     border-bottom-color: var(--brass);
+  }
+  .curate.destructive:hover {
+    color: var(--oxblood);
   }
   .composer {
     margin-top: 1rem;
@@ -249,23 +278,6 @@
     display: block;
     margin: 0 auto;
     font-size: 0.88rem;
-  }
-  .compose-box {
-    width: 100%;
-    font: inherit;
-    font-size: 1.04rem;
-    line-height: 1.75;
-    color: var(--ink);
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid var(--hairline);
-    resize: vertical;
-    max-width: 62ch;
-    padding: 0;
-  }
-  .compose-box:focus {
-    outline: none;
-    border-bottom-color: var(--brass);
   }
   .tag-row {
     display: flex;

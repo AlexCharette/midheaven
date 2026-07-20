@@ -54,19 +54,13 @@
     }),
   );
 
-  // element washes (canonical treatment lives in templates/reading.html)
-  const ELEMENTS = ["fire", "earth", "air", "water"] as const;
+  // element washes (canonical treatment lives in templates/reading.html);
+  // the element itself comes from the contract (sign Ref.element)
   const signBands = $derived(
     chart.signs.map((s, i) => {
       const lon = i * 30;
       const [gx, gy] = pt(lon + 15, 325);
-      return {
-        s,
-        d: sector(lon, lon + 30, R.signIn, R.bandOut),
-        gx,
-        gy,
-        element: ELEMENTS[i % 4],
-      };
+      return { s, d: sector(lon, lon + 30, R.signIn, R.bandOut), gx, gy };
     }),
   );
 
@@ -141,7 +135,7 @@
   <circle cx={CX} cy={CY} r="3" class="engrave-strong" />
 
   {#each signBands as band (band.s.id)}
-    <path d={band.d} class="wash wash-{band.element}" />
+    <path d={band.d} class="wash wash-{band.s.element}" />
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <path
       d={band.d}
@@ -149,9 +143,9 @@
       class:sel={selected.has(band.s.id)}
       role="button"
       tabindex="-1"
-      aria-label="{band.s.name} — {band.element}"
+      aria-label="{band.s.name} — {band.s.element}"
       onclick={() => toggle(band.s.id)}
-    ><title>{band.s.name} — {band.element}</title></path>
+    ><title>{band.s.name} — {band.s.element}</title></path>
     <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
       >{textGlyph(band.s.glyph)}</text
     >

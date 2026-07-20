@@ -27,3 +27,6 @@ export const correctExcerpt = (id: string, text: string) =>
 
 export const addExcerpt = (text: string, tags: string[]) =>
   invoke<ChartData>("add_excerpt", { text, tags });
+
+export const deleteExcerpt = (id: string) =>
+  invoke<ChartData>("delete_excerpt", { id });

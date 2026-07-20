@@ -21,6 +21,7 @@ interface Ref {
   id: string;
   glyph: string;
   name: string;
+  element: string;
 }
 interface HouseRef {
   id: string;

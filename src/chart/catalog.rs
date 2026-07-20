@@ -18,20 +18,21 @@ pub const PLANETS: &[(XBody, &str, &str, &str)] = &[
     (XBody::Pluto, "pluto", "♇", "Pluto"),
 ];
 
-/// (tag-id short name, glyph, display name), zodiac order from 0° Aries.
-pub const SIGNS_ALL: &[(&str, &str, &str)] = &[
-    ("aries", "♈", "Aries"),
-    ("taurus", "♉", "Taurus"),
-    ("gemini", "♊", "Gemini"),
-    ("cancer", "♋", "Cancer"),
-    ("leo", "♌", "Leo"),
-    ("virgo", "♍", "Virgo"),
-    ("libra", "♎", "Libra"),
-    ("scorpio", "♏", "Scorpio"),
-    ("sagittarius", "♐", "Sagittarius"),
-    ("capricorn", "♑", "Capricorn"),
-    ("aquarius", "♒", "Aquarius"),
-    ("pisces", "♓", "Pisces"),
+/// (tag-id short name, glyph, display name, classical element),
+/// zodiac order from 0° Aries — the element cycle is fire/earth/air/water.
+pub const SIGNS_ALL: &[(&str, &str, &str, &str)] = &[
+    ("aries", "♈", "Aries", "fire"),
+    ("taurus", "♉", "Taurus", "earth"),
+    ("gemini", "♊", "Gemini", "air"),
+    ("cancer", "♋", "Cancer", "water"),
+    ("leo", "♌", "Leo", "fire"),
+    ("virgo", "♍", "Virgo", "earth"),
+    ("libra", "♎", "Libra", "air"),
+    ("scorpio", "♏", "Scorpio", "water"),
+    ("sagittarius", "♐", "Sagittarius", "fire"),
+    ("capricorn", "♑", "Capricorn", "earth"),
+    ("aquarius", "♒", "Aquarius", "air"),
+    ("pisces", "♓", "Pisces", "water"),
 ];
 
 /// (roman numeral label, display name), house 1 first.

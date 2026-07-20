@@ -64,9 +64,20 @@ pub fn append_transcript(
     router: &dyn Router,
 ) -> usize {
     let (mut excerpts, n_routed) = route_excerpts(chart, transcript, router);
-    renumber(&mut excerpts, chart.excerpts.len());
+    renumber(&mut excerpts, next_ordinal(&chart.excerpts));
     chart.excerpts.extend(excerpts);
     n_routed
+}
+
+/// The next free `x{n}` ordinal — gap-aware (curation merges and deletions
+/// leave holes, so counting entries could mint a duplicate id).
+pub fn next_ordinal(excerpts: &[crate::contract::Excerpt]) -> usize {
+    excerpts
+        .iter()
+        .filter_map(|e| e.id.strip_prefix('x').and_then(|n| n.parse::<usize>().ok()))
+        .max()
+        .unwrap_or(0)
+        + 1
 }
 
 /// Tags the chart's router finds in free text — curation re-tagging goes
@@ -80,11 +91,11 @@ pub fn retag(chart: &crate::contract::ChartData, text: &str) -> Vec<String> {
     tags
 }
 
-/// Assign the conventional `x{n}` ids, continuing after `start` existing
-/// passages. Uniqueness is the contract invariant; density is convention.
-pub(crate) fn renumber(excerpts: &mut [crate::contract::Excerpt], start: usize) {
+/// Assign the conventional `x{n}` ids counting up from `first`.
+/// Uniqueness is the contract invariant; density is convention.
+pub(crate) fn renumber(excerpts: &mut [crate::contract::Excerpt], first: usize) {
     for (i, ex) in excerpts.iter_mut().enumerate() {
-        ex.id = format!("x{}", start + i + 1);
+        ex.id = format!("x{}", first + i);
     }
 }
 

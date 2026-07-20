@@ -6,7 +6,7 @@ mod record;
 
 use astro::chart::parse_time;
 use astro::contract::{ChartData, Excerpt};
-use astro::route::{Transcript, append_transcript, lexicon_for, retag};
+use astro::route::{Transcript, append_transcript, lexicon_for, next_ordinal, retag};
 use astro::{TranscriptSource, geo};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -164,6 +164,18 @@ async fn stop_recording(
     Ok(chart.clone())
 }
 
+/// The shared frame of every curation command: lock, require a chart,
+/// mutate, return the updated clone for the webview.
+fn with_chart(
+    state: &State<'_, AppState>,
+    mutate: impl FnOnce(&mut ChartData) -> Result<(), String>,
+) -> Result<ChartData, String> {
+    let mut guard = state.0.lock().unwrap();
+    let chart = guard.chart.as_mut().ok_or("no chart has been built yet")?;
+    mutate(chart)?;
+    Ok(chart.clone())
+}
+
 /// Merge the excerpt into its predecessor: verbatim parts joined, tags
 /// unioned, the earlier passage's time anchor kept (contract semantics via
 /// [`Excerpt::absorb`]; only the text-joining strategy is ours).
@@ -202,10 +214,7 @@ fn correct_in(chart: &mut ChartData, id: &str, text: &str) -> Result<(), String>
 
 #[tauri::command]
 fn merge_up(state: State<'_, AppState>, id: String) -> Result<ChartData, String> {
-    let mut guard = state.0.lock().unwrap();
-    let chart = guard.chart.as_mut().ok_or("no chart has been built yet")?;
-    merge_up_in(&mut chart.excerpts, &id)?;
-    Ok(chart.clone())
+    with_chart(&state, |chart| merge_up_in(&mut chart.excerpts, &id))
 }
 
 #[tauri::command]
@@ -214,10 +223,7 @@ fn correct_excerpt(
     id: String,
     text: String,
 ) -> Result<ChartData, String> {
-    let mut guard = state.0.lock().unwrap();
-    let chart = guard.chart.as_mut().ok_or("no chart has been built yet")?;
-    correct_in(chart, &id, &text)?;
-    Ok(chart.clone())
+    with_chart(&state, |chart| correct_in(chart, &id, &text))
 }
 
 /// Author a passage by hand. Hand-picked tags must exist in the chart's
@@ -233,19 +239,16 @@ fn add_in(chart: &mut ChartData, text: &str, tags: Vec<String>) -> Result<(), St
     if let Some(bad) = tags.iter().find(|t| !vocab.contains(*t)) {
         return Err(format!("unknown tag {bad}"));
     }
-    let mut tags = if tags.is_empty() { retag(chart, text) } else { tags };
-    tags.sort();
-    tags.dedup();
-    // merges leave id gaps, so continue from the highest existing number
-    let next = chart
-        .excerpts
-        .iter()
-        .filter_map(|e| e.id.strip_prefix('x').and_then(|n| n.parse::<usize>().ok()))
-        .max()
-        .unwrap_or(0)
-        + 1;
+    let tags = if tags.is_empty() {
+        retag(chart, text) // already sorted + deduped
+    } else {
+        let mut tags = tags;
+        tags.sort();
+        tags.dedup();
+        tags
+    };
     chart.excerpts.push(Excerpt {
-        id: format!("x{next}"),
+        id: format!("x{}", next_ordinal(&chart.excerpts)),
         time: String::new(),
         span: [0, 0], // authored, not anchored to a transcript
         text: text.to_string(),
@@ -260,10 +263,19 @@ fn add_excerpt(
     text: String,
     tags: Vec<String>,
 ) -> Result<ChartData, String> {
-    let mut guard = state.0.lock().unwrap();
-    let chart = guard.chart.as_mut().ok_or("no chart has been built yet")?;
-    add_in(chart, &text, tags)?;
-    Ok(chart.clone())
+    with_chart(&state, |chart| add_in(chart, &text, tags))
+}
+
+/// Remove a passage. The frontend confirms first; removal is final.
+fn delete_in(excerpts: &mut Vec<Excerpt>, id: &str) -> Result<(), String> {
+    let i = excerpts.iter().position(|e| e.id == id).ok_or("no such passage")?;
+    excerpts.remove(i);
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_excerpt(state: State<'_, AppState>, id: String) -> Result<ChartData, String> {
+    with_chart(&state, |chart| delete_in(&mut chart.excerpts, &id))
 }
 
 // async: rendering + disk write stay off the main thread
@@ -294,7 +306,8 @@ pub fn run() {
             stop_recording,
             merge_up,
             correct_excerpt,
-            add_excerpt
+            add_excerpt,
+            delete_excerpt
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -371,6 +384,34 @@ mod tests {
         assert_eq!(added.id, "x6");
         assert_eq!(added.tags, vec!["planet:moon"]);
         assert!(add_in(&mut chart, "   ", vec![]).is_err());
+    }
+
+    #[test]
+    fn delete_removes_by_id_and_rejects_unknown() {
+        let mut list = vec![ex("x1", "One.", &["planet:sun"]), ex("x2", "Two.", &["planet:moon"])];
+        delete_in(&mut list, "x1").unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "x2");
+        assert!(delete_in(&mut list, "x9").is_err());
+    }
+
+    #[test]
+    fn appended_takes_never_collide_with_added_passage_ids() {
+        // add past a merge gap, then route a take: ids must stay unique
+        let mut chart = chart_fixture();
+        chart.excerpts = vec![ex("x1", "First.", &["planet:sun"]), ex("x5", "Fifth.", &["planet:moon"])];
+        add_in(&mut chart, "A note.", vec!["planet:sun".into()]).unwrap(); // x6
+        let take = astro::route::Transcript::from_segments([astro::contract::Segment {
+            start: 0.0,
+            text: "The moon in pisces.".into(),
+        }]);
+        let router = lexicon_for(&chart);
+        astro::route::append_transcript(&mut chart, &take, &router);
+        let mut ids: Vec<&str> = chart.excerpts.iter().map(|e| e.id.as_str()).collect();
+        let before = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), before, "duplicate excerpt ids: {ids:?}");
     }
 
     #[test]
