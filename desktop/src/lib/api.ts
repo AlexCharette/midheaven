@@ -19,3 +19,8 @@ export const startRecording = (model: string) =>
   invoke<void>("start_recording", { model });
 
 export const stopRecording = () => invoke<ChartData>("stop_recording");
+
+export const mergeUp = (id: string) => invoke<ChartData>("merge_up", { id });
+
+export const correctExcerpt = (id: string, text: string) =>
+  invoke<ChartData>("correct_excerpt", { id, text });

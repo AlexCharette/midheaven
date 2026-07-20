@@ -1,11 +1,56 @@
 <script lang="ts">
+  import { correctExcerpt, mergeUp } from "$lib/api";
   import type { ChartData, Excerpt } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
-  import { selected, toggle } from "$lib/state.svelte";
+  import { app, selected, toggle } from "$lib/state.svelte";
 
   let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
 
   const lookup = $derived(new Map(elementsOf(chart).map((e) => [e.tag, e])));
+
+  // Curation only when unfiltered: adjacency in the visible list then equals
+  // adjacency in the chart's list, so "merge ↑" is unambiguous.
+  const curatable = $derived(selected.size === 0 && app.busy === false);
+
+  let editing = $state<string | null>(null);
+  let draft = $state("");
+
+  async function join(id: string) {
+    try {
+      app.chart = await mergeUp(id);
+      app.status = "two passages joined";
+    } catch (e) {
+      app.status = `✗ ${e}`;
+    }
+  }
+
+  function beginAmend(ex: Excerpt) {
+    editing = ex.id;
+    draft = ex.text;
+  }
+
+  async function saveAmend(id: string) {
+    if (editing !== id) return;
+    editing = null;
+    const before = chart.excerpts.find((e) => e.id === id);
+    if (!before || draft.trim() === before.text) return;
+    try {
+      app.chart = await correctExcerpt(id, draft);
+      app.status = "passage amended — re-sectioned";
+    } catch (e) {
+      app.status = `✗ ${e}`;
+    }
+  }
+
+  function amendKeys(e: KeyboardEvent, id: string) {
+    if (e.key === "Escape") {
+      editing = null;
+      e.preventDefault();
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      saveAmend(id);
+      e.preventDefault();
+    }
+  }
 </script>
 
 <h2 class="rubric">Commentary</h2>
@@ -16,10 +61,36 @@
       : "no passage touches the selection — clear it to see everything"}
   </p>
 {/if}
-{#each visible as ex (ex.id)}
+{#each visible as ex, i (ex.id)}
   <article class="passage">
-    <div class="folio">{ex.time || "—"}</div>
-    <blockquote>“{ex.text}”</blockquote>
+    <div class="folio">
+      {ex.time || "—"}
+      {#if curatable && i > 0}
+        <button class="curate" title="join this passage to the previous one" onclick={() => join(ex.id)}
+          >merge ↑</button
+        >
+      {/if}
+    </div>
+    {#if editing === ex.id}
+      <!-- svelte-ignore a11y_autofocus -->
+      <textarea
+        class="amend-box"
+        bind:value={draft}
+        rows={Math.max(2, Math.ceil(draft.length / 70))}
+        autofocus
+        onkeydown={(e) => amendKeys(e, ex.id)}
+        onblur={() => saveAmend(ex.id)}
+      ></textarea>
+    {:else}
+      <blockquote>
+        “{ex.text}”
+        {#if curatable}
+          <button class="curate amend" title="correct the transcription" onclick={() => beginAmend(ex)}
+            >amend</button
+          >
+        {/if}
+      </blockquote>
+    {/if}
     <div class="refs">
       <span class="apparatus-text">vide</span>
       {#each ex.tags as tag, i (tag)}
@@ -53,6 +124,49 @@
     letter-spacing: 0.06em;
     padding-top: 0.35rem;
     text-align: right;
+  }
+  .curate {
+    display: block;
+    margin-left: auto;
+    font-size: 0.78rem;
+    font-style: italic;
+    color: var(--ink-3);
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+  }
+  .passage:hover .curate {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .curate {
+      transition: none;
+    }
+  }
+  .curate:hover {
+    color: var(--ink);
+    text-decoration: underline;
+  }
+  blockquote .curate.amend {
+    display: inline;
+    margin-left: 0.6em;
+    white-space: nowrap;
+  }
+  .amend-box {
+    grid-column: 2;
+    font: inherit;
+    font-size: 1.04rem;
+    line-height: 1.75;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--hairline);
+    resize: vertical;
+    max-width: 62ch;
+    padding: 0;
+  }
+  .amend-box:focus {
+    outline: none;
+    border-bottom-color: var(--brass);
   }
   blockquote {
     margin: 0;

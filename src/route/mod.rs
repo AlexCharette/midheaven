@@ -6,10 +6,12 @@
 //! enforced by the pipeline, never skipped: a span's text must be a verbatim
 //! slice of the transcript, and every tag must exist in the chart vocabulary.
 
+mod coalesce;
 mod lexicon;
 mod transcript;
 mod verify;
 
+pub use coalesce::coalesce;
 pub use lexicon::LexiconRouter;
 pub use transcript::Transcript;
 pub use verify::verify_gate;
@@ -35,7 +37,7 @@ pub fn index_transcript(
     let vocab = chart.vocab();
     let raw = router.route(transcript);
     let n_routed = raw.len();
-    chart.excerpts = verify_gate(transcript, raw, &vocab);
+    chart.excerpts = coalesce(verify_gate(transcript, raw, &vocab), transcript);
     n_routed
 }
 

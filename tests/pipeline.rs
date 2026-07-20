@@ -30,8 +30,9 @@ fn transcript_to_artifact() {
     let router = LexiconRouter::new(&vocab, &chart.aspects);
     index_transcript(&mut chart, &transcript, &router);
 
-    // The sample transcript routes nine passages; spot-check known tags.
-    assert_eq!(chart.excerpts.len(), 9);
+    // Nine routed sentences coalesce into five passages (consecutive
+    // passages sharing a tag merge); spot-check known tags.
+    assert_eq!(chart.excerpts.len(), 5);
     let first = &chart.excerpts[0];
     assert!(first.tags.contains(&"planet:sun".to_string()));
     assert!(first.tags.contains(&"sign:cancer".to_string()));
@@ -54,5 +55,5 @@ fn transcript_to_artifact() {
     );
     let (via_lib, n_routed) = build_reading(&input, source, |_| {}).expect("build_reading");
     assert_eq!(via_lib.excerpts.len(), chart.excerpts.len());
-    assert_eq!(n_routed, chart.excerpts.len());
+    assert_eq!(n_routed, 9, "router emits sentence-level spans before coalescing");
 }

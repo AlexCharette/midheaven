@@ -94,7 +94,7 @@
   <div class="ornament">✶</div>
   <p class="apparatus-text">The Nativity Desk</p>
   <h1>ASTRO</h1>
-  <p class="apparatus-text">enter the birth data; the chart computes entirely offline</p>
+  <p class="apparatus-text">your data never leaves this device</p>
 
   <form
     onsubmit={(e) => {
@@ -112,7 +112,7 @@
     </label>
     <label>
       <span>at</span>
-      <input bind:value={time} placeholder="HH:MM, local civil time" />
+      <input bind:value={time} placeholder="HH:MM, local 24-hour time" />
     </label>
     <label class="place">
       <span>in</span>
@@ -120,7 +120,7 @@
         bind:value={placeQuery}
         oninput={queryPlaces}
         onkeydown={onPlaceKey}
-        placeholder="type a city — the gazetteer will offer choices"
+        placeholder="type a city"
       />
       {#if suggestions.length > 0}
         <ul class="dropdown">
@@ -142,7 +142,7 @@
     </label>
     <label>
       <span>model</span>
-      <input bind:value={model} placeholder="ggml whisper model, needed for audio" />
+      <input bind:value={model} placeholder="ggml whisper model, needed for audio (optional)" />
       <button type="button" class="browse" onclick={() => pickFile("model")}>browse…</button>
     </label>
 
@@ -153,9 +153,9 @@
         {#if typeof app.busy === "number"}
           transcribing… {app.busy}%
         {:else if app.busy === "compute"}
-          computing the figure…
+          computing the chart…
         {:else}
-          compute the figure
+          compute the chart
         {/if}
       </button>
     </div>

@@ -372,7 +372,7 @@ mod tests {
             "E l e m e n t s",
             "C o m m e n t a r y",
             "planets",
-            "9 of 9 passages",
+            "5 of 5 passages",
             "vide",
             "☉",
         ] {
