@@ -58,11 +58,13 @@ button {
   cursor: pointer;
 }
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 1px dashed var(--hairline);
   outline-offset: 3px;
 }
-input {
+input,
+select {
   font: inherit;
   color: var(--ink);
   background: transparent;
@@ -70,7 +72,12 @@ input {
   border-bottom: 1px solid var(--line);
   padding: 0.1rem 0;
 }
-input:focus {
+select option {
+  background: var(--bg-deep);
+  color: var(--ink);
+}
+input:focus,
+select:focus {
   border-bottom-color: var(--hairline);
 }
 input::placeholder {

@@ -1,6 +1,12 @@
 <script lang="ts">
   import { save } from "@tauri-apps/plugin-dialog";
-  import { onTranscribeProgress, saveArtifact, startRecording, stopRecording } from "$lib/api";
+  import {
+    artifactFilename,
+    onTranscribeProgress,
+    saveArtifact,
+    startRecording,
+    stopRecording,
+  } from "$lib/api";
   import { app, selected, visibleExcerpts } from "$lib/state.svelte";
   import BirthForm from "$lib/components/BirthForm.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
@@ -56,7 +62,8 @@
 
   async function engrave() {
     const path = await save({
-      defaultPath: "reading.html",
+      // generated `{name}_{date}.html`, matching the library folder
+      defaultPath: await artifactFilename().catch(() => "reading.html"),
       filters: [{ name: "HTML artifact", extensions: ["html"] }],
     });
     if (!path) return;

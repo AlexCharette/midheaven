@@ -84,6 +84,17 @@ with running time anchors (a transcript loaded at build time keeps its
 passages). macOS asks for microphone permission on first use
 (`NSMicrophoneUsageDescription` ships in the bundle's Info.plist).
 
+**Preferences** (the quiet link under the birth form): a models folder with a
+default whisper model that prefills the form; a readings folder — once set,
+every built chart auto-saves to `{name}_{date}/` there as `chart.json` with
+its transcriptions alongside (`transcript.*` from the build, `take-N.jsonl`
+per live take; recorded audio itself is not kept), staying current through
+recording and curation; and practitioner branding — your name and logo are
+engraved on every exported artifact's title plate ("prepared by …", the logo
+embedded as a data URI so artifacts stay self-contained). Exports propose a
+generated `{name}_{date}.html` filename. Preferences live in the OS app-config
+dir; everything is optional and off until set.
+
 Added prerequisites for this target only: Node, and on Linux the
 webkit2gtk/Tauri system packages (Windows uses the preinstalled WebView2).
 This is the dependency-heavy target by design — the CLI/TUI binary remains

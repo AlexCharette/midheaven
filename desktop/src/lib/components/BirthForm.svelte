@@ -1,7 +1,8 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import { build, searchPlaces } from "$lib/api";
+  import { build, getPreferences, searchPlaces } from "$lib/api";
   import { app } from "$lib/state.svelte";
+  import Preferences from "./Preferences.svelte";
   import type { PlaceDto } from "$lib/types";
 
   let name = $state("");
@@ -14,6 +15,17 @@
   let transcript = $state("");
   let model = $state("");
   let error = $state("");
+  let prefsOpen = $state(false);
+
+  // the preferred model prefills an untouched field (again on pane close,
+  // so a freshly chosen default lands without retyping)
+  async function prefillModel() {
+    const p = await getPreferences();
+    if (!model.trim() && p.default_model) model = p.default_model;
+  }
+  $effect(() => {
+    if (!prefsOpen) prefillModel();
+  });
 
   // monotonic counter: a slow stale response must not overwrite a newer one
   // or re-open a dropdown the user already resolved
@@ -95,6 +107,9 @@
   <h1>MIDHEAVEN</h1>
   <p class="apparatus-text">your data never leaves this device</p>
 
+  {#if prefsOpen}
+    <Preferences onclose={() => (prefsOpen = false)} />
+  {:else}
   <form
     onsubmit={(e) => {
       e.preventDefault();
@@ -159,7 +174,12 @@
     {#if typeof app.busy === "number"}
       <div class="bar"><div class="fill" style="width: {app.busy}%"></div></div>
     {/if}
+
+    <p class="prefs-line">
+      <button type="button" class="ghost" onclick={() => (prefsOpen = true)}>preferences</button>
+    </p>
   </form>
+  {/if}
 </div>
 
 <style>
@@ -278,5 +298,10 @@
     height: 100%;
     background: var(--brass);
     transition: width 0.4s ease-out;
+  }
+  .prefs-line {
+    text-align: center;
+    margin-top: 2rem;
+    font-size: 0.85rem;
   }
 </style>

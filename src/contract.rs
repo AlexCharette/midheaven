@@ -88,6 +88,13 @@ pub struct Meta {
     pub place: String,
     pub system: String,
     pub zodiac: String,
+    /// Practitioner branding for the artifact ("prepared by …"); absent
+    /// unless a frontend stamps it, keeping unbranded output byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub astrologer: Option<String>,
+    /// Practitioner logo as a `data:` URI — the artifact stays self-contained.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

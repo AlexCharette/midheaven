@@ -2,7 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { BirthForm, ChartData, PlaceDto } from "./types";
+import type { BirthForm, ChartData, PlaceDto, Preferences } from "./types";
 
 export const searchPlaces = (query: string) =>
   invoke<PlaceDto[]>("search_places", { query });
@@ -30,3 +30,12 @@ export const addExcerpt = (text: string, tags: string[]) =>
 
 export const deleteExcerpt = (id: string) =>
   invoke<ChartData>("delete_excerpt", { id });
+
+export const getPreferences = () => invoke<Preferences>("get_preferences");
+
+export const setPreferences = (prefs: Preferences) =>
+  invoke<void>("set_preferences", { prefs });
+
+export const listModels = (dir: string) => invoke<string[]>("list_models", { dir });
+
+export const artifactFilename = () => invoke<string>("artifact_filename");

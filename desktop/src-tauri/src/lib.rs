@@ -2,14 +2,15 @@
 //! renders; every capability (ephemeris, gazetteer, whisper, routing,
 //! emission) runs natively here, exactly as in the CLI/TUI.
 
+mod prefs;
 mod record;
 
 use astro::chart::parse_time;
 use astro::contract::{ChartData, Excerpt};
-use astro::route::{Transcript, append_transcript, lexicon_for, next_ordinal, retag};
+use astro::route::{Transcript, append_transcript, index_transcript, lexicon_for, next_ordinal, retag};
 use astro::{TranscriptSource, geo};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
@@ -27,6 +28,31 @@ struct Inner {
     session_secs: f64,
     model: Option<PathBuf>,
     recorder: Option<record::Recorder>,
+    /// `{readings_dir}/{name}_{date}/` when a readings folder is configured —
+    /// chart.json and transcriptions auto-save here through the session.
+    session_dir: Option<PathBuf>,
+    /// Suggested export name, `{name}_{date}.html` — set at build.
+    artifact_name: String,
+    /// Live takes persisted this session (numbers `take-{n}.jsonl`).
+    takes: usize,
+}
+
+/// Filesystem-safe name stem: lowercase, runs of anything non-alphanumeric
+/// collapse to one `_`. The library folder is `{slug}_{YYYY-MM-DD}`.
+fn slug(name: &str) -> String {
+    let parts: Vec<String> = name
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|p| !p.is_empty())
+        .map(String::from)
+        .collect();
+    if parts.is_empty() { "reading".to_string() } else { parts.join("_") }
+}
+
+fn save_chart_json(dir: &Path, chart: &ChartData) -> Result<(), String> {
+    let path = dir.join("chart.json");
+    let json = serde_json::to_string_pretty(chart).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 #[derive(Default)]
@@ -85,17 +111,70 @@ async fn build(
     )
     .map_err(|e| e.to_string())?;
 
+    let p = prefs::load(&app);
+
+    // Unlike `build_reading` (the CLI/TUI path), the desktop keeps the
+    // transcript at hand so the readings library can persist it verbatim.
     let progress_app = app.clone();
-    let (chart, _n_routed) = tauri::async_runtime::spawn_blocking(move || {
-        astro::build_reading(&input, source, move |pct| {
-            let _ = progress_app.emit("transcribe-progress", pct);
-        })
-    })
+    type Persisted = Option<(String, String)>; // (filename, contents) for the library
+    let (mut chart, transcript_file) = tauri::async_runtime::spawn_blocking(
+        move || -> Result<(ChartData, Persisted), String> {
+            let (transcript, persisted): (Option<Transcript>, Persisted) = match source {
+                TranscriptSource::None => (None, None),
+                TranscriptSource::File(path) => {
+                    let raw = std::fs::read_to_string(&path)
+                        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("txt");
+                    (Some(Transcript::load(&raw)), Some((format!("transcript.{ext}"), raw)))
+                }
+                TranscriptSource::Audio { wav, model } => {
+                    let segments = astro::transcribe::transcribe(&wav, &model, move |pct| {
+                        let _ = progress_app.emit("transcribe-progress", pct);
+                    })?;
+                    let jsonl = astro::transcribe::to_jsonl(&segments);
+                    (
+                        Some(Transcript::from_segments(segments)),
+                        Some(("transcript.jsonl".to_string(), jsonl)),
+                    )
+                }
+            };
+            let mut chart = astro::chart::compute_chart(&input)?;
+            if let Some(t) = &transcript {
+                let router = lexicon_for(&chart);
+                index_transcript(&mut chart, t, &router);
+            }
+            Ok((chart, persisted))
+        },
+    )
     .await
     .map_err(|e| format!("build task failed: {e}"))??;
 
+    // Practitioner branding rides on the chart's meta (and thus into both
+    // chart.json and the engraved artifact). Both best-effort.
+    chart.meta.astrologer = p.astrologer.clone().filter(|s| !s.trim().is_empty());
+    chart.meta.logo = p.logo.as_deref().and_then(|l| prefs::logo_data_uri(Path::new(l)));
+
+    let stem = format!("{}_{}", slug(&chart.meta.name), chrono::Local::now().format("%Y-%m-%d"));
+    let session_dir = match p.readings_dir.as_deref().map(str::trim) {
+        Some(root) if !root.is_empty() => {
+            let dir = PathBuf::from(root).join(&stem);
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+            if let Some((name, contents)) = &transcript_file {
+                std::fs::write(dir.join(name), contents)
+                    .map_err(|e| format!("cannot write {name}: {e}"))?;
+            }
+            save_chart_json(&dir, &chart)?;
+            Some(dir)
+        }
+        _ => None,
+    };
+
     let mut inner = state.0.lock().unwrap();
     inner.session_secs = 0.0;
+    inner.takes = 0;
+    inner.session_dir = session_dir;
+    inner.artifact_name = format!("{stem}.html");
     inner.chart = Some(chart.clone());
     drop(inner);
     Ok(chart)
@@ -159,20 +238,35 @@ async fn stop_recording(
 
     // Route ONLY the new take and append, so earlier curation (merges,
     // corrections) survives every stop.
+    let jsonl = astro::transcribe::to_jsonl(&segments);
     let take = Transcript::from_segments(segments);
     append_transcript(chart, &take, &lexicon_for(chart));
+
+    // library auto-save: the take's transcription (session-offset anchors,
+    // matching the folio) and the refreshed chart
+    if let Some(dir) = &inner.session_dir {
+        inner.takes += 1;
+        let path = dir.join(format!("take-{}.jsonl", inner.takes));
+        std::fs::write(&path, jsonl).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        save_chart_json(dir, chart)?;
+    }
     Ok(chart.clone())
 }
 
 /// The shared frame of every curation command: lock, require a chart,
-/// mutate, return the updated clone for the webview.
+/// mutate, refresh the library's chart.json, return the updated clone for
+/// the webview.
 fn with_chart(
     state: &State<'_, AppState>,
     mutate: impl FnOnce(&mut ChartData) -> Result<(), String>,
 ) -> Result<ChartData, String> {
     let mut guard = state.0.lock().unwrap();
-    let chart = guard.chart.as_mut().ok_or("no chart has been built yet")?;
+    let inner = &mut *guard;
+    let chart = inner.chart.as_mut().ok_or("no chart has been built yet")?;
     mutate(chart)?;
+    if let Some(dir) = &inner.session_dir {
+        save_chart_json(dir, chart)?;
+    }
     Ok(chart.clone())
 }
 
@@ -278,6 +372,71 @@ fn delete_excerpt(state: State<'_, AppState>, id: String) -> Result<ChartData, S
     with_chart(&state, |chart| delete_in(&mut chart.excerpts, &id))
 }
 
+#[tauri::command]
+fn get_preferences(app: AppHandle) -> prefs::Preferences {
+    prefs::load(&app)
+}
+
+/// Persist preferences, normalizing blanks to None and refusing paths that
+/// don't exist — a bad folder should fail here, not at the next build.
+#[tauri::command]
+fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), String> {
+    let norm = |o: Option<String>| {
+        o.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    };
+    let prefs = prefs::Preferences {
+        models_dir: norm(prefs.models_dir),
+        default_model: norm(prefs.default_model),
+        readings_dir: norm(prefs.readings_dir),
+        astrologer: norm(prefs.astrologer),
+        logo: norm(prefs.logo),
+    };
+    for (label, dir) in [("models folder", &prefs.models_dir), ("readings folder", &prefs.readings_dir)] {
+        if let Some(d) = dir {
+            if !Path::new(d).is_dir() {
+                return Err(format!("{label}: no folder at {d}"));
+            }
+        }
+    }
+    for (label, file) in [("default model", &prefs.default_model), ("logo", &prefs.logo)] {
+        if let Some(f) = file {
+            if !Path::new(f).is_file() {
+                return Err(format!("{label}: no file at {f}"));
+            }
+        }
+    }
+    prefs::save(&app, &prefs)
+}
+
+/// Full paths of the ggml models (`.bin`) in a folder, sorted — feeds the
+/// preferences pane's default-model picker.
+#[tauri::command]
+fn list_models(dir: String) -> Vec<String> {
+    let mut models: Vec<String> = std::fs::read_dir(dir.trim())
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("bin"))
+                .filter_map(|p| p.to_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    models.sort();
+    models
+}
+
+/// The generated export name, `{name}_{date}.html` — the save dialog's
+/// default, matching the library folder convention.
+#[tauri::command]
+fn artifact_filename(state: State<'_, AppState>) -> Result<String, String> {
+    let inner = state.0.lock().unwrap();
+    if inner.chart.is_none() {
+        return Err("no chart has been built yet".to_string());
+    }
+    Ok(inner.artifact_name.clone())
+}
+
 // async: rendering + disk write stay off the main thread
 #[tauri::command]
 async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<String, String> {
@@ -307,7 +466,11 @@ pub fn run() {
             merge_up,
             correct_excerpt,
             add_excerpt,
-            delete_excerpt
+            delete_excerpt,
+            get_preferences,
+            set_preferences,
+            list_models,
+            artifact_filename
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -384,6 +547,14 @@ mod tests {
         assert_eq!(added.id, "x6");
         assert_eq!(added.tags, vec!["planet:moon"]);
         assert!(add_in(&mut chart, "   ", vec![]).is_err());
+    }
+
+    #[test]
+    fn slug_collapses_to_filesystem_safe_stems() {
+        assert_eq!(slug("Mira Holt"), "mira_holt");
+        assert_eq!(slug("  Ana-María d'Été  "), "ana_maría_d_été");
+        assert_eq!(slug("···"), "reading");
+        assert_eq!(slug(""), "reading");
     }
 
     #[test]

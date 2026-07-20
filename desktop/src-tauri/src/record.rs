@@ -113,17 +113,14 @@ pub fn start(out: PathBuf) -> Result<Recorder, String> {
             }
             samples += buf.len() as u64;
         };
-        loop {
-            match feed_rx.recv() {
-                Ok(Feed::Data(buf)) => write(&mut writer, buf),
-                Ok(Feed::Stop) | Err(_) => break,
-            }
+        // runs until Stop (or a hung-up channel) arrives
+        while let Ok(Feed::Data(buf)) = feed_rx.recv() {
+            write(&mut writer, buf);
         }
         drop(stream); // stop callbacks, then flush whatever they already sent
         while let Ok(Feed::Data(buf)) = feed_rx.try_recv() {
             write(&mut writer, buf);
         }
-        drop(write);
 
         let secs = samples as f64 / f64::from(sample_rate) / f64::from(channels);
         writer.finalize().map_err(|e| format!("cannot finalize the recording: {e}"))?;

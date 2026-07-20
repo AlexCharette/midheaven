@@ -1,7 +1,15 @@
 // Mirrors contract::ChartData — the same JSON the artifact embeds.
 
 export interface ChartData {
-  meta: { name: string; born: string; place: string; system: string; zodiac: string };
+  meta: {
+    name: string;
+    born: string;
+    place: string;
+    system: string;
+    zodiac: string;
+    astrologer?: string;
+    logo?: string;
+  };
   axes: { asc: number; mc: number };
   houseCusps: number[];
   planets: Body[];
@@ -49,6 +57,15 @@ export interface PlaceDto {
   tz: string;
   lat: number;
   lon: number;
+}
+
+/** Mirrors prefs::Preferences — every field optional; None ⇔ null. */
+export interface Preferences {
+  models_dir: string | null;
+  default_model: string | null;
+  readings_dir: string | null;
+  astrologer: string | null;
+  logo: string | null;
 }
 
 export interface BirthForm {

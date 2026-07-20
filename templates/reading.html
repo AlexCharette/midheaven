@@ -42,6 +42,12 @@
   /* ---- title plate ---- */
   .titleplate { text-align: center; }
   .titleplate .ornament { display: block; margin: 0 auto .9rem; opacity: .75; }
+  /* practitioner brand mark (data URI) takes the ornament slot when present */
+  .titleplate .brand-logo { display: block; margin: 0 auto .9rem; max-height: 56px; max-width: 180px; }
+  .titleplate .prepared-by {
+    font-variant: small-caps; letter-spacing: .14em; font-style: normal;
+    font-size: .82rem; color: var(--ink-3); margin: .55rem 0 0;
+  }
   .titleplate .overline { font-style: italic; font-size: 1.05rem; color: var(--ink-2); margin: 0; }
   .titleplate h1 {
     font-weight: 400; text-transform: uppercase; text-wrap: balance;
@@ -390,6 +396,21 @@ const DATA = /*__DATA__*/null;
   document.title = `${m.name} — Natal Reading`;
   document.getElementById('h-name').textContent = m.name;
   document.getElementById('h-details').textContent = `${m.born}${m.place ? ' · ' + m.place : ''}`;
+  // Practitioner branding (optional meta, stamped by the desktop app): the
+  // brand mark takes the ornament slot; a prepared-by line joins the details.
+  if (m.logo) {
+    const img = document.createElement('img');
+    img.className = 'brand-logo';
+    img.src = m.logo;
+    img.alt = m.astrologer || 'practitioner logo';
+    document.querySelector('.titleplate .ornament').replaceWith(img);
+  }
+  if (m.astrologer) {
+    const p = document.createElement('p');
+    p.className = 'prepared-by';
+    p.textContent = `prepared by ${m.astrologer}`;
+    document.getElementById('h-details').after(p);
+  }
   document.getElementById('plate-caption').innerHTML =
     `<span class="fig">Fig. I.</span> — The natal figure of ${esc(m.name)}, calculated for ` +
     `${esc(m.born)}${m.place ? ', ' + esc(m.place) : ''}. ${esc(m.system)} houses upon the ${esc(m.zodiac.toLowerCase())} zodiac.`;

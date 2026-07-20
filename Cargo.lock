@@ -171,6 +171,8 @@ name = "astro-desktop"
 version = "0.1.0"
 dependencies = [
  "astro",
+ "base64 0.22.1",
+ "chrono",
  "chrono-tz",
  "cpal",
  "hound",

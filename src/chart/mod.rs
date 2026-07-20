@@ -208,6 +208,8 @@ fn birth_meta(input: &BirthInput, moment: &BirthMoment) -> Meta {
         place: input.place.clone(),
         system: "Whole Sign".to_string(),
         zodiac: "Tropical".to_string(),
+        astrologer: None, // branding is a frontend concern (desktop prefs)
+        logo: None,
     }
 }
 
