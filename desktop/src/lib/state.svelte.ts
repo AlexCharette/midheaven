@@ -9,6 +9,8 @@ export const app = $state({
   status: "",
   /** false = idle · "compute" = fast build · number = transcription percent. */
   busy: false as false | "compute" | number,
+  /** The form's whisper-model path; a non-empty value enables live recording. */
+  model: "",
 });
 
 export const selected = new SvelteSet<string>();

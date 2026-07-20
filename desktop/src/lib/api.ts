@@ -14,3 +14,8 @@ export const saveArtifact = (path: string) =>
 
 export const onTranscribeProgress = (handler: (pct: number) => void) =>
   listen<number>("transcribe-progress", (e) => handler(e.payload));
+
+export const startRecording = (model: string) =>
+  invoke<void>("start_recording", { model });
+
+export const stopRecording = () => invoke<ChartData>("stop_recording");

@@ -1,9 +1,8 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import { build, onTranscribeProgress, searchPlaces } from "$lib/api";
+  import { build, searchPlaces } from "$lib/api";
   import { app } from "$lib/state.svelte";
   import type { PlaceDto } from "$lib/types";
-  import { onMount } from "svelte";
 
   let name = $state("");
   let date = $state("");
@@ -15,15 +14,6 @@
   let transcript = $state("");
   let model = $state("");
   let error = $state("");
-
-  onMount(() => {
-    const unlisten = onTranscribeProgress((pct) => {
-      if (app.busy !== false) app.busy = pct;
-    });
-    return () => {
-      unlisten.then((f) => f());
-    };
-  });
 
   // monotonic counter: a slow stale response must not overwrite a newer one
   // or re-open a dropdown the user already resolved
@@ -91,6 +81,7 @@
         model: model || null,
       });
       app.status = `${app.chart.excerpts.length} passages routed past the verify gate`;
+      app.model = model.trim();
     } catch (e) {
       error = String(e);
     } finally {

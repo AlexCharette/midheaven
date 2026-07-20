@@ -1,13 +1,58 @@
 <script lang="ts">
   import { save } from "@tauri-apps/plugin-dialog";
-  import { saveArtifact } from "$lib/api";
+  import { onTranscribeProgress, saveArtifact, startRecording, stopRecording } from "$lib/api";
   import { app, selected, visibleExcerpts } from "$lib/state.svelte";
   import BirthForm from "$lib/components/BirthForm.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
   import IndexOfElements from "$lib/components/IndexOfElements.svelte";
   import Wheel from "$lib/components/Wheel.svelte";
+  import { onMount } from "svelte";
 
   const visible = $derived(app.chart ? visibleExcerpts(app.chart) : []);
+
+  // transcription progress can arrive during a form build or a live take
+  onMount(() => {
+    const unlisten = onTranscribeProgress((pct) => {
+      if (app.busy !== false) app.busy = pct;
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  });
+
+  // ---- live session recording ----
+  let recording = $state(false);
+  let recSecs = $state(0);
+  let recTimer: ReturnType<typeof setInterval> | undefined;
+  const mmss = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+  async function toggleRecording() {
+    if (!recording) {
+      try {
+        await startRecording(app.model);
+        recording = true;
+        recSecs = 0;
+        recTimer = setInterval(() => recSecs++, 1000);
+        app.status = "listening — speak the reading; stop to route it";
+      } catch (e) {
+        app.status = `✗ ${e}`;
+      }
+      return;
+    }
+    clearInterval(recTimer);
+    recording = false;
+    app.busy = "compute";
+    app.status = "routing the recording…";
+    try {
+      app.chart = await stopRecording();
+      app.status = `${app.chart.excerpts.length} passages on the chart`;
+    } catch (e) {
+      app.status = `✗ ${e}`;
+    } finally {
+      app.busy = false;
+    }
+  }
 
   async function engrave() {
     const path = await save({
@@ -64,7 +109,23 @@
     <span class="apparatus-text status">{app.status}</span>
     <span class="foot-actions">
       <button class="ghost" onclick={back}>← new reading</button>
-      <button class="frame-btn" onclick={engrave}>engrave the artifact</button>
+      {#if app.model}
+        <button
+          class="frame-btn rec"
+          class:on={recording}
+          onclick={toggleRecording}
+          disabled={!recording && app.busy !== false}
+        >
+          {#if recording}
+            <span class="dot" aria-hidden="true"></span> stop transcribing · {mmss(recSecs)}
+          {:else if typeof app.busy === "number"}
+            transcribing… {app.busy}%
+          {:else}
+            ◉ begin transcribing
+          {/if}
+        </button>
+      {/if}
+      <button class="frame-btn" onclick={engrave} disabled={recording}>engrave the artifact</button>
     </span>
   </footer>
 {:else}
@@ -159,5 +220,33 @@
   }
   .status {
     min-height: 1.2em;
+  }
+  .rec.on {
+    border-color: var(--brass);
+    color: var(--ink);
+  }
+  .dot {
+    display: inline-block;
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 50%;
+    background: var(--brass);
+    animation: pulse 1.6s ease-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dot {
+      animation: none;
+    }
+  }
+  @keyframes pulse {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
+    }
+    100% {
+      opacity: 1;
+    }
   }
 </style>

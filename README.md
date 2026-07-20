@@ -74,6 +74,14 @@ transcription with a progress bar, and "engrave the artifact" writing the
 standalone HTML. Everything computes in the native Tauri process — the
 webview only renders.
 
+**Live session recording:** when the form's model field points at a ggml
+file, the reading page shows *begin transcribing* — the microphone records
+natively (cpal) while the reading happens; *stop* transcribes the take and
+routes its passages into the index and commentary, appending across takes
+with running time anchors (a transcript loaded at build time keeps its
+passages). macOS asks for microphone permission on first use
+(`NSMicrophoneUsageDescription` ships in the bundle's Info.plist).
+
 Added prerequisites for this target only: Node, and on Linux the
 webkit2gtk/Tauri system packages (Windows uses the preinstalled WebView2).
 This is the dependency-heavy target by design — the CLI/TUI binary remains
