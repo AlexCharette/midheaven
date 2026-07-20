@@ -172,6 +172,11 @@
   .entry[aria-pressed="true"] .nm { border-bottom-color: var(--ink-2); }
   .entry .lead { flex: 1; border-bottom: 1px dotted var(--line); transform: translateY(-.28em); min-width: .6em; }
   .entry .dt { flex: none; color: var(--ink-3); font-size: .85em; font-variant-numeric: tabular-nums; }
+  .more {
+    display: block; padding: .12rem 0 .12rem 2.85em;
+    font-size: .82rem; font-style: italic; color: var(--ink-3);
+  }
+  .more:hover { color: var(--ink); text-decoration: underline; }
 
   /* ---- apparatus row ---- */
   .apparatus {
@@ -544,6 +549,48 @@ const DATA = {"meta":{"name":"Sample Chart","born":"1990-07-13 14:30 (Europe/Ber
   DATA.aspects.forEach(a =>
     makeEntry(bandA, a.id, 'aspect', a.glyph, `${shortName(a.a)} – ${shortName(a.b)}`, '', a.name));
 
+  // Signs and houses default to the elements the reading references (or that
+  // are selected — an active filter must never hide itself); "n more" expands.
+  const referenced = new Set(DATA.excerpts.flatMap(e => e.tags));
+  const expanded = { sign: false, house: false };
+  const expanders = {};
+  for (const [cat, band] of [['sign', bandS], ['house', bandH]]) {
+    const b = document.createElement('button');
+    b.className = 'more';
+    b.addEventListener('click', () => {
+      expanded[cat] = !expanded[cat];
+      render();
+    });
+    band.appendChild(b);
+    expanders[cat] = b;
+  }
+  const syncRelevance = () => {
+    if (DATA.excerpts.length === 0) {
+      expanders.sign.style.display = expanders.house.style.display = 'none';
+      return;
+    }
+    const hidden = { sign: 0, house: 0 };
+    for (const e of entries) {
+      const cat = e.dataset.cat;
+      if (cat !== 'sign' && cat !== 'house') continue;
+      const show = expanded[cat] || referenced.has(e.dataset.tag) || selected.has(e.dataset.tag);
+      e.style.display = show ? '' : 'none';
+      if (!show) hidden[cat] += 1;
+    }
+    for (const cat of ['sign', 'house']) {
+      const b = expanders[cat];
+      if (expanded[cat]) {
+        b.textContent = '· fewer';
+        b.style.display = '';
+      } else if (hidden[cat] > 0) {
+        b.textContent = `· ${hidden[cat]} more`;
+        b.style.display = '';
+      } else {
+        b.style.display = 'none';
+      }
+    }
+  };
+
   // ---------- commentary ----------
   const catOf = tag => tag.split(':')[0];
   const excerptsHost = document.getElementById('excerpts');
@@ -594,6 +641,7 @@ const DATA = {"meta":{"name":"Sample Chart","born":"1990-07-13 14:30 (Europe/Ber
     for (const b of entries) {
       b.setAttribute('aria-pressed', String(selected.has(b.dataset.tag)));
     }
+    syncRelevance();
     renderExcerpts();
   };
   const toggle = tag => {

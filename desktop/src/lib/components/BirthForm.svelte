@@ -106,14 +106,12 @@
       <span>name</span>
       <input bind:value={name} placeholder="the chart holder's name" />
     </label>
-    <label>
-      <span>born on</span>
-      <input bind:value={date} placeholder="YYYY-MM-DD" />
-    </label>
-    <label>
-      <span>at</span>
-      <input bind:value={time} placeholder="HH:MM, local 24-hour time" />
-    </label>
+    <div class="duo">
+      <label class="lbl" for="f-date">born on</label>
+      <input id="f-date" bind:value={date} placeholder="YYYY-MM-DD" />
+      <label class="lbl" for="f-time">at</label>
+      <input id="f-time" bind:value={time} placeholder="HH:MM, local 24-hour time" />
+    </div>
     <label class="place">
       <span>in</span>
       <input
@@ -197,6 +195,18 @@
     position: relative;
   }
   label span:first-child {
+    font-style: italic;
+    color: var(--ink-3);
+    text-align: right;
+  }
+  .duo {
+    display: grid;
+    grid-template-columns: 7.5rem 1fr auto 1fr;
+    gap: 0 1rem;
+    align-items: baseline;
+    margin-bottom: 1.1rem;
+  }
+  .duo .lbl {
     font-style: italic;
     color: var(--ink-3);
     text-align: right;

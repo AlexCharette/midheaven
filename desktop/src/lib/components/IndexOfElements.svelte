@@ -7,6 +7,11 @@
 
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
 
+  // Signs/houses default to the ones the reading references (or keeps
+  // selected — an active filter must never hide itself); "n more" expands.
+  const referenced = $derived(new Set(chart.excerpts.flatMap((ex) => ex.tags)));
+  let expanded = $state<Record<string, boolean>>({ signs: false, houses: false });
+
   interface Entry {
     tag: string;
     glyph: string;
@@ -16,6 +21,7 @@
   interface Column {
     head: string;
     entries: Entry[];
+    filterable?: boolean;
   }
   const columns: Column[] = $derived([
     {
@@ -27,9 +33,14 @@
         detail: `${degInSign(p.lon)}° ${textGlyph(signAt(chart, p.lon).glyph)}`,
       })),
     },
-    { head: "signs", entries: chart.signs.map((s) => ({ tag: s.id, glyph: s.glyph, name: s.name, detail: "" })) },
+    {
+      head: "signs",
+      filterable: true,
+      entries: chart.signs.map((s) => ({ tag: s.id, glyph: s.glyph, name: s.name, detail: "" })),
+    },
     {
       head: "houses",
+      filterable: true,
       entries: chart.houses.map((h) => ({
         tag: h.id,
         glyph: h.label,
@@ -52,15 +63,25 @@
 <h2 class="rubric">Index of Elements</h2>
 <div class="index">
   {#each columns as col (col.head)}
+    {@const filtering = col.filterable && chart.excerpts.length > 0 && !expanded[col.head]}
+    {@const shown = filtering
+      ? col.entries.filter((e) => referenced.has(e.tag) || selected.has(e.tag))
+      : col.entries}
+    {@const hidden = col.entries.length - shown.length}
     <div>
       <h3>{col.head}</h3>
-      {#each col.entries as e (e.tag)}
+      {#each shown as e (e.tag)}
         <button class="entry" aria-pressed={selected.has(e.tag)} onclick={() => toggle(e.tag)}>
           <span class="g g-{catOf(e.tag)}">{textGlyph(e.glyph)}</span>
           <span class="nm">{e.name}</span>
           {#if e.detail}<span class="lead"></span><span class="dt">{e.detail}</span>{/if}
         </button>
       {/each}
+      {#if filtering && hidden > 0}
+        <button class="more" onclick={() => (expanded[col.head] = true)}>· {hidden} more</button>
+      {:else if col.filterable && expanded[col.head]}
+        <button class="more" onclick={() => (expanded[col.head] = false)}>· fewer</button>
+      {/if}
     </div>
   {/each}
 </div>
@@ -135,5 +156,16 @@
     color: var(--ink-3);
     font-size: 0.85em;
     font-variant-numeric: tabular-nums;
+  }
+  .more {
+    display: block;
+    padding: 0.12rem 0 0.12rem 2.7em;
+    font-size: 0.82rem;
+    font-style: italic;
+    color: var(--ink-3);
+  }
+  .more:hover {
+    color: var(--ink);
+    text-decoration: underline;
   }
 </style>

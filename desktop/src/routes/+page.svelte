@@ -81,11 +81,6 @@
       <div class="plate-frame">
         <Wheel chart={app.chart} />
       </div>
-      <figcaption class="apparatus-text">
-        <span class="fig">Fig. I.</span> — the natal figure of {app.chart.meta.name},
-        {app.chart.meta.born}{app.chart.meta.place ? `, ${app.chart.meta.place}` : ""}.
-        {app.chart.meta.system} houses upon the {app.chart.meta.zodiac.toLowerCase()} zodiac.
-      </figcaption>
     </figure>
 
     <section>
@@ -155,18 +150,6 @@
     padding: 0.8rem;
     margin: 6px;
     background: radial-gradient(ellipse at 50% 42%, rgba(27, 32, 73, 0.6) 0%, transparent 70%);
-  }
-  figcaption {
-    margin-top: 0.9rem;
-    text-align: center;
-    font-size: 0.88rem;
-    padding: 0 0.5rem;
-  }
-  figcaption .fig {
-    font-style: normal;
-    font-variant: small-caps;
-    letter-spacing: 0.08em;
-    color: var(--ink-2);
   }
   .toolbar {
     display: flex;
