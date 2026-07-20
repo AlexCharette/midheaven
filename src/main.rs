@@ -1,3 +1,5 @@
+mod tui;
+
 use astro::chart::{BirthInput, compute_chart};
 use astro::route::{LexiconRouter, Transcript, index_transcript};
 use astro::{emit, geo};
@@ -6,12 +8,12 @@ use std::path::PathBuf;
 
 /// Natal reading indexer — offline birth-chart computation plus routing of
 /// verbatim reading-transcript excerpts to chart elements, emitted as one
-/// self-contained HTML artifact.
+/// self-contained HTML artifact. Run without a subcommand for the TUI.
 #[derive(Parser)]
 #[command(name = "astro", version)]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -34,6 +36,8 @@ enum Command {
         /// Query, e.g. "portland, oregon" — quotes optional, words are joined.
         query: Vec<String>,
     },
+    /// Open the interactive terminal interface (also the bare default).
+    Tui,
 }
 
 #[derive(Args)]
@@ -146,6 +150,14 @@ fn print_places(places: &[&geo::Place]) {
 
 fn run() -> Result<(), String> {
     match Cli::parse().command {
+        None | Some(Command::Tui) => tui::run(),
+        Some(command) => run_command(command),
+    }
+}
+
+fn run_command(command: Command) -> Result<(), String> {
+    match command {
+        Command::Tui => unreachable!("handled in run"),
         Command::Chart(birth) => {
             let input = birth.into_input()?;
             let chart = compute_chart(&input)?;

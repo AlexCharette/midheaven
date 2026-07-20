@@ -18,6 +18,26 @@ Build brief: `docs/natal-reading-indexer.md`.
 
 ## Usage
 
+### Interactive (TUI)
+
+```sh
+cargo run            # bare invocation opens the terminal UI (same as `astro tui`)
+```
+
+An Elm-architecture ratatui interface in the artifact's engraved style: a
+birth-data form with a live gazetteer typeahead, then the computed plate —
+braille chart wheel, Index of Elements, and filtered Commentary.
+
+| Keys (form) | | Keys (reading) | |
+|---|---|---|---|
+| tab / ↑↓ | move fields | arrows / hjkl-ish | move in the index |
+| ↑↓ + enter | pick a place | space | toggle an element filter |
+| F5 | compute the figure | a / c | any↔all / clear selection |
+| esc | dismiss dropdown | j / k | scroll commentary |
+| ctrl-c | leave | e / b / q | engrave HTML / back / quit |
+
+### Scripting (CLI)
+
 ```sh
 # full pipeline → reading.html; --place resolves lat/lon/tz offline
 cargo run -- build --name "Sample Chart" \
