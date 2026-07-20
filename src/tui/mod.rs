@@ -13,7 +13,7 @@ use model::Model;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use std::sync::mpsc;
 use std::time::Duration;
-use update::{Cmd, Msg, TranscriptSource, decode, update};
+use update::{Cmd, Msg, decode, update};
 
 pub fn run() -> Result<(), String> {
     // The gazetteer's one-time parse happens before raw mode, so the first
@@ -77,15 +77,9 @@ fn execute(cmd: Cmd, tx: &mpsc::Sender<Msg>) {
             let tx = tx.clone();
             std::thread::spawn(move || {
                 let progress_tx = tx.clone();
-                let result = match source {
-                    TranscriptSource::None => astro::build_reading(&input, None),
-                    TranscriptSource::File(path) => astro::build_reading(&input, Some(&path)),
-                    TranscriptSource::Audio { wav, model } => {
-                        astro::build_reading_from_audio(&input, &wav, &model, move |pct| {
-                            let _ = progress_tx.send(Msg::Progress(pct));
-                        })
-                    }
-                };
+                let result = astro::build_reading(&input, source, move |pct| {
+                    let _ = progress_tx.send(Msg::Progress(pct));
+                });
                 let _ = tx.send(Msg::Built(result.map(|(chart, _)| Box::new(chart))));
             });
         }
@@ -116,7 +110,8 @@ pub(crate) mod testkit {
             place: "Berlin, Germany".into(),
         };
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/transcript.jsonl");
-        let (chart, _) = astro::build_reading(&input, Some(path.as_ref())).unwrap();
+        let source = astro::TranscriptSource::File(path.into());
+        let (chart, _) = astro::build_reading(&input, source, |_| {}).unwrap();
         Model {
             screen: Screen::Reading(Reading::new(Box::new(chart), "reading.html".into())),
             ..Model::default()

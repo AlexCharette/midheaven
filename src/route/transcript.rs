@@ -2,18 +2,12 @@
 //! the transcription stage, split into sentence spans with byte-offset
 //! provenance.
 
-use serde::Deserialize;
+use crate::contract::Segment;
 
 /// A transcript with optional time anchors (byte offset → seconds).
 pub struct Transcript {
     pub text: String,
     anchors: Vec<(usize, f64)>,
-}
-
-#[derive(Deserialize)]
-struct Segment {
-    start: f64,
-    text: String,
 }
 
 impl Transcript {
@@ -34,7 +28,7 @@ impl Transcript {
         let segments = raw
             .lines()
             .filter(|l| !l.trim().is_empty())
-            .map(|line| serde_json::from_str::<Segment>(line).map(|s| (s.start, s.text)))
+            .map(serde_json::from_str::<Segment>)
             .collect::<Result<Vec<_>, _>>()
             .ok()?;
         Some(Self::from_segments(segments))
@@ -42,15 +36,15 @@ impl Transcript {
 
     /// Assemble a transcript from timestamped segments (e.g. straight from
     /// the transcription stage, skipping the JSONL round-trip).
-    pub fn from_segments(segments: impl IntoIterator<Item = (f64, String)>) -> Transcript {
+    pub fn from_segments(segments: impl IntoIterator<Item = Segment>) -> Transcript {
         let mut text = String::new();
         let mut anchors = Vec::new();
-        for (start, seg_text) in segments {
+        for seg in segments {
             if !text.is_empty() {
                 text.push(' ');
             }
-            anchors.push((text.len(), start));
-            text.push_str(seg_text.trim());
+            anchors.push((text.len(), seg.start));
+            text.push_str(seg.text.trim());
         }
         Transcript { text, anchors }
     }

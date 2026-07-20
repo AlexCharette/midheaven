@@ -1,6 +1,6 @@
 //! Pure rendering of the Model — nothing here mutates state.
 
-use super::model::{FIELDS, Field, Form, Mode, Model, Reading, Screen};
+use super::model::{FIELDS, Field, Form, Job, Mode, Model, Reading, Screen};
 use super::{theme, wheel};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -318,8 +318,13 @@ fn view_status(model: &Model, area: Rect, frame: &mut Frame) {
             "arrows · move   space · toggle   a · any/all   c · clear   j/k · scroll   e · engrave html   b · back   q · quit"
         }
     };
+    let status = match model.job {
+        Some(Job::Transcribing(pct)) => format!("transcribing… {pct}%"),
+        Some(Job::Computing) => "computing the figure…".to_string(),
+        None => model.status.clone(),
+    };
     let line = Line::from(vec![
-        Span::styled(format!(" {}", model.status), theme::ink2().italic()),
+        Span::styled(format!(" {status}"), theme::ink2().italic()),
         Span::raw("   "),
         Span::styled(hints, theme::hairline().italic()),
     ]);

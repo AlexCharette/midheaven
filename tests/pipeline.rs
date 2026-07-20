@@ -4,6 +4,7 @@
 use astro::chart::{BirthInput, compute_chart};
 use astro::emit::emit;
 use astro::route::{LexiconRouter, Transcript, index_transcript};
+use astro::{TranscriptSource, build_reading};
 
 #[test]
 fn transcript_to_artifact() {
@@ -46,4 +47,12 @@ fn transcript_to_artifact() {
     assert!(html.contains("const DATA = {"));
     assert!(!html.contains("/*__DATA__*/null"));
     assert!(html.contains("Integration"));
+
+    // The one-call orchestrator walks the same path.
+    let source = TranscriptSource::File(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/examples/transcript.jsonl").into(),
+    );
+    let (via_lib, n_routed) = build_reading(&input, source, |_| {}).expect("build_reading");
+    assert_eq!(via_lib.excerpts.len(), chart.excerpts.len());
+    assert_eq!(n_routed, chart.excerpts.len());
 }

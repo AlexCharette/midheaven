@@ -3,7 +3,7 @@
 //! the routing stage fills `excerpts`, and the emit stage serializes it into
 //! the HTML artifact as `const DATA = {...}`. No stage owns it.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 #[derive(Debug, Serialize)]
@@ -37,6 +37,14 @@ impl ChartData {
     pub fn planet(&self, id: &str) -> Option<&Body> {
         self.planets.iter().find(|p| p.id == id)
     }
+}
+
+/// One timestamped transcript segment — the `{"start", "text"}` JSONL wire
+/// format between the transcription and routing stages; neither stage owns it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Segment {
+    pub start: f64,
+    pub text: String,
 }
 
 /// Filter match mode for excerpt selections, shared by every viewer

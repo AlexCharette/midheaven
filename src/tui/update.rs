@@ -2,12 +2,13 @@
 //! Key events are decoded to semantic messages by [`decode`]; side effects
 //! leave `update` only as [`Cmd`]s for the runtime to execute.
 
-use super::model::{Field, Form, Model, Reading, Screen};
+use super::model::{Field, Form, Job, Model, Reading, Screen};
+use astro::TranscriptSource;
 use astro::chart::BirthInput;
 use astro::contract::{ChartData, Mode};
 use astro::geo;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub enum Msg {
     // form
@@ -41,12 +42,6 @@ pub enum Msg {
     Emitted(Result<String, String>),
 }
 
-/// Where the build's transcript comes from.
-pub enum TranscriptSource {
-    None,
-    File(PathBuf),
-    Audio { wav: PathBuf, model: PathBuf },
-}
 
 pub enum Cmd {
     /// Run the pipeline on a background thread: transcribe when the source
@@ -108,11 +103,13 @@ pub fn update(model: &mut Model, msg: Msg) -> Vec<Cmd> {
             Vec::new()
         }
         Msg::Progress(pct) => {
-            model.status = format!("transcribing… {pct}%");
+            if let Some(Job::Transcribing(p)) = &mut model.job {
+                *p = pct;
+            }
             Vec::new()
         }
         Msg::Built(Ok(chart)) => {
-            model.busy = false;
+            model.job = None;
             // Build commands are only issued by the form's submit.
             let Screen::Form(form) = &model.screen else {
                 return Vec::new();
@@ -124,7 +121,7 @@ pub fn update(model: &mut Model, msg: Msg) -> Vec<Cmd> {
             Vec::new()
         }
         Msg::Built(Err(e)) => {
-            model.busy = false;
+            model.job = None;
             model.status = format!("✗ {e}");
             Vec::new()
         }
@@ -145,13 +142,20 @@ pub fn update(model: &mut Model, msg: Msg) -> Vec<Cmd> {
         }
         other => match &mut model.screen {
             Screen::Form(form) => {
-                if model.busy && matches!(other, Msg::Submit | Msg::Accept) {
-                    model.status = "still working — the figure is on its way".to_string();
-                    return Vec::new();
-                }
-                let cmds = update_form(form, &mut model.status, other);
-                if !cmds.is_empty() {
-                    model.busy = true;
+                let cmds = update_form(form, other);
+                // Busy-gating keys off the actual command, not off which
+                // message might have submitted: navigation stays free while
+                // a build runs; only a second Build is refused.
+                if let Some(Cmd::Build { source, .. }) = cmds.first() {
+                    if model.job.is_some() {
+                        model.status = "still working — the figure is on its way".to_string();
+                        return Vec::new();
+                    }
+                    model.job = Some(match source {
+                        TranscriptSource::Audio { .. } => Job::Transcribing(0),
+                        _ => Job::Computing,
+                    });
+                    model.status = String::new();
                 }
                 cmds
             }
@@ -183,7 +187,7 @@ fn close_suggestions(form: &mut Form) {
     form.sel = None;
 }
 
-fn update_form(form: &mut Form, status: &mut String, msg: Msg) -> Vec<Cmd> {
+fn update_form(form: &mut Form, msg: Msg) -> Vec<Cmd> {
     match msg {
         Msg::Input(c) => edit_field(form, |v| v.push(c)),
         Msg::Backspace => edit_field(form, |v| {
@@ -217,19 +221,19 @@ fn update_form(form: &mut Form, status: &mut String, msg: Msg) -> Vec<Cmd> {
                     form.focus = form.focus.next();
                 }
             } else if form.focus == Field::Out {
-                return submit(form, status);
+                return submit(form);
             } else {
                 form.focus = form.focus.next();
             }
         }
-        Msg::Submit => return submit(form, status),
+        Msg::Submit => return submit(form),
         _ => {}
     }
     Vec::new()
 }
 
 /// Validate the form; on success hand the runtime a Build command.
-fn submit(form: &mut Form, status: &mut String) -> Vec<Cmd> {
+fn submit(form: &mut Form) -> Vec<Cmd> {
     let fail = |form: &mut Form, field: Field, msg: &str| {
         form.error = Some((field, msg.to_string()));
         form.focus = field;
@@ -257,18 +261,22 @@ fn submit(form: &mut Form, status: &mut String) -> Vec<Cmd> {
         },
     };
     let transcript = form.transcript.trim();
-    if !transcript.is_empty() && !std::path::Path::new(transcript).exists() {
+    if !transcript.is_empty() && !Path::new(transcript).exists() {
         return fail(form, Field::Transcript, "no file at this path");
     }
-    let is_audio = transcript.to_lowercase().ends_with(".wav");
+    // decided by content (RIFF magic), not by file name
+    let is_audio = !transcript.is_empty() && astro::transcribe::is_audio(Path::new(transcript));
     let model_path = form.model.trim();
     if is_audio {
         if model_path.is_empty() {
-            return fail(form, Field::Model, "a .wav transcript needs a ggml whisper model");
+            return fail(form, Field::Model, "an audio transcript needs a ggml whisper model");
         }
-        if !std::path::Path::new(model_path).exists() {
+        if !Path::new(model_path).exists() {
             return fail(form, Field::Model, "no model file at this path");
         }
+    }
+    if form.out.trim().is_empty() {
+        return fail(form, Field::Out, "the artifact needs a path");
     }
     let source = if transcript.is_empty() {
         TranscriptSource::None
@@ -280,15 +288,7 @@ fn submit(form: &mut Form, status: &mut String) -> Vec<Cmd> {
     } else {
         TranscriptSource::File(PathBuf::from(transcript))
     };
-    if form.out.trim().is_empty() {
-        return fail(form, Field::Out, "the artifact needs a path");
-    }
     let name = if form.name.trim().is_empty() { "Anonymous" } else { form.name.trim() };
-    *status = if matches!(source, TranscriptSource::Audio { .. }) {
-        "transcribing… 0%".to_string()
-    } else {
-        "computing the figure…".to_string()
-    };
     vec![Cmd::Build {
         input: BirthInput {
             name: name.to_string(),
@@ -342,12 +342,10 @@ fn update_reading(reading: &mut Reading, status: &mut String, msg: Msg) -> Vec<C
         Msg::ScrollDown => reading.scroll = reading.scroll.saturating_add(2),
         Msg::ScrollUp => reading.scroll = reading.scroll.saturating_sub(2),
         Msg::Emit => {
-            // Rendering is pure, so it happens here; only the write is an effect.
+            // Rendering is pure, so it happens here; only the write is an
+            // effect. No success status: Emitted lands before the next frame.
             return match astro::emit::emit(&reading.chart) {
-                Ok(contents) => {
-                    *status = "engraving…".to_string();
-                    vec![Cmd::WriteFile { path: reading.out.clone(), contents }]
-                }
+                Ok(contents) => vec![Cmd::WriteFile { path: reading.out.clone(), contents }],
                 Err(e) => {
                     *status = format!("✗ {e}");
                     Vec::new()
@@ -382,6 +380,23 @@ mod tests {
         }
     }
 
+    /// A Model whose form holds valid Berlin birth data.
+    fn filled_form() -> Model {
+        let mut m = Model::default();
+        if let Screen::Form(f) = &mut m.screen {
+            f.date = "1990-07-13".into();
+            f.time = "14:30".into();
+            f.place_query = "berlin".into();
+        }
+        m
+    }
+
+    fn temp_file(name: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(name);
+        std::fs::write(&path, b"x").unwrap();
+        path
+    }
+
     #[test]
     fn typing_a_place_offers_suggestions_and_enter_picks() {
         let mut m = Model::default();
@@ -403,11 +418,9 @@ mod tests {
 
     #[test]
     fn invalid_date_is_a_field_error_not_a_command() {
-        let mut m = Model::default();
+        let mut m = filled_form();
         if let Screen::Form(f) = &mut m.screen {
             f.date = "13/07/1990".into();
-            f.time = "14:30".into();
-            f.place_query = "berlin".into();
         }
         let cmds = update(&mut m, Msg::Submit);
         assert!(cmds.is_empty());
@@ -418,13 +431,7 @@ mod tests {
 
     #[test]
     fn valid_form_yields_build_command() {
-        let mut m = Model::default();
-        if let Screen::Form(f) = &mut m.screen {
-            f.name = "Test".into();
-            f.date = "1990-07-13".into();
-            f.time = "14:30".into();
-            f.place_query = "berlin".into(); // resolves via dominance rule
-        }
+        let mut m = filled_form();
         let cmds = update(&mut m, Msg::Submit);
         assert_eq!(cmds.len(), 1);
         match &cmds[0] {
@@ -436,7 +443,7 @@ mod tests {
             _ => panic!("expected Build"),
         }
         assert_eq!(form(&m).out, "reading.html");
-        assert!(m.busy, "a submitted build marks the model busy");
+        assert_eq!(m.job, Some(Job::Computing), "a submitted build marks a job in flight");
     }
 
     use crate::tui::testkit::reading_model;
@@ -470,35 +477,38 @@ mod tests {
         assert_eq!(all, 1);
     }
 
+    /// A minimal RIFF/WAVE file so content sniffing recognizes audio.
+    fn temp_wav(name: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(name);
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        hound::WavWriter::create(&path, spec).unwrap().finalize().unwrap();
+        path
+    }
+
     #[test]
     fn wav_transcript_requires_a_model() {
-        let mut m = Model::default();
-        let wav = std::env::temp_dir().join("astro-test-empty.wav");
-        std::fs::write(&wav, b"").unwrap();
+        let mut m = filled_form();
+        let wav = temp_wav("astro-test-empty.wav");
         if let Screen::Form(f) = &mut m.screen {
-            f.date = "1990-07-13".into();
-            f.time = "14:30".into();
-            f.place_query = "berlin".into();
             f.transcript = wav.to_string_lossy().into_owned();
         }
         let cmds = update(&mut m, Msg::Submit);
         assert!(cmds.is_empty());
         assert!(matches!(form(&m).error, Some((Field::Model, _))));
-        assert!(!m.busy);
+        assert!(m.job.is_none());
     }
 
     #[test]
     fn wav_with_model_builds_audio_source_and_marks_busy() {
-        let mut m = Model::default();
-        let dir = std::env::temp_dir();
-        let wav = dir.join("astro-test-a.wav");
-        let ggml = dir.join("astro-test-model.bin");
-        std::fs::write(&wav, b"").unwrap();
-        std::fs::write(&ggml, b"").unwrap();
+        let mut m = filled_form();
+        let wav = temp_wav("astro-test-a.wav");
+        let ggml = temp_file("astro-test-model.bin");
         if let Screen::Form(f) = &mut m.screen {
-            f.date = "1990-07-13".into();
-            f.time = "14:30".into();
-            f.place_query = "berlin".into();
             f.transcript = wav.to_string_lossy().into_owned();
             f.model = ggml.to_string_lossy().into_owned();
         }
@@ -507,16 +517,15 @@ mod tests {
             cmds.as_slice(),
             [Cmd::Build { source: TranscriptSource::Audio { .. }, .. }]
         ));
-        assert!(m.busy);
-        assert_eq!(m.status, "transcribing… 0%");
-        // a second submit while busy is refused
+        assert_eq!(m.job, Some(Job::Transcribing(0)));
+        // a second submit while a job runs is refused
         assert!(update(&mut m, Msg::Submit).is_empty());
         assert!(m.status.contains("still working"));
-        // progress flows into the status line; a failed build clears busy
+        // progress lands in the job, not in prose; a failed build clears it
         update(&mut m, Msg::Progress(42));
-        assert_eq!(m.status, "transcribing… 42%");
+        assert_eq!(m.job, Some(Job::Transcribing(42)));
         update(&mut m, Msg::Built(Err("boom".into())));
-        assert!(!m.busy);
+        assert!(m.job.is_none());
     }
 
     #[test]

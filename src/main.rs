@@ -1,7 +1,7 @@
 mod tui;
 
 use astro::chart::{BirthInput, compute_chart, parse_time};
-use astro::{build_reading, emit, geo};
+use astro::{TranscriptSource, build_reading, emit, geo};
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -148,13 +148,17 @@ impl BirthArgs {
     }
 }
 
-fn transcribe_with_progress(
-    audio: &std::path::Path,
-    model: &std::path::Path,
-) -> Result<Vec<astro::transcribe::Segment>, String> {
+/// The CLI's one transcription-progress protocol: banner, then a percent
+/// line rewritten in place (finished with a newline at 100).
+fn transcription_banner(audio: &std::path::Path) {
     eprintln!("transcribing {} (this can take a while)…", audio.display());
-    astro::transcribe::transcribe(audio, model, |pct| eprint!("\r  {pct:>3}%"))
-        .inspect(|segments| eprintln!("\r  done — {} segments", segments.len()))
+}
+
+fn cli_progress(pct: i32) {
+    eprint!("\r  {pct:>3}%");
+    if pct >= 100 {
+        eprintln!();
+    }
 }
 
 fn print_places(places: &[&geo::Place]) {
@@ -181,21 +185,18 @@ fn run() -> Result<(), String> {
         }
         Some(Command::Build { birth, transcript, audio, model, out }) => {
             let input = birth.into_input()?;
-            let (chart, n_routed) = match (transcript, audio) {
-                (Some(path), _) => build_reading(&input, Some(&path))?,
-                (None, Some(audio)) => {
-                    eprintln!("transcribing {} (this can take a while)…", audio.display());
-                    let result = astro::build_reading_from_audio(
-                        &input,
-                        &audio,
-                        &model.expect("clap requires"),
-                        |pct| eprint!("\r  {pct:>3}%"),
-                    )?;
-                    eprintln!("\r  done");
-                    result
+            let source = match (transcript, audio) {
+                (Some(path), _) => TranscriptSource::File(path),
+                (None, Some(wav)) => {
+                    let Some(model) = model else {
+                        return Err("--audio requires --model".into());
+                    };
+                    transcription_banner(&wav);
+                    TranscriptSource::Audio { wav, model }
                 }
-                (None, None) => unreachable!("clap enforces transcript|audio"),
+                (None, None) => TranscriptSource::None, // clap prevents this
             };
+            let (chart, n_routed) = build_reading(&input, source, cli_progress)?;
             let html = emit::emit(&chart)?;
             std::fs::write(&out, &html).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
             eprintln!(
@@ -208,7 +209,9 @@ fn run() -> Result<(), String> {
             eprintln!("wrote {}", out.display());
         }
         Some(Command::Transcribe { audio, model, out }) => {
-            let segments = transcribe_with_progress(&audio, &model)?;
+            transcription_banner(&audio);
+            let segments = astro::transcribe::transcribe(&audio, &model, cli_progress)?;
+            eprintln!("\r  done — {} segments", segments.len());
             let jsonl = astro::transcribe::to_jsonl(&segments);
             match out {
                 Some(path) => {

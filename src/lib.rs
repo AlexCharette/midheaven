@@ -24,38 +24,40 @@ pub mod geo;
 pub mod route;
 pub mod transcribe;
 
-/// The whole pipeline in one call: compute the chart, then (when a transcript
-/// is given) route + verify its passages into `excerpts`. Returns the chart
-/// and the number of spans the router emitted before gating. This is the
-/// single entry point the CLI, the TUI, and tests share.
+/// Where a reading's transcript comes from. `Audio` encodes the
+/// "a recording needs a model" invariant in the type, so no frontend has to
+/// re-state it.
+pub enum TranscriptSource {
+    None,
+    /// A transcript file: plain text or timestamped JSONL.
+    File(std::path::PathBuf),
+    /// A WAV recording to transcribe with a ggml whisper model.
+    Audio { wav: std::path::PathBuf, model: std::path::PathBuf },
+}
+
+/// The whole pipeline in one call: obtain the transcript (reading a file, or
+/// transcribing audio while reporting whole-percent `progress`), compute the
+/// chart, route + verify passages into `excerpts`. Returns the chart and the
+/// number of spans the router emitted before gating. This is the single
+/// entry point the CLI, the TUI, and tests share.
 pub fn build_reading(
     input: &chart::BirthInput,
-    transcript: Option<&std::path::Path>,
+    source: TranscriptSource,
+    progress: impl FnMut(i32) + Send + 'static,
 ) -> Result<(contract::ChartData, usize), String> {
-    let transcript = match transcript {
-        Some(path) => {
-            let raw = std::fs::read_to_string(path)
+    let transcript = match source {
+        TranscriptSource::None => None,
+        TranscriptSource::File(path) => {
+            let raw = std::fs::read_to_string(&path)
                 .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
             Some(route::Transcript::load(&raw))
         }
-        None => None,
+        TranscriptSource::Audio { wav, model } => {
+            let segments = transcribe::transcribe(&wav, &model, progress)?;
+            Some(route::Transcript::from_segments(segments))
+        }
     };
     route_into_chart(input, transcript)
-}
-
-/// [`build_reading`] with the transcript coming from audio: transcribe the
-/// WAV with the given ggml model first (reporting whole-percent progress),
-/// then route as usual.
-pub fn build_reading_from_audio(
-    input: &chart::BirthInput,
-    audio: &std::path::Path,
-    model: &std::path::Path,
-    progress: impl FnMut(i32) + Send + 'static,
-) -> Result<(contract::ChartData, usize), String> {
-    let segments = transcribe::transcribe(audio, model, progress)?;
-    let transcript =
-        route::Transcript::from_segments(segments.into_iter().map(|s| (s.start, s.text)));
-    route_into_chart(input, Some(transcript))
 }
 
 fn route_into_chart(

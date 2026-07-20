@@ -7,13 +7,21 @@ pub use astro::contract::Mode;
 use astro::geo::Place;
 use std::collections::{BTreeSet, HashMap};
 
+/// A background build in flight — data, not prose; the view formats it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Job {
+    Computing,
+    /// Transcription with its whole-percent progress.
+    Transcribing(i32),
+}
+
 pub struct Model {
     pub screen: Screen,
     pub status: String,
     pub should_quit: bool,
-    /// A background build (transcription) is running; submits are blocked
-    /// and the status line carries its progress.
-    pub busy: bool,
+    /// The background build in flight, if any; further submits are refused
+    /// while one runs and the status line renders its progress.
+    pub job: Option<Job>,
 }
 
 impl Default for Model {
@@ -22,7 +30,7 @@ impl Default for Model {
             screen: Screen::Form(Form::default()),
             status: String::new(),
             should_quit: false,
-            busy: false,
+            job: None,
         }
     }
 }
