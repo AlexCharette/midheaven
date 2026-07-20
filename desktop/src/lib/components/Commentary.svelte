@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { correctExcerpt, mergeUp } from "$lib/api";
+  import { addExcerpt, correctExcerpt, mergeUp } from "$lib/api";
+  import { SvelteSet } from "svelte/reactivity";
   import type { ChartData, Excerpt } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
   import { app, selected, toggle } from "$lib/state.svelte";
@@ -50,6 +51,38 @@
       e.preventDefault();
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       saveAmend();
+      e.preventDefault();
+    }
+  }
+
+  // ---- manual passage composer ----
+  let composing = $state(false);
+  let draftText = $state("");
+  const draftTags = new SvelteSet<string>();
+
+  function openComposer() {
+    composing = true;
+    draftText = "";
+    draftTags.clear();
+  }
+
+  async function fileIt() {
+    if (!draftText.trim()) return;
+    composing = false;
+    try {
+      app.chart = await addExcerpt(draftText, [...draftTags]);
+      app.status = "passage added";
+    } catch (e) {
+      app.status = `✗ ${e}`;
+    }
+  }
+
+  function composerKeys(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      composing = false;
+      e.preventDefault();
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      fileIt();
       e.preventDefault();
     }
   }
@@ -106,6 +139,43 @@
     </div>
   </article>
 {/each}
+
+{#if curatable}
+  <div class="composer">
+    {#if composing}
+      <!-- svelte-ignore a11y_autofocus -->
+      <textarea
+        class="compose-box"
+        bind:value={draftText}
+        rows={Math.max(2, Math.ceil(draftText.length / 70))}
+        autofocus
+        placeholder="a passage in the astrologer's words…"
+        onkeydown={composerKeys}
+      ></textarea>
+      <div class="tag-row">
+        {#each elementsOf(chart) as el (el.tag)}
+          <button
+            class="ref"
+            aria-pressed={draftTags.has(el.tag)}
+            onclick={() => (draftTags.has(el.tag) ? draftTags.delete(el.tag) : draftTags.add(el.tag))}
+          >
+            <span class="g g-{catOf(el.tag)}">{textGlyph(el.glyph)}</span>
+            <span class="nm">{el.name}</span>
+          </button>
+        {/each}
+      </div>
+      <div class="composer-actions">
+        <span class="apparatus-text">
+          {draftTags.size === 0 ? "no tags picked — the router will file it from the words" : `${draftTags.size} tags picked`}
+        </span>
+        <button class="ghost" onclick={() => (composing = false)}>discard</button>
+        <button class="frame-btn" onclick={fileIt} disabled={!draftText.trim()}>file it</button>
+      </div>
+    {:else}
+      <button class="ghost open-composer" onclick={openComposer}>✎ add a passage</button>
+    {/if}
+  </div>
+{/if}
 
 <style>
   .passage {
@@ -169,6 +239,49 @@
   .amend-box:focus {
     outline: none;
     border-bottom-color: var(--brass);
+  }
+  .composer {
+    margin-top: 1rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--line);
+  }
+  .open-composer {
+    display: block;
+    margin: 0 auto;
+    font-size: 0.88rem;
+  }
+  .compose-box {
+    width: 100%;
+    font: inherit;
+    font-size: 1.04rem;
+    line-height: 1.75;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--hairline);
+    resize: vertical;
+    max-width: 62ch;
+    padding: 0;
+  }
+  .compose-box:focus {
+    outline: none;
+    border-bottom-color: var(--brass);
+  }
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.8rem;
+    margin: 0.6rem 0;
+    font-size: 0.85rem;
+  }
+  .composer-actions {
+    display: flex;
+    align-items: baseline;
+    gap: 1.2rem;
+    font-size: 0.88rem;
+  }
+  .composer-actions .apparatus-text {
+    margin-right: auto;
   }
   blockquote {
     margin: 0;

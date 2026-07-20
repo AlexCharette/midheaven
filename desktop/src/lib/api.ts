@@ -24,3 +24,6 @@ export const mergeUp = (id: string) => invoke<ChartData>("merge_up", { id });
 
 export const correctExcerpt = (id: string, text: string) =>
   invoke<ChartData>("correct_excerpt", { id, text });
+
+export const addExcerpt = (text: string, tags: string[]) =>
+  invoke<ChartData>("add_excerpt", { text, tags });

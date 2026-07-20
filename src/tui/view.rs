@@ -42,7 +42,7 @@ fn view_form(form: &Form, area: Rect, frame: &mut Frame) {
         Line::from(Span::styled("✶", theme::ink2())).alignment(Alignment::Center),
         Line::from(Span::styled("The Nativity Desk", theme::apparatus())).alignment(Alignment::Center),
         Line::from(Span::styled(
-            theme::letterspace("ASTRO"),
+            theme::letterspace("MIDHEAVEN"),
             Style::new().fg(theme::INK).add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
@@ -356,7 +356,7 @@ mod tests {
     fn form_screen_renders() {
         let model = Model::default();
         let text = render_to_text(&model, 100, 32);
-        assert!(text.contains("A S T R O"));
+        assert!(text.contains("M I D H E A V E N"));
         assert!(text.contains("born on"));
         assert!(text.contains("☞"));
         println!("{text}");

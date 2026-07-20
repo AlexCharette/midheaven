@@ -220,6 +220,52 @@ fn correct_excerpt(
     Ok(chart.clone())
 }
 
+/// Author a passage by hand. Hand-picked tags must exist in the chart's
+/// vocabulary (the verify gate's spirit); with none picked, the router files
+/// it from the words — and a passage it can't file stays untagged, visible
+/// whenever no filter is active.
+fn add_in(chart: &mut ChartData, text: &str, tags: Vec<String>) -> Result<(), String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("a passage needs words".to_string());
+    }
+    let vocab = chart.vocab();
+    if let Some(bad) = tags.iter().find(|t| !vocab.contains(*t)) {
+        return Err(format!("unknown tag {bad}"));
+    }
+    let mut tags = if tags.is_empty() { retag(chart, text) } else { tags };
+    tags.sort();
+    tags.dedup();
+    // merges leave id gaps, so continue from the highest existing number
+    let next = chart
+        .excerpts
+        .iter()
+        .filter_map(|e| e.id.strip_prefix('x').and_then(|n| n.parse::<usize>().ok()))
+        .max()
+        .unwrap_or(0)
+        + 1;
+    chart.excerpts.push(Excerpt {
+        id: format!("x{next}"),
+        time: String::new(),
+        span: [0, 0], // authored, not anchored to a transcript
+        text: text.to_string(),
+        tags,
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn add_excerpt(
+    state: State<'_, AppState>,
+    text: String,
+    tags: Vec<String>,
+) -> Result<ChartData, String> {
+    let mut guard = state.0.lock().unwrap();
+    let chart = guard.chart.as_mut().ok_or("no chart has been built yet")?;
+    add_in(chart, &text, tags)?;
+    Ok(chart.clone())
+}
+
 // async: rendering + disk write stay off the main thread
 #[tauri::command]
 async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<String, String> {
@@ -247,7 +293,8 @@ pub fn run() {
             start_recording,
             stop_recording,
             merge_up,
-            correct_excerpt
+            correct_excerpt,
+            add_excerpt
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -308,6 +355,31 @@ mod tests {
         assert_eq!(ex.text, "Your sun is in cancer.");
         assert!(ex.tags.contains(&"planet:sun".to_string()), "tags: {:?}", ex.tags);
         assert!(ex.tags.contains(&"sign:cancer".to_string()));
+    }
+
+    #[test]
+    fn added_passage_validates_tags_and_continues_ids_past_gaps() {
+        let mut chart = chart_fixture();
+        // merged lists leave gaps: x1, x5
+        chart.excerpts = vec![
+            ex("x1", "First.", &["planet:sun"]),
+            ex("x5", "Fifth.", &["planet:moon"]),
+        ];
+        assert!(add_in(&mut chart, "Note.", vec!["planet:vulcan".into()]).is_err());
+        add_in(&mut chart, "A note on the moon.", vec!["planet:moon".into()]).unwrap();
+        let added = chart.excerpts.last().unwrap();
+        assert_eq!(added.id, "x6");
+        assert_eq!(added.tags, vec!["planet:moon"]);
+        assert!(add_in(&mut chart, "   ", vec![]).is_err());
+    }
+
+    #[test]
+    fn added_passage_without_tags_is_filed_by_the_router() {
+        let mut chart = chart_fixture();
+        add_in(&mut chart, "The sun rules this whole chart.", vec![]).unwrap();
+        let added = chart.excerpts.last().unwrap();
+        assert!(added.tags.contains(&"planet:sun".to_string()), "tags: {:?}", added.tags);
+        assert_eq!(added.span, [0, 0]);
     }
 
     #[test]
