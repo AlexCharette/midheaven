@@ -1,0 +1,107 @@
+/* The engraved star-atlas system, ported from templates/reading.html.
+   That template remains the artifact's source of truth; this file mirrors
+   its tokens for the live app. */
+
+:root {
+  --bg: #131735;
+  --bg-deep: #0d1026;
+  --ink: #e9e4d3;
+  --ink-2: #bcb6a0;
+  --ink-3: #9a957f;
+  --line: rgba(233, 228, 211, 0.16);
+  --hairline: rgba(233, 228, 211, 0.3);
+  /* Category palette — CVD-validated against the dark surface. */
+  --brass: #c49a30;
+  --verdigris: #35ab7c;
+  --steel: #7ba0e0;
+  --oxblood: #c05468;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+body {
+  background:
+    radial-gradient(1px 1px at 12% 22%, rgba(233, 228, 211, 0.32) 50%, transparent 51%),
+    radial-gradient(1px 1px at 78% 12%, rgba(233, 228, 211, 0.26) 50%, transparent 51%),
+    radial-gradient(1.4px 1.4px at 62% 74%, rgba(233, 228, 211, 0.2) 50%, transparent 51%),
+    radial-gradient(1px 1px at 32% 86%, rgba(233, 228, 211, 0.28) 50%, transparent 51%),
+    radial-gradient(1px 1px at 90% 55%, rgba(233, 228, 211, 0.22) 50%, transparent 51%),
+    radial-gradient(ellipse at 50% -20%, #1b2049 0%, var(--bg) 55%, var(--bg-deep) 100%);
+  color: var(--ink);
+  font-family: Baskerville, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  line-height: 1.6;
+  user-select: none;
+  cursor: default;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 1px dashed var(--hairline);
+  outline-offset: 3px;
+}
+input {
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  padding: 0.1rem 0;
+}
+input:focus {
+  border-bottom-color: var(--hairline);
+}
+input::placeholder {
+  color: var(--ink-3);
+  font-style: italic;
+  opacity: 1;
+}
+
+/* rubrics: letterspaced small heads flanked by rules */
+.rubric {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.85rem;
+  font-variant: small-caps;
+  letter-spacing: 0.28em;
+  color: var(--ink-2);
+  margin: 0 0 1.1rem;
+}
+.rubric::before,
+.rubric::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+.apparatus-text {
+  font-style: italic;
+  color: var(--ink-3);
+}
+
+/* category ink for glyphs */
+.g-planet {
+  color: var(--brass);
+}
+.g-sign {
+  color: var(--verdigris);
+}
+.g-house {
+  color: var(--steel);
+}
+.g-aspect {
+  color: var(--oxblood);
+}

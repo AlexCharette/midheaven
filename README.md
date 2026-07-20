@@ -61,6 +61,24 @@ decoding is deliberately excluded because the pure-Rust option is MPL-2.0
 (copyleft, banned by the brief). Building the crate needs `cmake` and a C++
 toolchain (whisper.cpp is compiled in).
 
+### Desktop app (Tauri + SvelteKit)
+
+```sh
+cd desktop && npm install && npm run tauri dev    # develop
+cd desktop && npm run tauri build                 # installable bundle
+```
+
+The same lib behind a webview: birth form with gazetteer typeahead and
+native file dialogs, live SVG wheel, index + commentary filtering, background
+transcription with a progress bar, and "engrave the artifact" writing the
+standalone HTML. Everything computes in the native Tauri process — the
+webview only renders.
+
+Added prerequisites for this target only: Node, and on Linux the
+webkit2gtk/Tauri system packages (Windows uses the preinstalled WebView2).
+This is the dependency-heavy target by design — the CLI/TUI binary remains
+the zero-runtime-dependency path.
+
 ### Scripting (CLI)
 
 ```sh

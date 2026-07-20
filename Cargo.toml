@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "desktop/src-tauri"]
+
 [package]
 name = "astro"
 version = "0.1.0"
