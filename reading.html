@@ -550,10 +550,10 @@ const DATA = {"meta":{"name":"Sample Chart","born":"1990-07-13 14:30 (Europe/Ber
     makeEntry(bandA, a.id, 'aspect', a.glyph, `${shortName(a.a)} – ${shortName(a.b)}`, '', a.name));
 
   // Relevance rule (canonical home — the desktop IndexOfElements mirrors it):
-  // a sign/house entry is visible when referenced by an excerpt, OR selected
-  // (an active filter must never hide itself), OR its column is expanded.
-  // No excerpts at all → show everything.
-  const referenced = new Set(DATA.excerpts.flatMap(e => e.tags));
+  // a sign/house entry is visible when OCCUPIED (some body stands in it),
+  // OR selected (an active filter must never hide itself), OR its column is
+  // expanded. The Ascendant point counts as a body.
+  const occupied = new Set(DATA.planets.flatMap(p => [signAt(p.lon).id, 'house:' + p.house]));
   const expanded = { sign: false, house: false };
   const expanders = {};
   for (const [cat, band] of [['sign', bandS], ['house', bandH]]) {
@@ -567,15 +567,11 @@ const DATA = {"meta":{"name":"Sample Chart","born":"1990-07-13 14:30 (Europe/Ber
     expanders[cat] = b;
   }
   const syncRelevance = () => {
-    if (DATA.excerpts.length === 0) {
-      expanders.sign.style.display = expanders.house.style.display = 'none';
-      return;
-    }
     const hidden = { sign: 0, house: 0 };
     for (const e of entries) {
       const cat = e.dataset.cat;
       if (cat !== 'sign' && cat !== 'house') continue;
-      const show = expanded[cat] || referenced.has(e.dataset.tag) || selected.has(e.dataset.tag);
+      const show = expanded[cat] || occupied.has(e.dataset.tag) || selected.has(e.dataset.tag);
       e.style.display = show ? '' : 'none';
       if (!show) hidden[cat] += 1;
     }

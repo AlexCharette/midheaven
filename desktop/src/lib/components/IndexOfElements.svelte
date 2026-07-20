@@ -8,9 +8,12 @@
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
 
   // Relevance rule (canonical prose lives in templates/reading.html beside
-  // syncRelevance; keep the two in step): visible = referenced ∪ selected ∪
-  // expanded — a selected filter must never hide itself.
-  const referenced = $derived(new Set(chart.excerpts.flatMap((ex) => ex.tags)));
+  // syncRelevance; keep the two in step): visible = occupied ∪ selected ∪
+  // expanded — occupancy means a body stands in the sign/house, and a
+  // selected filter must never hide itself.
+  const occupied = $derived(
+    new Set(chart.planets.flatMap((p) => [signAt(chart, p.lon).id, `house:${p.house}`])),
+  );
   let expanded = $state<Record<string, boolean>>({ signs: false, houses: false });
 
   interface Entry {
@@ -64,9 +67,9 @@
 <h2 class="rubric">Index of Elements</h2>
 <div class="index">
   {#each columns as col (col.head)}
-    {@const filtering = col.filterable && chart.excerpts.length > 0 && !expanded[col.head]}
+    {@const filtering = col.filterable && !expanded[col.head]}
     {@const shown = filtering
-      ? col.entries.filter((e) => referenced.has(e.tag) || selected.has(e.tag))
+      ? col.entries.filter((e) => occupied.has(e.tag) || selected.has(e.tag))
       : col.entries}
     {@const hidden = col.entries.length - shown.length}
     <div>
