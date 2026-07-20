@@ -54,11 +54,19 @@
     }),
   );
 
+  // element washes (canonical treatment lives in templates/reading.html)
+  const ELEMENTS = ["fire", "earth", "air", "water"] as const;
   const signBands = $derived(
     chart.signs.map((s, i) => {
       const lon = i * 30;
       const [gx, gy] = pt(lon + 15, 325);
-      return { s, d: sector(lon, lon + 30, R.signIn, R.bandOut), gx, gy, shaded: i % 2 === 0 };
+      return {
+        s,
+        d: sector(lon, lon + 30, R.signIn, R.bandOut),
+        gx,
+        gy,
+        element: ELEMENTS[i % 4],
+      };
     }),
   );
 
@@ -133,7 +141,7 @@
   <circle cx={CX} cy={CY} r="3" class="engrave-strong" />
 
   {#each signBands as band (band.s.id)}
-    {#if band.shaded}<path d={band.d} class="band-shade" />{/if}
+    <path d={band.d} class="wash wash-{band.element}" />
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <path
       d={band.d}
@@ -141,9 +149,9 @@
       class:sel={selected.has(band.s.id)}
       role="button"
       tabindex="-1"
-      aria-label={band.s.name}
+      aria-label="{band.s.name} — {band.element}"
       onclick={() => toggle(band.s.id)}
-    ><title>{band.s.name}</title></path>
+    ><title>{band.s.name} — {band.element}</title></path>
     <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
       >{textGlyph(band.s.glyph)}</text
     >
@@ -213,9 +221,21 @@
   .grad {
     stroke: var(--line);
   }
-  .band-shade {
-    fill: rgba(233, 228, 211, 0.035);
+  /* element washes — hand-tinted plates; whisper, never shout */
+  .wash {
     pointer-events: none;
+  }
+  .wash-fire {
+    fill: rgba(196, 87, 58, 0.1);
+  }
+  .wash-earth {
+    fill: rgba(164, 130, 61, 0.14);
+  }
+  .wash-air {
+    fill: rgba(196, 183, 121, 0.12);
+  }
+  .wash-water {
+    fill: rgba(95, 143, 201, 0.1);
   }
   .hub-ray {
     stroke: var(--line);

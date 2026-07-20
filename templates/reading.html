@@ -86,7 +86,12 @@
   #wheel .engrave { stroke: var(--line); fill: none; }
   #wheel .engrave-strong { stroke: var(--hairline); fill: none; }
   #wheel .grad { stroke: var(--line); }
-  #wheel .band-shade { fill: rgba(233, 228, 211, 0.035); pointer-events: none; }
+  /* element washes — hand-tinted plates; whisper, never shout */
+  #wheel .wash { pointer-events: none; }
+  #wheel .wash-fire  { fill: rgba(196, 87, 58, 0.10); }
+  #wheel .wash-earth { fill: rgba(164, 130, 61, 0.14); }
+  #wheel .wash-air   { fill: rgba(196, 183, 121, 0.12); }
+  #wheel .wash-water { fill: rgba(95, 143, 201, 0.10); }
   #wheel .hub-ray { stroke: var(--line); }
 
   #wheel .sign-band { fill: transparent; stroke: var(--line); cursor: pointer; }
@@ -420,19 +425,19 @@ const DATA = /*__DATA__*/null;
   }
   el('circle', { cx: CX, cy: CY, r: 3, class: 'engrave-strong' }, hub);
 
-  // sign bands (identity: verdigris), alternating engraved shading
+  // sign bands (identity: verdigris) over per-element washes
+  const ELEMENTS = ['fire', 'earth', 'air', 'water'];
   const bands = el('g', { class: 'fade-mid' }, wheel);
   DATA.signs.forEach((s, i) => {
     const lon = i * 30;
     const d = sector(lon, lon + 30, R.signIn, R.bandOut);
-    if (i % 2 === 0) {
-      el('path', { d, class: 'band-shade' }, bands);
-    }
+    const element = ELEMENTS[i % 4];
+    el('path', { d, class: `wash wash-${element}` }, bands);
     const band = el('path', {
       d,
       class: 'sign-band', 'data-tag': s.id,
     }, bands);
-    svgTitle(band, s.name);
+    svgTitle(band, `${s.name} — ${element}`);
     band.addEventListener('click', () => toggle(s.id));
     taggable.push(band);
     const [gx, gy] = pt(lon + 15, 325);
