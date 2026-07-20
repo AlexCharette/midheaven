@@ -9,25 +9,33 @@
 //! keystroke; the CLI calls `resolve` on top of it.
 
 use chrono_tz::Tz;
+use std::collections::HashMap;
 use std::io::Read;
 use std::sync::OnceLock;
 
 static PLACES_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/places.tsv.gz"));
 
+/// One gazetteer row. Owned strings are kept to a minimum: `admin1`,
+/// `country`, and `cc` repeat across thousands of rows and are interned
+/// (see [`Interner`]); the lowercase display name is stored only for the
+/// minority of names where it differs from the folded ascii form.
 pub struct Place {
     pub id: u32,
     pub name: String,
-    pub admin1: String,
-    pub country: String,
-    pub cc: String,
+    pub admin1: &'static str,
+    pub country: &'static str,
+    pub cc: &'static str,
     pub lat: f64,
     pub lon: f64,
     pub pop: u64,
     pub tz: Tz,
-    name_lower: String,
+    /// Lowercased asciiname — the primary match key.
     ascii_lower: String,
-    admin1_lower: String,
-    country_lower: String,
+    /// Lowercased `name`, only when it differs from `ascii_lower`
+    /// (e.g. "münchen" vs "munchen").
+    name_lower: Option<String>,
+    admin1_lower: &'static str,
+    country_lower: &'static str,
 }
 
 impl Place {
@@ -47,7 +55,35 @@ impl Place {
 
     /// The exact-name predicate shared by `search`'s top tier and `resolve`.
     fn name_is(&self, city: &str) -> bool {
-        self.name_lower == city || self.ascii_lower == city
+        self.ascii_lower == city || self.name_lower.as_deref() == Some(city)
+    }
+
+    fn name_starts_with(&self, city: &str) -> bool {
+        self.ascii_lower.starts_with(city)
+            || self.name_lower.as_deref().is_some_and(|n| n.starts_with(city))
+    }
+
+    fn name_contains(&self, city: &str) -> bool {
+        self.ascii_lower.contains(city)
+            || self.name_lower.as_deref().is_some_and(|n| n.contains(city))
+    }
+}
+
+/// Deduplicates the handful of distinct admin/country strings across ~235k
+/// rows, handing out `&'static str`s. Leaking is fine: the gazetteer itself
+/// lives for the process (`OnceLock`), and distinct values number in the
+/// low thousands.
+#[derive(Default)]
+struct Interner(HashMap<String, &'static str>);
+
+impl Interner {
+    fn get(&mut self, s: &str) -> &'static str {
+        if let Some(&v) = self.0.get(s) {
+            return v;
+        }
+        let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
+        self.0.insert(s.to_string(), leaked);
+        leaked
     }
 }
 
@@ -65,6 +101,7 @@ fn raw_tsv() -> String {
 fn places() -> &'static [Place] {
     static PLACES: OnceLock<Vec<Place>> = OnceLock::new();
     PLACES.get_or_init(|| {
+        let mut intern = Interner::default();
         raw_tsv()
             .lines()
             .filter_map(|l| {
@@ -73,18 +110,20 @@ fn places() -> &'static [Place] {
                     return None;
                 }
                 let name = f[1].to_string();
+                let ascii_lower = f[2].to_lowercase();
+                let name_lower = Some(name.to_lowercase()).filter(|n| *n != ascii_lower);
                 Some(Place {
                     id: f[0].parse().ok()?,
-                    name_lower: name.to_lowercase(),
-                    ascii_lower: f[2].to_lowercase(),
+                    ascii_lower,
+                    name_lower,
                     name,
                     lat: f[3].parse().ok()?,
                     lon: f[4].parse().ok()?,
-                    admin1_lower: f[5].to_lowercase(),
-                    admin1: f[5].to_string(),
-                    country_lower: f[6].to_lowercase(),
-                    country: f[6].to_string(),
-                    cc: f[7].to_string(),
+                    admin1_lower: intern.get(&f[5].to_lowercase()),
+                    admin1: intern.get(f[5]),
+                    country_lower: intern.get(&f[6].to_lowercase()),
+                    country: intern.get(f[6]),
+                    cc: intern.get(f[7]),
                     pop: f[8].parse().ok()?,
                     tz: f[9].parse().ok()?,
                 })
@@ -124,13 +163,9 @@ pub fn search(query: &str, limit: usize) -> Vec<&'static Place> {
             if exact.len() >= limit {
                 break;
             }
-        } else if prefix.len() < limit
-            && (p.name_lower.starts_with(&city) || p.ascii_lower.starts_with(&city))
-        {
+        } else if prefix.len() < limit && p.name_starts_with(&city) {
             prefix.push(p);
-        } else if substr.len() < limit
-            && (p.name_lower.contains(&city) || p.ascii_lower.contains(&city))
-        {
+        } else if substr.len() < limit && p.name_contains(&city) {
             substr.push(p);
         }
     }
