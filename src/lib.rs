@@ -1,0 +1,22 @@
+//! Natal reading indexer — turn a recorded birth-chart reading into a single
+//! offline HTML artifact where the astrologer's *verbatim* words are filed
+//! under the chart elements they refer to.
+//!
+//! Four-stage pipeline (build brief: `docs/natal-reading-indexer.md`):
+//! 1. **Transcribe** — upstream of this crate (Parakeet-TDT + Silero VAD);
+//!    consumed as plain text or timestamped JSONL by [`route::Transcript`].
+//! 2. **Compute** — [`chart::compute_chart`]: birth data → tropical Whole Sign
+//!    chart, fully offline (analytic ephemeris, embedded gazetteer in [`geo`]).
+//! 3. **Route** — [`route`]: a [`route::Router`] tags verbatim spans with the
+//!    chart-derived vocabulary; [`route::verify_gate`] enforces provenance.
+//! 4. **Emit** — [`emit`]: inject the assembled [`contract::ChartData`] into
+//!    the self-contained HTML viewer.
+//!
+//! [`contract`] holds the `ChartData` types — the contract between stages; no
+//! stage owns it.
+
+pub mod chart;
+pub mod contract;
+pub mod emit;
+pub mod geo;
+pub mod route;

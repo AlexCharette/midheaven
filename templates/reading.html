@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Natal Reading</title>
+<style>
+  :root {
+    --bg: #131735;
+    --bg-deep: #0d1026;
+    --ink: #e9e4d3;
+    --ink-2: #bcb6a0;
+    --ink-3: #9a957f;
+    --line: rgba(233, 228, 211, 0.16);
+    --hairline: rgba(233, 228, 211, 0.30);
+    /* Category palette — CVD-validated against the dark surface (#131735). */
+    --brass: #c49a30;      /* planets */
+    --verdigris: #35ab7c;  /* signs */
+    --steel: #7ba0e0;      /* houses */
+    --oxblood: #c05468;    /* aspects */
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1px 1px at 12% 22%, rgba(233,228,211,.32) 50%, transparent 51%),
+      radial-gradient(1px 1px at 78% 12%, rgba(233,228,211,.26) 50%, transparent 51%),
+      radial-gradient(1.4px 1.4px at 62% 74%, rgba(233,228,211,.20) 50%, transparent 51%),
+      radial-gradient(1px 1px at 32% 86%, rgba(233,228,211,.28) 50%, transparent 51%),
+      radial-gradient(1px 1px at 90% 55%, rgba(233,228,211,.22) 50%, transparent 51%),
+      radial-gradient(1px 1px at 45% 40%, rgba(233,228,211,.18) 50%, transparent 51%),
+      radial-gradient(ellipse at 50% -20%, #1b2049 0%, var(--bg) 55%, var(--bg-deep) 100%);
+    color: var(--ink);
+    font-family: Baskerville, 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+  button:focus-visible { outline: 1px dashed var(--hairline); outline-offset: 3px; }
+  .sheet { max-width: 1320px; margin: 0 auto; padding: clamp(2rem, 5vw, 4rem) clamp(1.2rem, 3vw, 2.6rem) 5rem; }
+
+  /* ---- title plate ---- */
+  .titleplate { text-align: center; }
+  .titleplate .ornament { display: block; margin: 0 auto .9rem; opacity: .75; }
+  .titleplate .overline { font-style: italic; font-size: 1.05rem; color: var(--ink-2); margin: 0; }
+  .titleplate h1 {
+    font-weight: 400; text-transform: uppercase; text-wrap: balance;
+    font-size: clamp(1.7rem, 4vw, 2.7rem); letter-spacing: .17em;
+    margin: .35rem 0 .6rem; text-indent: .17em; /* optically recenter tracked caps */
+  }
+  .titleplate .details { font-style: italic; color: var(--ink-2); font-size: 1rem; margin: 0; }
+  .titleplate .note {
+    max-width: 58ch; margin: 1rem auto 0; font-style: italic;
+    font-size: .9rem; color: var(--ink-3); text-wrap: pretty;
+  }
+  .double-rule {
+    height: 8px; margin: 1.6rem auto 0; max-width: 430px;
+    border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--line);
+  }
+
+  /* ---- layout ---- */
+  .layout {
+    display: grid; grid-template-columns: minmax(350px, 47%) 1fr;
+    gap: clamp(1.8rem, 4vw, 3.4rem); margin-top: clamp(1.8rem, 4vw, 3rem);
+  }
+  @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
+
+  /* ---- the plate (figure) ---- */
+  .plate { margin: 0; position: sticky; top: 1.2rem; align-self: start; }
+  @media (max-width: 960px) { .plate { position: static; } }
+  .plate-frame {
+    border: 1px solid var(--hairline);
+    outline: 1px solid var(--line); outline-offset: 5px;
+    padding: clamp(.4rem, 1.5vw, 1rem); margin: 6px;
+    background: radial-gradient(ellipse at 50% 42%, rgba(27,32,73,.6) 0%, transparent 70%);
+  }
+  svg#wheel { width: 100%; height: auto; display: block; }
+  figcaption {
+    margin-top: .9rem; text-align: center; font-size: .88rem;
+    color: var(--ink-3); font-style: italic; text-wrap: pretty; padding: 0 .5rem;
+  }
+  figcaption .fig { font-style: normal; font-variant: small-caps; letter-spacing: .08em; color: var(--ink-2); }
+
+  /* ---- SVG engraving ---- */
+  #wheel text { font-family: inherit; fill: var(--ink-2); }
+  #wheel .engrave { stroke: var(--line); fill: none; }
+  #wheel .engrave-strong { stroke: var(--hairline); fill: none; }
+  #wheel .grad { stroke: var(--line); }
+  #wheel .band-shade { fill: rgba(233, 228, 211, 0.035); pointer-events: none; }
+  #wheel .hub-ray { stroke: var(--line); }
+
+  #wheel .sign-band { fill: transparent; stroke: var(--line); cursor: pointer; }
+  #wheel .sign-band:hover { fill: rgba(53, 171, 124, 0.10); }
+  #wheel .sign-band.sel { fill: rgba(53, 171, 124, 0.22); stroke: var(--verdigris); }
+  #wheel .sign-glyph { fill: var(--verdigris); font-size: 21px; pointer-events: none; }
+
+  #wheel .house-wedge { fill: transparent; cursor: pointer; }
+  #wheel .house-wedge:hover { fill: rgba(123, 160, 224, 0.08); }
+  #wheel .house-wedge.sel { fill: rgba(123, 160, 224, 0.18); }
+  #wheel .house-label { fill: var(--steel); font-size: 13px; letter-spacing: .08em; pointer-events: none; }
+  #wheel .cusp-spoke { stroke: var(--line); }
+
+  #wheel .axis { stroke: var(--hairline); stroke-width: 1.6; }
+  #wheel .axis-label { fill: var(--ink-3); font-size: 12px; letter-spacing: .1em; }
+
+  #wheel .planet { cursor: pointer; }
+  #wheel .planet .glyph { fill: var(--brass); font-size: 22px; }
+  #wheel .planet .deg { fill: var(--ink-3); font-size: 9.5px; letter-spacing: .04em; }
+  #wheel .planet .tick { stroke: var(--brass); stroke-width: 1.2; }
+  #wheel .planet .halo { fill: transparent; stroke: transparent; }
+  #wheel .planet:hover .halo { stroke: rgba(196, 154, 48, 0.5); }
+  #wheel .planet.sel .halo { fill: rgba(196, 154, 48, 0.16); stroke: var(--brass); }
+
+  #wheel .chord { stroke: var(--oxblood); stroke-width: 1.4; opacity: .6; fill: none; }
+  #wheel .chord-hit { stroke: transparent; stroke-width: 11; fill: none; cursor: pointer; }
+  #wheel g.aspect:hover .chord { opacity: 1; stroke-width: 2.2; }
+  #wheel g.aspect.sel .chord { opacity: 1; stroke-width: 3; }
+
+  /* ---- rubrics (section heads, flanked by rules) ---- */
+  .rubric {
+    display: flex; align-items: center; gap: 1rem;
+    font-size: .85rem; font-weight: 400; margin: 0 0 1.1rem;
+    font-variant: small-caps; letter-spacing: .28em; color: var(--ink-2);
+  }
+  .rubric::before, .rubric::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+
+  /* ---- collapsible index ---- */
+  summary.rubric { cursor: pointer; list-style: none; }
+  summary.rubric::-webkit-details-marker { display: none; }
+  summary.rubric .caret {
+    flex: none; color: var(--ink-3); font-size: .8em;
+    transition: transform .25s cubic-bezier(.16, 1, .3, 1);
+  }
+  .index-fold[open] summary.rubric .caret { transform: rotate(90deg); }
+  .index-fold[open] .index { animation: fade-in .4s ease-out both; }
+  @media (prefers-reduced-motion: reduce) {
+    summary.rubric .caret { transition: none; }
+    .index-fold[open] .index { animation: none; }
+  }
+
+  /* ---- index of elements ---- */
+  .index {
+    display: grid; grid-template-columns: 1.05fr .95fr .9fr 1.45fr;
+    gap: .4rem 1.6rem; margin-bottom: 1.6rem;
+  }
+  @media (max-width: 1180px) { .index { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 460px) { .index { grid-template-columns: 1fr; } }
+  .index h3 {
+    font-weight: 400; font-style: italic; font-size: .98rem;
+    color: var(--ink-3); margin: 0 0 .35rem; padding-bottom: .25rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .entry {
+    position: relative; display: flex; align-items: baseline; gap: .45em;
+    width: 100%; text-align: left; padding: .12rem 0 .12rem 1.15em;
+    font-size: .92rem; color: var(--ink);
+  }
+  .entry::before {
+    content: "☞\FE0E"; position: absolute; left: 0; top: .12rem;
+    color: var(--ink-2); opacity: 0; font-size: .9em;
+  }
+  .entry[aria-pressed="true"]::before { opacity: 1; }
+  .entry .g { flex: none; width: 1.25em; text-align: center; }
+  .entry[data-cat="planet"] .g { color: var(--brass); }
+  .entry[data-cat="sign"]   .g { color: var(--verdigris); }
+  .entry[data-cat="house"]  .g { color: var(--steel); font-size: .8em; letter-spacing: .06em; width: 2.6em; text-align: right; }
+  .entry[data-cat="aspect"] .g { color: var(--oxblood); }
+  .entry[data-cat="aspect"] { font-size: .88rem; }
+  .entry[data-cat="aspect"] .nm { white-space: nowrap; }
+  .entry .nm { border-bottom: 1px solid transparent; }
+  .entry:hover .nm { border-bottom-color: var(--hairline); }
+  .entry[aria-pressed="true"] .nm { border-bottom-color: var(--ink-2); }
+  .entry .lead { flex: 1; border-bottom: 1px dotted var(--line); transform: translateY(-.28em); min-width: .6em; }
+  .entry .dt { flex: none; color: var(--ink-3); font-size: .85em; font-variant-numeric: tabular-nums; }
+
+  /* ---- apparatus row ---- */
+  .apparatus {
+    display: flex; align-items: baseline; gap: .9rem; flex-wrap: wrap;
+    padding: .7rem 0; margin-bottom: 1.6rem;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    font-size: .9rem;
+  }
+  .apparatus .lbl { font-style: italic; color: var(--ink-3); }
+  .segmented { display: inline-flex; border: 1px solid var(--hairline); }
+  .segmented button {
+    padding: .12rem .8rem; color: var(--ink-2); font-variant: small-caps; letter-spacing: .1em;
+  }
+  .segmented button + button { border-left: 1px solid var(--hairline); }
+  .segmented button[aria-pressed="true"] { background: var(--ink); color: var(--bg-deep); }
+  #clear { font-style: italic; color: var(--ink-3); border-bottom: 1px solid transparent; }
+  #clear:hover { color: var(--ink); border-bottom-color: var(--hairline); }
+  .count { margin-left: auto; font-style: italic; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  /* ---- commentary passages ---- */
+  .passage {
+    display: grid; grid-template-columns: 5.2rem 1fr; gap: 0 1.3rem;
+    padding: 1.15rem 0;
+  }
+  .passage + .passage { border-top: 1px solid var(--line); }
+  .passage .folio {
+    color: var(--ink-3); font-size: .8rem; font-variant-numeric: tabular-nums;
+    letter-spacing: .06em; padding-top: .35rem; text-align: right;
+  }
+  .passage blockquote {
+    margin: 0; grid-column: 2; font-size: 1.04rem; line-height: 1.75;
+    max-width: 62ch; text-wrap: pretty; text-indent: -.45em; /* hanging quote */
+  }
+  .passage blockquote::before { content: "“"; color: var(--ink-3); }
+  .passage blockquote::after { content: "”"; color: var(--ink-3); }
+  .passage .refs {
+    grid-column: 2; margin-top: .45rem; font-size: .85rem; color: var(--ink-3); font-style: italic;
+  }
+  .ref { font-style: normal; color: var(--ink-2); white-space: nowrap; }
+  .ref .g { margin-right: .3em; }
+  .ref[data-cat="planet"] .g { color: var(--brass); }
+  .ref[data-cat="sign"]   .g { color: var(--verdigris); }
+  .ref[data-cat="house"]  .g { color: var(--steel); font-size: .85em; }
+  .ref[data-cat="aspect"] .g { color: var(--oxblood); }
+  .ref .nm { border-bottom: 1px dotted var(--line); }
+  .ref:hover .nm { border-bottom: 1px solid var(--hairline); color: var(--ink); }
+  .ref[aria-pressed="true"] .nm { border-bottom: 1px solid var(--ink-2); color: var(--ink); }
+  .sep { color: var(--ink-3); font-style: normal; }
+  .empty { color: var(--ink-3); font-style: italic; padding: 2.2rem 0; text-align: center; }
+  @media (max-width: 560px) {
+    .passage { grid-template-columns: 1fr; }
+    .passage .folio { text-align: left; padding: 0 0 .2rem; }
+    .passage blockquote, .passage .refs { grid-column: 1; }
+  }
+
+  /* ---- plate choreography (skipped under reduced motion) ---- */
+  @media (prefers-reduced-motion: no-preference) {
+    #wheel .ring-draw {
+      stroke-dasharray: 1; stroke-dashoffset: 1;
+      animation: ring-draw 1.5s cubic-bezier(.16, 1, .3, 1) both;
+    }
+    #wheel .fade-mid { animation: fade-in .9s ease-out .45s both; }
+    #wheel .planet { animation: fade-in .7s ease-out both; animation-delay: var(--d, .6s); }
+    #wheel g.aspect { animation: fade-in .9s ease-out 1s both; }
+    .titleplate > * { animation: settle .8s cubic-bezier(.16, 1, .3, 1) both; }
+    .titleplate > :nth-child(2) { animation-delay: .08s; }
+    .titleplate > :nth-child(3) { animation-delay: .16s; }
+    .titleplate > :nth-child(4) { animation-delay: .22s; }
+    .titleplate > :nth-child(5) { animation-delay: .28s; }
+    .titleplate > :nth-child(6) { animation-delay: .34s; }
+  }
+  @keyframes ring-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes settle { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+  /* ---- print: the keepsake goes to paper ---- */
+  @media print {
+    :root {
+      --bg: #fff; --bg-deep: #fff;
+      --ink: #1c1a14; --ink-2: #3d3a30; --ink-3: #5c5847;
+      --line: rgba(28, 26, 20, 0.25); --hairline: rgba(28, 26, 20, 0.5);
+      --brass: #7c5f14; --verdigris: #14724e; --steel: #2f568f; --oxblood: #7c2536;
+    }
+    body { background: #fff; }
+    .plate-frame { background: none; }
+    .plate { position: static; }
+    .apparatus { display: none; }
+    .passage { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header class="titleplate">
+    <svg class="ornament" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+      <g stroke="#bcb6a0" stroke-width="0.8" fill="none">
+        <path d="M22 2 L22 42 M2 22 L42 22"/>
+        <path d="M9 9 L35 35 M35 9 L9 35" opacity="0.55"/>
+        <circle cx="22" cy="22" r="3.2"/>
+        <circle cx="22" cy="22" r="7" opacity="0.4"/>
+      </g>
+    </svg>
+    <p class="overline">The Nativity of</p>
+    <h1 id="h-name"></h1>
+    <p class="details" id="h-details"></p>
+    <p class="note">
+      Every passage below is the astrologer's <em>verbatim</em> words, routed to the chart
+      elements it concerns — nothing is machine-written, and each span references the
+      original transcript. Select elements on the plate or in the index to filter.
+    </p>
+    <div class="double-rule"></div>
+  </header>
+
+  <main class="layout">
+    <figure class="plate">
+      <div class="plate-frame">
+        <svg id="wheel" viewBox="-28 -28 776 776" role="img"
+             aria-label="Natal chart wheel; the index of elements offers the same filters"></svg>
+      </div>
+      <figcaption id="plate-caption"></figcaption>
+    </figure>
+
+    <section>
+      <details class="index-fold" open>
+        <summary class="rubric"><span class="caret" aria-hidden="true">▸</span>Index of Elements</summary>
+        <div class="index">
+        <div><h3>planets</h3><div id="band-planets"></div></div>
+        <div><h3>signs</h3><div id="band-signs"></div></div>
+        <div><h3>houses</h3><div id="band-houses"></div></div>
+        <div><h3>aspects</h3><div id="band-aspects"></div></div>
+        </div>
+      </details>
+
+      <div class="apparatus">
+        <span class="lbl">passages touching</span>
+        <div class="segmented" role="group" aria-label="Match mode">
+          <button id="mode-any" aria-pressed="true" title="Passages touching any selected element">any</button>
+          <button id="mode-all" aria-pressed="false" title="Only passages touching every selected element">all</button>
+        </div>
+        <span class="lbl">of the selection ·</span>
+        <button id="clear">clear</button>
+        <span class="count" id="count"></span>
+      </div>
+
+      <h2 class="rubric">Commentary</h2>
+      <div id="excerpts"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+
+(function () {
+  if (!DATA) { document.body.innerHTML = '<p style="padding:2rem">No chart data embedded.</p>'; return; }
+
+  // ---------- state ----------
+  const selected = new Set();
+  let mode = 'any';
+
+  // ---------- helpers ----------
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const CX = 360, CY = 360;
+  const deg2rad = d => d * Math.PI / 180;
+  // ASC on the left; ecliptic longitude increases counterclockwise.
+  const angle = lon => Math.PI + deg2rad(lon - DATA.axes.asc);
+  const pt = (lon, r) => {
+    const a = angle(lon);
+    return [CX + r * Math.cos(a), CY - r * Math.sin(a)];
+  };
+  const esc = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // Force text presentation (U+FE0E) — astrological glyphs must engrave,
+  // not render as emoji. Harmless after non-emoji characters like "AC".
+  const textGlyph = g => g + '\ufe0e';
+  const el = (name, attrs, parent) => {
+    const n = document.createElementNS(svgNS, name);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+  const svgTitle = (parent, text) => {
+    const t = document.createElementNS(svgNS, 'title');
+    t.textContent = text; parent.appendChild(t);
+  };
+  const norm360 = x => ((x % 360) + 360) % 360;
+  const wholeDeg = lon => Math.floor(norm360(lon) % 30);
+  const glyphOf = x => x.glyph || x.label || '';
+  const signAt = lon => DATA.signs[Math.floor(norm360(lon) / 30)];
+  const fmtPos = lon => {
+    const within = lon % 30;
+    const d = Math.floor(within), m = Math.round((within - d) * 60);
+    return `${d}°${String(m).padStart(2, '0')}′ ${signAt(lon).name}`;
+  };
+  // Annular sector path between longitudes l1→l2 (ccw), radii r1<r2.
+  const sector = (l1, l2, r1, r2) => {
+    const [x1, y1] = pt(l1, r2), [x2, y2] = pt(l2, r2);
+    const [x3, y3] = pt(l2, r1), [x4, y4] = pt(l1, r1);
+    const sweep = norm360(l2 - l1);
+    const large = sweep > 180 ? 1 : 0;
+    // lon increases ccw on screen = sweep-flag 0 in SVG (y-down) arc terms.
+    return `M${x1} ${y1} A${r2} ${r2} 0 ${large} 0 ${x2} ${y2} L${x3} ${y3} A${r1} ${r1} 0 ${large} 1 ${x4} ${y4} Z`;
+  };
+
+  // ---------- title plate & caption ----------
+  const m = DATA.meta;
+  document.title = `${m.name} — Natal Reading`;
+  document.getElementById('h-name').textContent = m.name;
+  document.getElementById('h-details').textContent = `${m.born}${m.place ? ' · ' + m.place : ''}`;
+  document.getElementById('plate-caption').innerHTML =
+    `<span class="fig">Fig. I.</span> — The natal figure of ${esc(m.name)}, calculated for ` +
+    `${esc(m.born)}${m.place ? ', ' + esc(m.place) : ''}. ${esc(m.system)} houses upon the ${esc(m.zodiac.toLowerCase())} zodiac.`;
+
+  // ---------- wheel ----------
+  const wheel = document.getElementById('wheel');
+  const taggable = [];            // svg nodes carrying data-tag
+  const R = { outer: 348, bandOut: 344, signIn: 306, gradIn: 294, planet: 260, wedgeOut: 230, chord: 222, hub: 92, houseLbl: 112 };
+
+  // engraved concentric rings (pathLength lets CSS draw them in)
+  [R.outer, R.bandOut, R.signIn, R.gradIn, R.wedgeOut, R.hub, R.hub - 4].forEach((r, i) =>
+    el('circle', {
+      cx: CX, cy: CY, r, pathLength: 1,
+      class: (i < 2 ? 'engrave-strong' : 'engrave') + ' ring-draw',
+    }, wheel));
+
+  // graduation band: 1° / 5° / 10° ticks between gradIn and signIn
+  const grads = el('g', { class: 'fade-mid' }, wheel);
+  for (let d = 0; d < 360; d++) {
+    const len = d % 10 === 0 ? 12 : d % 5 === 0 ? 8 : 4.5;
+    const w = d % 10 === 0 ? 0.9 : d % 5 === 0 ? 0.7 : 0.45;
+    const [x1, y1] = pt(d, R.signIn), [x2, y2] = pt(d, R.signIn - len);
+    el('line', { x1, y1, x2, y2, class: 'grad', 'stroke-width': w }, grads);
+  }
+
+  // centre ornament: compass rays
+  const hub = el('g', { class: 'fade-mid' }, wheel);
+  for (let k = 0; k < 8; k++) {
+    const a = k * 45;
+    const len = k % 2 === 0 ? 22 : 13;
+    const [x1, y1] = pt(a, 5), [x2, y2] = pt(a, len);
+    el('line', { x1, y1, x2, y2, class: 'hub-ray' }, hub);
+  }
+  el('circle', { cx: CX, cy: CY, r: 3, class: 'engrave-strong' }, hub);
+
+  // sign bands (identity: verdigris), alternating engraved shading
+  const bands = el('g', { class: 'fade-mid' }, wheel);
+  DATA.signs.forEach((s, i) => {
+    const lon = i * 30;
+    const d = sector(lon, lon + 30, R.signIn, R.bandOut);
+    if (i % 2 === 0) {
+      el('path', { d, class: 'band-shade' }, bands);
+    }
+    const band = el('path', {
+      d,
+      class: 'sign-band', 'data-tag': s.id,
+    }, bands);
+    svgTitle(band, s.name);
+    band.addEventListener('click', () => toggle(s.id));
+    taggable.push(band);
+    const [gx, gy] = pt(lon + 15, 325);
+    el('text', {
+      x: gx, y: gy, class: 'sign-glyph', 'text-anchor': 'middle', 'dominant-baseline': 'central',
+    }, bands).textContent = textGlyph(s.glyph);
+  });
+
+  // house wedges + cusp spokes (identity: steel)
+  const houses = el('g', { class: 'fade-mid' }, wheel);
+  const cusps = DATA.houseCusps;
+  cusps.forEach((c, i) => {
+    const next = cusps[(i + 1) % 12];
+    const wedge = el('path', {
+      d: sector(c, next === c ? c + 30 : next, R.hub, R.wedgeOut),
+      class: 'house-wedge', 'data-tag': DATA.houses[i].id,
+    }, houses);
+    svgTitle(wedge, DATA.houses[i].name);
+    wedge.addEventListener('click', () => toggle(DATA.houses[i].id));
+    taggable.push(wedge);
+    const [x1, y1] = pt(c, R.hub), [x2, y2] = pt(c, R.gradIn);
+    el('line', { x1, y1, x2, y2, class: 'cusp-spoke' }, houses);
+    const sweep = norm360(next - c) || 30;
+    const [lx, ly] = pt(c + sweep / 2, R.houseLbl);
+    el('text', {
+      x: lx, y: ly, class: 'house-label', 'text-anchor': 'middle', 'dominant-baseline': 'central',
+    }, houses).textContent = DATA.houses[i].label;
+  });
+
+  // ASC/MC axes
+  [[DATA.axes.asc, 'AC'], [DATA.axes.mc, 'MC'],
+   [DATA.axes.asc + 180, 'DC'], [DATA.axes.mc + 180, 'IC']].forEach(([lon, label]) => {
+    const [x1, y1] = pt(lon, R.hub), [x2, y2] = pt(lon, R.outer);
+    el('line', { x1, y1, x2, y2, class: 'axis fade-mid' }, wheel);
+    const [tx, ty] = pt(lon, R.outer + 13);
+    el('text', {
+      x: tx, y: ty, class: 'axis-label fade-mid', 'text-anchor': 'middle', 'dominant-baseline': 'central',
+    }, wheel).textContent = label;
+  });
+
+  // aspect chords (identity: oxblood) — drawn before planets so glyphs sit on top
+  const planetLon = {};
+  DATA.planets.forEach(p => { planetLon[p.id] = p.lon; });
+  DATA.aspects.forEach(a => {
+    const g = el('g', { class: 'aspect', 'data-tag': a.id }, wheel);
+    const [x1, y1] = pt(planetLon[a.a], R.chord);
+    const [x2, y2] = pt(planetLon[a.b], R.chord);
+    el('line', { x1, y1, x2, y2, class: 'chord' }, g);
+    const hit = el('line', { x1, y1, x2, y2, class: 'chord-hit' }, g);
+    svgTitle(g, `${a.name} ${textGlyph(a.glyph)}`);
+    hit.addEventListener('click', () => toggle(a.id));
+    taggable.push(g);
+  });
+
+  // planets + Ascendant point (identity: brass), nudged inward on crowding
+  const byLon = [...DATA.planets].sort((a, b) => a.lon - b.lon);
+  let prevLon = null, prevR = null;
+  const radiusFor = lon => {
+    const crowded = prevLon !== null && Math.min(Math.abs(lon - prevLon), 360 - Math.abs(lon - prevLon)) < 8;
+    const r = crowded ? Math.max(prevR - 27, 176) : R.planet;
+    prevLon = lon; prevR = r;
+    return r;
+  };
+  byLon.forEach((p, i) => {
+    const r = radiusFor(p.lon);
+    const g = el('g', { class: 'planet', 'data-tag': p.id, style: `--d: ${(0.55 + i * 0.045).toFixed(3)}s` }, wheel);
+    const [x1, y1] = pt(p.lon, R.gradIn - 8), [x2, y2] = pt(p.lon, R.gradIn);
+    el('line', { x1, y1, x2, y2, class: 'tick' }, g);
+    const [gx, gy] = pt(p.lon, r);
+    el('circle', { cx: gx, cy: gy, r: 15, class: 'halo' }, g);
+    const t = el('text', {
+      x: gx, y: gy, class: 'glyph', 'text-anchor': 'middle', 'dominant-baseline': 'central',
+    }, g);
+    t.textContent = textGlyph(p.glyph);
+    if (p.glyph.length > 1) t.setAttribute('font-size', '13');
+    const [dx, dy] = pt(p.lon, r - 21);
+    el('text', {
+      x: dx, y: dy, class: 'deg', 'text-anchor': 'middle', 'dominant-baseline': 'central',
+    }, g).textContent = `${wholeDeg(p.lon)}°`;
+    svgTitle(g, `${p.name} · ${fmtPos(p.lon)} · ${DATA.houses[p.house - 1].name}`);
+    g.addEventListener('click', () => toggle(p.id));
+    taggable.push(g);
+  });
+
+  // ---------- index of elements ----------
+  const entries = [];
+  const makeEntry = (parent, tag, cat, glyph, label, detail, title) => {
+    const b = document.createElement('button');
+    b.className = 'entry';
+    b.dataset.tag = tag;
+    b.dataset.cat = cat;
+    b.setAttribute('aria-pressed', 'false');
+    if (title) b.title = title;
+    b.innerHTML = `<span class="g">${esc(textGlyph(glyph))}</span><span class="nm">${esc(label)}</span>` +
+      (detail ? `<span class="lead"></span><span class="dt">${esc(detail)}</span>` : '');
+    b.addEventListener('click', () => toggle(tag));
+    parent.appendChild(b);
+    entries.push(b);
+  };
+  const lookup = {};
+  [...DATA.planets, ...DATA.signs, ...DATA.houses, ...DATA.aspects].forEach(x => { lookup[x.id] = x; });
+  const shortName = id => (lookup[id] ? lookup[id].name : id);
+
+  const bandP = document.getElementById('band-planets');
+  DATA.planets.forEach(p => {
+    makeEntry(bandP, p.id, 'planet', p.glyph, p.name,
+      `${wholeDeg(p.lon)}° ${textGlyph(signAt(p.lon).glyph)}`, fmtPos(p.lon));
+  });
+  const bandS = document.getElementById('band-signs');
+  DATA.signs.forEach(s => makeEntry(bandS, s.id, 'sign', s.glyph, s.name, '', ''));
+  const bandH = document.getElementById('band-houses');
+  DATA.houses.forEach(h => makeEntry(bandH, h.id, 'house', glyphOf(h), h.name.replace(' House', ''), '', h.name));
+  const bandA = document.getElementById('band-aspects');
+  DATA.aspects.forEach(a =>
+    makeEntry(bandA, a.id, 'aspect', a.glyph, `${shortName(a.a)} – ${shortName(a.b)}`, '', a.name));
+
+  // ---------- commentary ----------
+  const catOf = tag => tag.split(':')[0];
+  const excerptsHost = document.getElementById('excerpts');
+
+  const matches = ex => {
+    if (selected.size === 0) return true;
+    const t = new Set(ex.tags);
+    return mode === 'any'
+      ? [...selected].some(s => t.has(s))
+      : [...selected].every(s => t.has(s));
+  };
+
+  const renderExcerpts = () => {
+    const visible = DATA.excerpts.filter(matches);
+    document.getElementById('count').textContent =
+      DATA.excerpts.length === 0 ? 'no passages routed'
+        : `${visible.length} of ${DATA.excerpts.length} passages`;
+    excerptsHost.innerHTML = visible.length === 0
+      ? `<p class="empty">${DATA.excerpts.length === 0
+          ? 'No transcript passages were routed to this chart.'
+          : 'No passage touches ' + (mode === 'all' ? 'all' : 'any') + ' of the selected elements — clear the selection to see everything.'}</p>`
+      : '';
+    for (const ex of visible) {
+      const art = document.createElement('article');
+      art.className = 'passage';
+      art.id = ex.id;
+      const refsHtml = ex.tags.map(t => {
+        const ref = lookup[t]; if (!ref) return '';
+        const glyph = glyphOf(ref);
+        return `<button class="ref" data-cat="${catOf(t)}" data-tag="${esc(t)}" aria-pressed="${selected.has(t)}">` +
+               `<span class="g">${esc(textGlyph(glyph))}</span><span class="nm">${esc(ref.name)}</span></button>`;
+      }).filter(Boolean).join('<span class="sep"> · </span>');
+      art.innerHTML =
+        `<div class="folio">${ex.time ? esc(ex.time) : ''}</div>` +
+        `<blockquote>${esc(ex.text)}</blockquote>` +
+        `<div class="refs">vide ${refsHtml}</div>`;
+      art.querySelectorAll('.ref').forEach(b =>
+        b.addEventListener('click', () => toggle(b.dataset.tag)));
+      excerptsHost.appendChild(art);
+    }
+  };
+
+  // ---------- interaction ----------
+  const render = () => {
+    for (const n of taggable) {
+      n.classList.toggle('sel', selected.has(n.getAttribute('data-tag')));
+    }
+    for (const b of entries) {
+      b.setAttribute('aria-pressed', String(selected.has(b.dataset.tag)));
+    }
+    renderExcerpts();
+  };
+  const toggle = tag => {
+    if (selected.has(tag)) selected.delete(tag); else selected.add(tag);
+    render();
+  };
+
+  document.getElementById('mode-any').addEventListener('click', () => { mode = 'any'; syncMode(); });
+  document.getElementById('mode-all').addEventListener('click', () => { mode = 'all'; syncMode(); });
+  const syncMode = () => {
+    document.getElementById('mode-any').setAttribute('aria-pressed', String(mode === 'any'));
+    document.getElementById('mode-all').setAttribute('aria-pressed', String(mode === 'all'));
+    renderExcerpts();
+  };
+  document.getElementById('clear').addEventListener('click', () => { selected.clear(); render(); });
+
+  // On narrow viewports the index would push the commentary far down — start folded.
+  const fold = document.querySelector('.index-fold');
+  if (fold && window.matchMedia('(max-width: 700px)').matches) fold.removeAttribute('open');
+
+  render();
+})();
+</script>
+</body>
+</html>
