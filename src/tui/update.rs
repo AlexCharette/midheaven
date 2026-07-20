@@ -3,12 +3,10 @@
 //! leave `update` only as [`Cmd`]s for the runtime to execute.
 
 use super::model::{Field, Form, Job, Model, Reading, Screen};
-use astro::TranscriptSource;
 use astro::chart::BirthInput;
 use astro::contract::{ChartData, Mode};
-use astro::geo;
+use astro::{ClassifyError, TranscriptSource, geo};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use std::path::{Path, PathBuf};
 
 pub enum Msg {
     // form
@@ -260,47 +258,19 @@ fn submit(form: &mut Form) -> Vec<Cmd> {
             }
         },
     };
-    let transcript = form.transcript.trim();
-    if !transcript.is_empty() && !Path::new(transcript).exists() {
-        return fail(form, Field::Transcript, "no file at this path");
-    }
-    // decided by content (RIFF magic), not by file name
-    let is_audio = !transcript.is_empty() && astro::transcribe::is_audio(Path::new(transcript));
-    let model_path = form.model.trim();
-    if is_audio {
-        if model_path.is_empty() {
-            return fail(form, Field::Model, "an audio transcript needs a ggml whisper model");
+    // the lib owns the audio-vs-file decision; map its structured
+    // failures onto the responsible form fields
+    let source = match TranscriptSource::classify(&form.transcript, &form.model) {
+        Ok(source) => source,
+        Err(e @ ClassifyError::NoTranscriptFile(_)) => {
+            return fail(form, Field::Transcript, &e.to_string());
         }
-        if !Path::new(model_path).exists() {
-            return fail(form, Field::Model, "no model file at this path");
-        }
-    }
+        Err(e) => return fail(form, Field::Model, &e.to_string()),
+    };
     if form.out.trim().is_empty() {
         return fail(form, Field::Out, "the artifact needs a path");
     }
-    let source = if transcript.is_empty() {
-        TranscriptSource::None
-    } else if is_audio {
-        TranscriptSource::Audio {
-            wav: PathBuf::from(transcript),
-            model: PathBuf::from(model_path),
-        }
-    } else {
-        TranscriptSource::File(PathBuf::from(transcript))
-    };
-    let name = if form.name.trim().is_empty() { "Anonymous" } else { form.name.trim() };
-    vec![Cmd::Build {
-        input: BirthInput {
-            name: name.to_string(),
-            date,
-            time,
-            lat: place.lat,
-            lon: place.lon,
-            tz: place.tz,
-            place: place.label(),
-        },
-        source,
-    }]
+    vec![Cmd::Build { input: astro::birth_at_place(&form.name, date, time, place), source }]
 }
 
 fn update_reading(reading: &mut Reading, status: &mut String, msg: Msg) -> Vec<Cmd> {

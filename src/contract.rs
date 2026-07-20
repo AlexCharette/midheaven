@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ChartData {
     pub meta: Meta,
     pub axes: Axes,
@@ -69,7 +69,7 @@ impl Excerpt {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Meta {
     pub name: String,
     pub born: String,
@@ -78,14 +78,14 @@ pub struct Meta {
     pub zodiac: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Axes {
     /// Ecliptic longitude in degrees; 0 = 0° Aries.
     pub asc: f64,
     pub mc: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Body {
     pub id: String,
     pub glyph: String,
@@ -94,14 +94,14 @@ pub struct Body {
     pub house: u8,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Ref {
     pub id: String,
     pub glyph: String,
     pub name: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct HouseRef {
     pub id: String,
     /// Roman numeral.
@@ -109,7 +109,7 @@ pub struct HouseRef {
     pub name: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Aspect {
     pub id: String,
     pub glyph: String,

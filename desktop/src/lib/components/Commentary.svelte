@@ -1,21 +1,11 @@
 <script lang="ts">
-  import type { ChartData } from "$lib/types";
-  import { catOf, textGlyph } from "$lib/types";
-  import { app, matches, selected, toggle } from "$lib/state.svelte";
+  import type { ChartData, Excerpt } from "$lib/types";
+  import { catOf, elementsOf, textGlyph } from "$lib/types";
+  import { selected, toggle } from "$lib/state.svelte";
 
-  let { chart }: { chart: ChartData } = $props();
+  let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
 
-  const lookup = $derived(
-    new Map(
-      [
-        ...chart.planets.map((x) => [x.id, { glyph: x.glyph, name: x.name }] as const),
-        ...chart.signs.map((x) => [x.id, { glyph: x.glyph, name: x.name }] as const),
-        ...chart.houses.map((x) => [x.id, { glyph: x.label, name: x.name }] as const),
-        ...chart.aspects.map((x) => [x.id, { glyph: x.glyph, name: x.name }] as const),
-      ],
-    ),
-  );
-  const visible = $derived(chart.excerpts.filter(matches));
+  const lookup = $derived(new Map(elementsOf(chart).map((e) => [e.tag, e])));
 </script>
 
 <h2 class="rubric">Commentary</h2>
@@ -33,10 +23,11 @@
     <div class="refs">
       <span class="apparatus-text">vide</span>
       {#each ex.tags as tag, i (tag)}
+        {@const el = lookup.get(tag)}
         {#if i > 0}<span class="sep"> · </span>{/if}
         <button class="ref" aria-pressed={selected.has(tag)} onclick={() => toggle(tag)}>
-          <span class="g g-{catOf(tag)}">{textGlyph(lookup.get(tag)?.glyph ?? "")}</span>
-          <span class="nm">{lookup.get(tag)?.name ?? tag}</span>
+          <span class="g g-{catOf(tag)}">{textGlyph(el?.glyph ?? "")}</span>
+          <span class="nm">{el?.name ?? tag}</span>
         </button>
       {/each}
     </div>

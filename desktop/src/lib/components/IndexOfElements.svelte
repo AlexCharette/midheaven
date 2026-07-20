@@ -1,12 +1,11 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
-  import { catOf, textGlyph } from "$lib/types";
+  import { catOf, degInSign, planetById, signAt, textGlyph } from "$lib/types";
   import { selected, toggle } from "$lib/state.svelte";
 
   let { chart }: { chart: ChartData } = $props();
 
-  const planetName = (id: string) => chart.planets.find((p) => p.id === id)?.name ?? id;
-  const signAt = (lon: number) => chart.signs[Math.floor((((lon % 360) + 360) % 360) / 30)];
+  const planetName = (id: string) => planetById(chart, id)?.name ?? id;
 
   interface Entry {
     tag: string;
@@ -14,14 +13,18 @@
     name: string;
     detail: string;
   }
-  const columns = $derived([
+  interface Column {
+    head: string;
+    entries: Entry[];
+  }
+  const columns: Column[] = $derived([
     {
       head: "planets",
       entries: chart.planets.map((p) => ({
         tag: p.id,
         glyph: p.glyph,
         name: p.name,
-        detail: `${Math.floor(p.lon % 30)}° ${textGlyph(signAt(p.lon).glyph)}`,
+        detail: `${degInSign(p.lon)}° ${textGlyph(signAt(chart, p.lon).glyph)}`,
       })),
     },
     { head: "signs", entries: chart.signs.map((s) => ({ tag: s.id, glyph: s.glyph, name: s.name, detail: "" })) },
@@ -43,7 +46,7 @@
         detail: "",
       })),
     },
-  ] as { head: string; entries: Entry[] }[]);
+  ]);
 </script>
 
 <h2 class="rubric">Index of Elements</h2>

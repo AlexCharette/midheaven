@@ -1,13 +1,13 @@
 <script lang="ts">
   import { save } from "@tauri-apps/plugin-dialog";
   import { saveArtifact } from "$lib/api";
-  import { app, matches, selected } from "$lib/state.svelte";
+  import { app, selected, visibleExcerpts } from "$lib/state.svelte";
   import BirthForm from "$lib/components/BirthForm.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
   import IndexOfElements from "$lib/components/IndexOfElements.svelte";
   import Wheel from "$lib/components/Wheel.svelte";
 
-  const visibleCount = $derived(app.chart ? app.chart.excerpts.filter(matches).length : 0);
+  const visible = $derived(app.chart ? visibleExcerpts(app.chart) : []);
 
   async function engrave() {
     const path = await save({
@@ -54,17 +54,17 @@
         </span>
         <span class="apparatus-text">of the selection ·</span>
         <button class="ghost" onclick={() => selected.clear()}>clear</button>
-        <span class="count apparatus-text">{visibleCount} of {app.chart.excerpts.length} passages</span>
+        <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
       </div>
 
-      <Commentary chart={app.chart} />
+      <Commentary chart={app.chart} {visible} />
     </section>
   </div>
   <footer>
     <span class="apparatus-text status">{app.status}</span>
     <span class="foot-actions">
       <button class="ghost" onclick={back}>← new reading</button>
-      <button class="engrave" onclick={engrave}>engrave the artifact</button>
+      <button class="frame-btn" onclick={engrave}>engrave the artifact</button>
     </span>
   </footer>
 {:else}
@@ -135,13 +135,6 @@
     background: var(--ink);
     color: var(--bg-deep);
   }
-  .ghost {
-    font-style: italic;
-    color: var(--ink-3);
-  }
-  .ghost:hover {
-    color: var(--ink);
-  }
   .count {
     margin-left: auto;
     font-variant-numeric: tabular-nums;
@@ -163,15 +156,6 @@
     margin-left: auto;
     display: inline-flex;
     gap: 1.4rem;
-  }
-  .engrave {
-    border: 1px solid var(--hairline);
-    padding: 0.15rem 0.9rem;
-    font-variant: small-caps;
-    letter-spacing: 0.14em;
-  }
-  .engrave:hover {
-    background: rgba(233, 228, 211, 0.08);
   }
   .status {
     min-height: 1.2em;

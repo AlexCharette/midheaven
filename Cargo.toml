@@ -15,6 +15,8 @@ hound = "3.5.1"
 ratatui = "0.30.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# whisper.cpp uses std::filesystem → macOS deployment target must be ≥ 10.15
+# (see desktop/src-tauri/tauri.conf.json bundle.macOS.minimumSystemVersion)
 whisper-rs = "0.16.0"
 xalen-coords = "0.6.0"
 xalen-ephem = "0.6.0"

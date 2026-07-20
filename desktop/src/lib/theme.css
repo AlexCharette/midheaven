@@ -105,3 +105,26 @@ input::placeholder {
 .g-aspect {
   color: var(--oxblood);
 }
+
+/* framed small-caps action button + quiet italic button */
+.frame-btn {
+  border: 1px solid var(--hairline);
+  padding: 0.15rem 0.9rem;
+  font-variant: small-caps;
+  letter-spacing: 0.14em;
+  color: var(--ink);
+}
+.frame-btn:hover:not(:disabled) {
+  background: rgba(233, 228, 211, 0.08);
+}
+.frame-btn:disabled {
+  color: var(--ink-3);
+  cursor: wait;
+}
+.ghost {
+  font-style: italic;
+  color: var(--ink-3);
+}
+.ghost:hover {
+  color: var(--ink);
+}

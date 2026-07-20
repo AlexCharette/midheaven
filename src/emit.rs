@@ -17,6 +17,13 @@ pub fn emit(data: &ChartData) -> Result<String, String> {
     }
 }
 
+/// Render the artifact and write it — the emit-then-write idiom shared by
+/// the CLI and the desktop app.
+pub fn write_artifact(data: &ChartData, path: &std::path::Path) -> Result<(), String> {
+    let html = emit(data)?;
+    std::fs::write(path, html).map_err(|e| format!("cannot write {}: {e}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -17,20 +17,30 @@
   let error = $state("");
 
   onMount(() => {
-    const unlisten = onTranscribeProgress((pct) => (app.progress = pct));
+    const unlisten = onTranscribeProgress((pct) => {
+      if (app.busy !== false) app.busy = pct;
+    });
     return () => {
       unlisten.then((f) => f());
     };
   });
 
+  // monotonic counter: a slow stale response must not overwrite a newer one
+  // or re-open a dropdown the user already resolved
+  let latest = 0;
   async function queryPlaces() {
     picked = null;
+    const seq = ++latest;
     const q = placeQuery.trim();
-    suggestions = q ? await searchPlaces(q) : [];
-    sel = 0;
+    const result = q ? await searchPlaces(q) : [];
+    if (seq === latest) {
+      suggestions = result;
+      sel = 0;
+    }
   }
 
   function pick(p: PlaceDto) {
+    latest++;
     picked = p;
     placeQuery = `${p.label} · ${p.tz}`;
     suggestions = [];
@@ -70,8 +80,7 @@
       error = "pick a place from the suggestions";
       return;
     }
-    app.building = true;
-    app.progress = null;
+    app.busy = "compute";
     try {
       app.chart = await build({
         name,
@@ -85,8 +94,7 @@
     } catch (e) {
       error = String(e);
     } finally {
-      app.building = false;
-      app.progress = null;
+      app.busy = false;
     }
   }
 </script>
@@ -150,18 +158,18 @@
     {#if error}<p class="error">✗ {error}</p>{/if}
 
     <div class="actions">
-      <button type="submit" class="compute" disabled={app.building}>
-        {#if app.building && app.progress !== null}
-          transcribing… {app.progress}%
-        {:else if app.building}
+      <button type="submit" class="frame-btn compute" disabled={app.busy !== false}>
+        {#if typeof app.busy === "number"}
+          transcribing… {app.busy}%
+        {:else if app.busy === "compute"}
           computing the figure…
         {:else}
           compute the figure
         {/if}
       </button>
     </div>
-    {#if app.building && app.progress !== null}
-      <div class="bar"><div class="fill" style="width: {app.progress}%"></div></div>
+    {#if typeof app.busy === "number"}
+      <div class="bar"><div class="fill" style="width: {app.busy}%"></div></div>
     {/if}
   </form>
 </div>
@@ -253,18 +261,8 @@
     margin-top: 1.6rem;
   }
   .compute {
-    border: 1px solid var(--hairline);
     padding: 0.4rem 1.6rem;
-    font-variant: small-caps;
     letter-spacing: 0.18em;
-    color: var(--ink);
-  }
-  .compute:hover:not(:disabled) {
-    background: rgba(233, 228, 211, 0.08);
-  }
-  .compute:disabled {
-    color: var(--ink-3);
-    cursor: wait;
   }
   .bar {
     margin: 1rem auto 0;

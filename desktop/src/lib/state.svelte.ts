@@ -7,18 +7,21 @@ export const app = $state({
   chart: null as ChartData | null,
   mode: "any" as "any" | "all",
   status: "",
-  /** Transcription progress (whole percent) while a build runs; null = idle. */
-  progress: null as number | null,
-  building: false,
+  /** false = idle · "compute" = fast build · number = transcription percent. */
+  busy: false as false | "compute" | number,
 });
 
 export const selected = new SvelteSet<string>();
 
-/** The contract's Excerpt::matches semantics, mirrored (as in the artifact). */
-export function matches(ex: Excerpt): boolean {
-  if (selected.size === 0) return true;
-  const has = (t: string) => ex.tags.includes(t);
-  return app.mode === "any" ? [...selected].some(has) : [...selected].every(has);
+/** The contract's Excerpt::matches semantics, mirrored (as in the artifact):
+ * empty selection shows all; any = intersection, all = superset. */
+export function visibleExcerpts(chart: ChartData): Excerpt[] {
+  const sel = [...selected];
+  if (sel.length === 0) return chart.excerpts;
+  const has = (ex: Excerpt) => (t: string) => ex.tags.includes(t);
+  return chart.excerpts.filter((ex) =>
+    app.mode === "any" ? sel.some(has(ex)) : sel.every(has(ex)),
+  );
 }
 
 export function toggle(tag: string) {

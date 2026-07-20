@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
-  import { textGlyph } from "$lib/types";
+  import { degInSign, norm360, planetById, textGlyph } from "$lib/types";
   import { selected, toggle } from "$lib/state.svelte";
 
   let { chart }: { chart: ChartData } = $props();
@@ -21,7 +21,6 @@
     houseLbl: 112,
   };
 
-  const norm360 = (x: number) => ((x % 360) + 360) % 360;
   const asc = $derived(chart.axes.asc);
 
   function pt(lon: number, r: number): [number, number] {
@@ -66,13 +65,13 @@
   const houseWedges = $derived(
     chart.houseCusps.map((c, i) => {
       const next = chart.houseCusps[(i + 1) % 12];
-      const sweep = norm360(next - c) || 30;
+      const sweep = norm360(next - c) || 30; // equal cusps mean a full sign
       const [sx1, sy1] = pt(c, R.hub);
       const [sx2, sy2] = pt(c, R.gradIn);
       const [lx, ly] = pt(c + sweep / 2, R.houseLbl);
       return {
         h: chart.houses[i],
-        d: sector(c, next === c ? c + 30 : next, R.hub, R.wedgeOut),
+        d: sector(c, c + sweep, R.hub, R.wedgeOut),
         spoke: { x1: sx1, y1: sy1, x2: sx2, y2: sy2 },
         lx,
         ly,
@@ -81,14 +80,12 @@
   );
 
   const axes = $derived(
-    (
-      [
-        [chart.axes.asc, "AC"],
-        [chart.axes.mc, "MC"],
-        [chart.axes.asc + 180, "DC"],
-        [chart.axes.mc + 180, "IC"],
-      ] as [number, string][]
-    ).map(([lon, label]) => {
+    [
+      { lon: chart.axes.asc, label: "AC" },
+      { lon: chart.axes.mc, label: "MC" },
+      { lon: chart.axes.asc + 180, label: "DC" },
+      { lon: chart.axes.mc + 180, label: "IC" },
+    ].map(({ lon, label }) => {
       const [x1, y1] = pt(lon, R.hub);
       const [x2, y2] = pt(lon, R.outer);
       const [tx, ty] = pt(lon, R.outer + 13);
@@ -96,7 +93,7 @@
     }),
   );
 
-  const lonOf = (id: string) => chart.planets.find((p) => p.id === id)?.lon ?? 0;
+  const lonOf = (id: string) => planetById(chart, id)?.lon ?? 0;
   const chords = $derived(
     chart.aspects.map((a) => {
       const [x1, y1] = pt(lonOf(a.a), R.chord);
@@ -118,7 +115,7 @@
       const [dx, dy] = pt(p.lon, r - 21);
       const [t1x, t1y] = pt(p.lon, R.gradIn - 8);
       const [t2x, t2y] = pt(p.lon, R.gradIn);
-      return { p, gx, gy, dx, dy, tick: { x1: t1x, y1: t1y, x2: t2x, y2: t2y }, deg: Math.floor(norm360(p.lon) % 30) };
+      return { p, gx, gy, dx, dy, tick: { x1: t1x, y1: t1y, x2: t2x, y2: t2y }, deg: degInSign(p.lon) };
     });
   });
 </script>
@@ -137,6 +134,7 @@
 
   {#each signBands as band (band.s.id)}
     {#if band.shaded}<path d={band.d} class="band-shade" />{/if}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <path
       d={band.d}
       class="sign-band"
@@ -145,7 +143,6 @@
       tabindex="-1"
       aria-label={band.s.name}
       onclick={() => toggle(band.s.id)}
-      onkeydown={() => {}}
     ><title>{band.s.name}</title></path>
     <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
       >{textGlyph(band.s.glyph)}</text
@@ -153,6 +150,7 @@
   {/each}
 
   {#each houseWedges as w (w.h.id)}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <path
       d={w.d}
       class="house-wedge"
@@ -161,7 +159,6 @@
       tabindex="-1"
       aria-label={w.h.name}
       onclick={() => toggle(w.h.id)}
-      onkeydown={() => {}}
     ><title>{w.h.name}</title></path>
     <line x1={w.spoke.x1} y1={w.spoke.y1} x2={w.spoke.x2} y2={w.spoke.y2} class="cusp-spoke" />
     <text x={w.lx} y={w.ly} class="house-label" text-anchor="middle" dominant-baseline="central">{w.h.label}</text>
@@ -173,7 +170,8 @@
   {/each}
 
   {#each chords as c (c.a.id)}
-    <g class="aspect" class:sel={selected.has(c.a.id)} role="button" tabindex="-1" onclick={() => toggle(c.a.id)} onkeydown={() => {}}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <g class="aspect" class:sel={selected.has(c.a.id)} role="button" tabindex="-1" onclick={() => toggle(c.a.id)}>
       <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} class="chord" />
       <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} class="chord-hit" />
       <title>{c.a.name} {textGlyph(c.a.glyph)}</title>
@@ -181,7 +179,8 @@
   {/each}
 
   {#each planets as pl (pl.p.id)}
-    <g class="planet" class:sel={selected.has(pl.p.id)} role="button" tabindex="-1" onclick={() => toggle(pl.p.id)} onkeydown={() => {}}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <g class="planet" class:sel={selected.has(pl.p.id)} role="button" tabindex="-1" onclick={() => toggle(pl.p.id)}>
       <line x1={pl.tick.x1} y1={pl.tick.y1} x2={pl.tick.x2} y2={pl.tick.y2} class="tick" />
       <circle cx={pl.gx} cy={pl.gy} r="15" class="halo" />
       <text x={pl.gx} y={pl.gy} class="glyph" font-size={pl.p.glyph.length > 1 ? 13 : 22} text-anchor="middle" dominant-baseline="central"

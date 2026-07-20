@@ -61,7 +61,7 @@ enum Command {
 #[derive(Args)]
 struct BirthArgs {
     /// Name shown on the chart.
-    #[arg(long, default_value = "Anonymous")]
+    #[arg(long, default_value = astro::chart::DEFAULT_NAME)]
     name: String,
     /// Birth date, YYYY-MM-DD.
     #[arg(long)]
@@ -197,8 +197,7 @@ fn run() -> Result<(), String> {
                 (None, None) => TranscriptSource::None, // clap prevents this
             };
             let (chart, n_routed) = build_reading(&input, source, cli_progress)?;
-            let html = emit::emit(&chart)?;
-            std::fs::write(&out, &html).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+            emit::write_artifact(&chart, &out)?;
             eprintln!(
                 "chart: {} planets, {} aspects · router: {} spans → {} excerpts past verify gate",
                 chart.planets.len(),

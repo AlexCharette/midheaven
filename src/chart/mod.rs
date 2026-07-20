@@ -15,6 +15,9 @@ use xalen_time::{
     CalendarSystem, DAYS_PER_JULIAN_CENTURY, DeltaTModel, J2000_JD, JdUT1, calendar_to_jd,
 };
 
+/// The persona used when no name is given.
+pub const DEFAULT_NAME: &str = "Anonymous";
+
 pub struct BirthInput {
     pub name: String,
     pub date: NaiveDate,
