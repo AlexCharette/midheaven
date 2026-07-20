@@ -24,11 +24,30 @@ enum Command {
         #[command(flatten)]
         birth: BirthArgs,
         /// Transcript file: plain .txt, or JSONL segments {"start", "text"}.
+        #[arg(long, required_unless_present = "audio", conflicts_with = "audio")]
+        transcript: Option<PathBuf>,
+        /// WAV recording to transcribe first (requires --model).
+        #[arg(long, requires = "model")]
+        audio: Option<PathBuf>,
+        /// ggml whisper model file for --audio.
         #[arg(long)]
-        transcript: PathBuf,
+        model: Option<PathBuf>,
         /// Output HTML path.
         #[arg(long, default_value = "reading.html")]
         out: PathBuf,
+    },
+    /// Transcribe a WAV recording to timestamped JSONL (local whisper.cpp).
+    Transcribe {
+        /// WAV file, any sample rate/channels. For m4a/mp3 convert first:
+        /// ffmpeg -i call.m4a -ar 16000 -ac 1 call.wav
+        #[arg(long)]
+        audio: PathBuf,
+        /// ggml whisper model file (e.g. ggml-small.bin).
+        #[arg(long)]
+        model: PathBuf,
+        /// Output JSONL path (stdout when omitted).
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
     /// Search the offline gazetteer (what a place query will resolve to).
     Places {
@@ -129,6 +148,15 @@ impl BirthArgs {
     }
 }
 
+fn transcribe_with_progress(
+    audio: &std::path::Path,
+    model: &std::path::Path,
+) -> Result<Vec<astro::transcribe::Segment>, String> {
+    eprintln!("transcribing {} (this can take a while)…", audio.display());
+    astro::transcribe::transcribe(audio, model, |pct| eprint!("\r  {pct:>3}%"))
+        .inspect(|segments| eprintln!("\r  done — {} segments", segments.len()))
+}
+
 fn print_places(places: &[&geo::Place]) {
     for (i, p) in places.iter().enumerate() {
         eprintln!(
@@ -151,9 +179,23 @@ fn run() -> Result<(), String> {
             let chart = compute_chart(&input)?;
             println!("{}", serde_json::to_string_pretty(&chart).map_err(|e| e.to_string())?);
         }
-        Some(Command::Build { birth, transcript, out }) => {
+        Some(Command::Build { birth, transcript, audio, model, out }) => {
             let input = birth.into_input()?;
-            let (chart, n_routed) = build_reading(&input, Some(&transcript))?;
+            let (chart, n_routed) = match (transcript, audio) {
+                (Some(path), _) => build_reading(&input, Some(&path))?,
+                (None, Some(audio)) => {
+                    let segments = transcribe_with_progress(&audio, &model.expect("clap requires"))?;
+                    let transcript = astro::route::Transcript::from_segments(
+                        segments.into_iter().map(|s| (s.start, s.text)),
+                    );
+                    let mut chart = compute_chart(&input)?;
+                    let router =
+                        astro::route::LexiconRouter::new(&chart.vocab(), &chart.aspects);
+                    let n = astro::route::index_transcript(&mut chart, &transcript, &router);
+                    (chart, n)
+                }
+                (None, None) => unreachable!("clap enforces transcript|audio"),
+            };
             let html = emit::emit(&chart)?;
             std::fs::write(&out, &html).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
             eprintln!(
@@ -164,6 +206,18 @@ fn run() -> Result<(), String> {
                 chart.excerpts.len()
             );
             eprintln!("wrote {}", out.display());
+        }
+        Some(Command::Transcribe { audio, model, out }) => {
+            let segments = transcribe_with_progress(&audio, &model)?;
+            let jsonl = astro::transcribe::to_jsonl(&segments);
+            match out {
+                Some(path) => {
+                    std::fs::write(&path, &jsonl)
+                        .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+                    eprintln!("wrote {} segments to {}", segments.len(), path.display());
+                }
+                None => print!("{jsonl}"),
+            }
         }
         Some(Command::Places { query }) => {
             let query = query.join(" ");

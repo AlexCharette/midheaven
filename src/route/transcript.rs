@@ -31,17 +31,28 @@ impl Transcript {
     }
 
     fn from_jsonl(raw: &str) -> Option<Transcript> {
+        let segments = raw
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|line| serde_json::from_str::<Segment>(line).map(|s| (s.start, s.text)))
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
+        Some(Self::from_segments(segments))
+    }
+
+    /// Assemble a transcript from timestamped segments (e.g. straight from
+    /// the transcription stage, skipping the JSONL round-trip).
+    pub fn from_segments(segments: impl IntoIterator<Item = (f64, String)>) -> Transcript {
         let mut text = String::new();
         let mut anchors = Vec::new();
-        for line in raw.lines().filter(|l| !l.trim().is_empty()) {
-            let seg: Segment = serde_json::from_str(line).ok()?;
+        for (start, seg_text) in segments {
             if !text.is_empty() {
                 text.push(' ');
             }
-            anchors.push((text.len(), seg.start));
-            text.push_str(seg.text.trim());
+            anchors.push((text.len(), start));
+            text.push_str(seg_text.trim());
         }
-        Some(Transcript { text, anchors })
+        Transcript { text, anchors }
     }
 
     /// "HH:MM:SS" anchor for a byte offset, or empty when no timestamps exist.

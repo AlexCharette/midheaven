@@ -3,8 +3,10 @@
 //! under the chart elements they refer to.
 //!
 //! Four-stage pipeline (build brief: `docs/natal-reading-indexer.md`):
-//! 1. **Transcribe** — upstream of this crate (Parakeet-TDT + Silero VAD);
-//!    consumed as plain text or timestamped JSONL by [`route::Transcript`].
+//! 1. **Transcribe** — [`transcribe`]: local whisper.cpp over a WAV file
+//!    (cross-platform, user-supplied ggml model); external transcripts are
+//!    equally welcome as plain text or timestamped JSONL via
+//!    [`route::Transcript`].
 //! 2. **Compute** — [`chart::compute_chart`]: birth data → tropical Whole Sign
 //!    chart, fully offline (analytic ephemeris, embedded gazetteer in [`geo`]).
 //! 3. **Route** — [`route`]: a [`route::Router`] tags verbatim spans with the
@@ -20,6 +22,7 @@ pub mod contract;
 pub mod emit;
 pub mod geo;
 pub mod route;
+pub mod transcribe;
 
 /// The whole pipeline in one call: compute the chart, then (when a transcript
 /// is given) route + verify its passages into `excerpts`. Returns the chart

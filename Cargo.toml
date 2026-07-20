@@ -8,9 +8,11 @@ chrono = "0.4.45"
 chrono-tz = "0.10.4"
 clap = { version = "4.6.2", features = ["derive"] }
 flate2 = "1.1.9"
+hound = "3.5.1"
 ratatui = "0.30.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+whisper-rs = "0.16.0"
 xalen-coords = "0.6.0"
 xalen-ephem = "0.6.0"
 xalen-houses = "0.6.0"

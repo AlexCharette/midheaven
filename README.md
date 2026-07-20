@@ -36,6 +36,28 @@ braille chart wheel, Index of Elements, and filtered Commentary.
 | esc | dismiss dropdown | j / k | scroll commentary |
 | ctrl-c | leave | e / b / q | engrave HTML / back / quit |
 
+### Transcription (built in, cross-platform)
+
+```sh
+# audio → timestamped JSONL (local whisper.cpp; CPU everywhere, Metal on macOS)
+cargo run -- transcribe --audio call.wav --model ggml-small.bin --out transcript.jsonl
+
+# or straight through: audio → routed artifact in one command
+cargo run -- build --audio call.wav --model ggml-small.bin \
+    --name "Sample Chart" --date 1990-07-13 --time 14:30 --place berlin
+```
+
+Models are user-supplied ggml files from
+[whisper.cpp's Hugging Face repo](https://huggingface.co/ggerganov/whisper.cpp)
+(`ggml-tiny.en.bin` 75 MB for quick tests → `ggml-small.bin` ~490 MB →
+`ggml-large-v3-turbo.bin` ~1.6 GB for best quality). Nothing downloads at
+runtime. Input is WAV (any rate/channels — downmixed and resampled
+internally); for m4a/mp3 recordings convert once with
+`ffmpeg -i call.m4a -ar 16000 -ac 1 call.wav` — native compressed-audio
+decoding is deliberately excluded because the pure-Rust option is MPL-2.0
+(copyleft, banned by the brief). Building the crate needs `cmake` and a C++
+toolchain (whisper.cpp is compiled in).
+
 ### Scripting (CLI)
 
 ```sh
@@ -79,6 +101,7 @@ The crate is a library (pipeline stages) plus a thin CLI binary (`src/main.rs`).
 
 | Stage | Module | Notes |
 |---|---|---|
+| 1 Transcribe | `src/transcribe.rs` | whisper.cpp via `whisper-rs`; WAV in, timestamped segments out — external transcripts (txt/JSONL) remain first-class |
 | 2 Compute | `src/chart/` | Tropical, Whole Sign; symbol tables in `chart/catalog.rs`; place lookup in `src/geo.rs` |
 | 3 Route | `src/route/` | `Router` trait (`mod.rs`); `transcript.rs` parsing/segmentation, `lexicon.rs` matcher, `verify.rs` gate — the LLM router later lands as `route/llm.rs` |
 | 4 Emit | `src/emit.rs` + `templates/reading.html` | injects `ChartData` at `/*__DATA__*/null` |
