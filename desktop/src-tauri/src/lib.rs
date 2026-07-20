@@ -5,8 +5,8 @@
 mod record;
 
 use astro::chart::parse_time;
-use astro::contract::{ChartData, Excerpt, Segment};
-use astro::route::{LexiconRouter, Router, Transcript, coalesce, verify_gate};
+use astro::contract::{ChartData, Excerpt};
+use astro::route::{Transcript, append_transcript, lexicon_for, retag};
 use astro::{TranscriptSource, geo};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -22,9 +22,8 @@ struct Inner {
     /// The chart's excerpt list is authoritative — takes append to it and
     /// curation (merge/correct) edits it in place.
     chart: Option<ChartData>,
-    /// All transcribed segments of this session, time-shifted end to end
-    /// (kept for offset math only).
-    session: Vec<Segment>,
+    /// Total seconds recorded this session — offsets each new take's
+    /// timestamps so folio anchors run continuously.
     session_secs: f64,
     model: Option<PathBuf>,
     recorder: Option<record::Recorder>,
@@ -96,7 +95,6 @@ async fn build(
     .map_err(|e| format!("build task failed: {e}"))??;
 
     let mut inner = state.0.lock().unwrap();
-    inner.session.clear();
     inner.session_secs = 0.0;
     inner.chart = Some(chart.clone());
     drop(inner);
@@ -156,39 +154,28 @@ async fn stop_recording(
 
     let mut guard = state.0.lock().unwrap();
     let inner = &mut *guard;
-    inner.session.extend(segments.iter().cloned());
     inner.session_secs = offset + secs;
     let chart = inner.chart.as_mut().ok_or("no chart has been built yet")?;
 
     // Route ONLY the new take and append, so earlier curation (merges,
     // corrections) survives every stop.
     let take = Transcript::from_segments(segments);
-    let vocab = chart.vocab();
-    let router = LexiconRouter::new(&vocab, &chart.aspects);
-    let routed = coalesce(verify_gate(&take, router.route(&take), &vocab), &take);
-    let offset_ids = chart.excerpts.len();
-    chart.excerpts.extend(routed.into_iter().enumerate().map(|(i, mut ex)| {
-        ex.id = format!("x{}", offset_ids + i + 1);
-        ex
-    }));
+    append_transcript(chart, &take, &lexicon_for(chart));
     Ok(chart.clone())
 }
 
 /// Merge the excerpt into its predecessor: verbatim parts joined, tags
-/// unioned, the earlier passage's time anchor kept.
+/// unioned, the earlier passage's time anchor kept (contract semantics via
+/// [`Excerpt::absorb`]; only the text-joining strategy is ours).
 fn merge_up_in(excerpts: &mut Vec<Excerpt>, id: &str) -> Result<(), String> {
     let i = excerpts.iter().position(|e| e.id == id).ok_or("no such passage")?;
     if i == 0 {
         return Err("the first passage has nothing above it to merge into".to_string());
     }
     let cur = excerpts.remove(i);
-    let prev = &mut excerpts[i - 1];
-    prev.text = format!("{} {}", prev.text, cur.text);
-    prev.span[1] = cur.span[1];
-    let mut tags: Vec<String> = prev.tags.drain(..).chain(cur.tags).collect();
-    tags.sort();
-    tags.dedup();
-    prev.tags = tags;
+    let joined = format!("{} {}", excerpts[i - 1].text, cur.text);
+    excerpts[i - 1].absorb(cur);
+    excerpts[i - 1].text = joined;
     Ok(())
 }
 
@@ -200,16 +187,7 @@ fn correct_in(chart: &mut ChartData, id: &str, text: &str) -> Result<(), String>
     if text.is_empty() {
         return Err("a passage cannot be amended to nothing".to_string());
     }
-    let vocab = chart.vocab();
-    let router = LexiconRouter::new(&vocab, &chart.aspects);
-    let corrected = Transcript::load(text);
-    let mut tags: Vec<String> = router
-        .route(&corrected)
-        .into_iter()
-        .flat_map(|raw| raw.tags)
-        .collect();
-    tags.sort();
-    tags.dedup();
+    let tags = retag(chart, text); // same gated path as all routing
     let ex = chart
         .excerpts
         .iter_mut()

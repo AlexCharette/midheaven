@@ -136,7 +136,7 @@ fn route_into_chart(
     let mut chart = chart::compute_chart(input)?;
     let mut n_routed = 0;
     if let Some(transcript) = transcript {
-        let router = route::LexiconRouter::new(&chart.vocab(), &chart.aspects);
+        let router = route::lexicon_for(&chart);
         n_routed = route::index_transcript(&mut chart, &transcript, &router);
     }
     Ok((chart, n_routed))

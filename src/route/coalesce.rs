@@ -18,20 +18,18 @@ pub fn coalesce(excerpts: Vec<Excerpt>, transcript: &Transcript) -> Vec<Excerpt>
             !out.is_empty() && ex.tags.iter().any(|t| prev_tags.contains(t));
         prev_tags = ex.tags.clone();
         if shares_with_prev {
-            let last = out.last_mut().unwrap();
-            last.span[1] = ex.span[1];
-            last.text = transcript.text[last.span[0]..last.span[1]].to_string();
-            let mut tags: Vec<String> = last.tags.drain(..).chain(ex.tags).collect();
-            tags.sort();
-            tags.dedup();
-            last.tags = tags;
+            out.last_mut().unwrap().absorb(ex);
         } else {
             out.push(ex);
         }
     }
-    for (i, ex) in out.iter_mut().enumerate() {
-        ex.id = format!("x{}", i + 1);
+    // Text is derived from the (possibly extended) span in one pass — the
+    // gate guaranteed every input text was a verbatim slice, so this is a
+    // no-op for unmerged passages.
+    for ex in &mut out {
+        ex.text = transcript.text[ex.span[0]..ex.span[1]].to_string();
     }
+    super::renumber(&mut out, 0);
     out
 }
 

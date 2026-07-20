@@ -7,8 +7,9 @@
 
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
 
-  // Signs/houses default to the ones the reading references (or keeps
-  // selected — an active filter must never hide itself); "n more" expands.
+  // Relevance rule (canonical prose lives in templates/reading.html beside
+  // syncRelevance; keep the two in step): visible = referenced ∪ selected ∪
+  // expanded — a selected filter must never hide itself.
   const referenced = $derived(new Set(chart.excerpts.flatMap((ex) => ex.tags)));
   let expanded = $state<Record<string, boolean>>({ signs: false, houses: false });
 
@@ -159,7 +160,7 @@
   }
   .more {
     display: block;
-    padding: 0.12rem 0 0.12rem 2.7em;
+    padding: 0.12rem 0 0.12rem 2.85em;
     font-size: 0.82rem;
     font-style: italic;
     color: var(--ink-3);

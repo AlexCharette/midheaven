@@ -26,19 +26,66 @@ pub trait Router {
     fn route(&self, transcript: &Transcript) -> Vec<RawExcerpt>;
 }
 
-/// Route a transcript into `chart.excerpts` with the Verify gate applied —
-/// the one path from router output into the artifact, so the gate cannot be
-/// skipped. Returns the number of spans the router emitted (before gating).
+/// The default router for a chart — the one place its configuration lives.
+pub fn lexicon_for(chart: &crate::contract::ChartData) -> LexiconRouter {
+    LexiconRouter::new(&chart.vocab(), &chart.aspects)
+}
+
+/// The one gated path from router output to passages: route → Verify gate →
+/// coalesce. Returns the passages and the raw span count (before gating).
+pub fn route_excerpts(
+    chart: &crate::contract::ChartData,
+    transcript: &Transcript,
+    router: &dyn Router,
+) -> (Vec<crate::contract::Excerpt>, usize) {
+    let vocab = chart.vocab();
+    let raw = router.route(transcript);
+    let n_routed = raw.len();
+    (coalesce(verify_gate(transcript, raw, &vocab), transcript), n_routed)
+}
+
+/// Route a transcript into `chart.excerpts`, replacing them. Returns the
+/// number of spans the router emitted (before gating).
 pub fn index_transcript(
     chart: &mut crate::contract::ChartData,
     transcript: &Transcript,
     router: &dyn Router,
 ) -> usize {
-    let vocab = chart.vocab();
-    let raw = router.route(transcript);
-    let n_routed = raw.len();
-    chart.excerpts = coalesce(verify_gate(transcript, raw, &vocab), transcript);
+    let (excerpts, n_routed) = route_excerpts(chart, transcript, router);
+    chart.excerpts = excerpts;
     n_routed
+}
+
+/// Route an additional transcript (e.g. a live take) and append its passages
+/// after the chart's existing ones, ids renumbered to stay unique.
+pub fn append_transcript(
+    chart: &mut crate::contract::ChartData,
+    transcript: &Transcript,
+    router: &dyn Router,
+) -> usize {
+    let (mut excerpts, n_routed) = route_excerpts(chart, transcript, router);
+    renumber(&mut excerpts, chart.excerpts.len());
+    chart.excerpts.extend(excerpts);
+    n_routed
+}
+
+/// Tags the chart's router finds in free text — curation re-tagging goes
+/// through the same gated path as everything else.
+pub fn retag(chart: &crate::contract::ChartData, text: &str) -> Vec<String> {
+    let transcript = Transcript::load(text);
+    let (excerpts, _) = route_excerpts(chart, &transcript, &lexicon_for(chart));
+    let mut tags: Vec<String> = excerpts.into_iter().flat_map(|e| e.tags).collect();
+    tags.sort();
+    tags.dedup();
+    tags
+}
+
+/// Assign the conventional `x{n}` ids, continuing after `start` existing
+/// passages. Uniqueness is the contract invariant; density is convention.
+pub(crate) fn renumber(excerpts: &mut [crate::contract::Excerpt], start: usize) {
+    for (i, ex) in excerpts.iter_mut().enumerate() {
+        ex.id = format!("x{}", start + i + 1);
+    }
 }
 
 #[cfg(test)]

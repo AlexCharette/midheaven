@@ -56,6 +56,18 @@ pub enum Mode {
 }
 
 impl Excerpt {
+    /// Merge a later passage into this one: the span extends to cover both,
+    /// tags become the sorted union, this passage's time anchor is kept.
+    /// The merged `text` is the caller's decision (verbatim transcript slice
+    /// when one is at hand, joined parts otherwise).
+    pub fn absorb(&mut self, other: Excerpt) {
+        self.span[1] = other.span[1];
+        let mut tags: Vec<String> = self.tags.drain(..).chain(other.tags).collect();
+        tags.sort();
+        tags.dedup();
+        self.tags = tags;
+    }
+
     /// An empty selection matches everything; Any = the excerpt touches any
     /// selected tag; All = it touches every one.
     pub fn matches(&self, selected: &BTreeSet<String>, mode: Mode) -> bool {
@@ -125,6 +137,8 @@ pub struct Aspect {
 
 #[derive(Debug, Serialize, Clone)]
 pub struct Excerpt {
+    /// Unique among the chart's excerpts (the `x{n}` scheme is convention;
+    /// uniqueness is the invariant consumers rely on).
     pub id: String,
     /// "HH:MM:SS" anchor into the recording; empty when the transcript
     /// carries no timestamps.

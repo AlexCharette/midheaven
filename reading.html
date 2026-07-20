@@ -549,8 +549,10 @@ const DATA = {"meta":{"name":"Sample Chart","born":"1990-07-13 14:30 (Europe/Ber
   DATA.aspects.forEach(a =>
     makeEntry(bandA, a.id, 'aspect', a.glyph, `${shortName(a.a)} – ${shortName(a.b)}`, '', a.name));
 
-  // Signs and houses default to the elements the reading references (or that
-  // are selected — an active filter must never hide itself); "n more" expands.
+  // Relevance rule (canonical home — the desktop IndexOfElements mirrors it):
+  // a sign/house entry is visible when referenced by an excerpt, OR selected
+  // (an active filter must never hide itself), OR its column is expanded.
+  // No excerpts at all → show everything.
   const referenced = new Set(DATA.excerpts.flatMap(e => e.tags));
   const expanded = { sign: false, house: false };
   const expanders = {};

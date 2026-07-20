@@ -194,7 +194,8 @@
     margin-bottom: 1.1rem;
     position: relative;
   }
-  label span:first-child {
+  label span:first-child,
+  .duo .lbl {
     font-style: italic;
     color: var(--ink-3);
     text-align: right;
@@ -207,11 +208,6 @@
     gap: 0;
     align-items: baseline;
     margin-bottom: 1.1rem;
-  }
-  .duo .lbl {
-    font-style: italic;
-    color: var(--ink-3);
-    text-align: right;
   }
   .duo input {
     margin-left: 1rem; /* same gap after "born on" and after "at" */

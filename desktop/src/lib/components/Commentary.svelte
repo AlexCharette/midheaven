@@ -14,6 +14,7 @@
 
   let editing = $state<string | null>(null);
   let draft = $state("");
+  let original = "";
 
   async function join(id: string) {
     try {
@@ -27,13 +28,14 @@
   function beginAmend(ex: Excerpt) {
     editing = ex.id;
     draft = ex.text;
+    original = ex.text;
   }
 
-  async function saveAmend(id: string) {
-    if (editing !== id) return;
+  async function saveAmend() {
+    if (editing === null) return;
+    const id = editing;
     editing = null;
-    const before = chart.excerpts.find((e) => e.id === id);
-    if (!before || draft.trim() === before.text) return;
+    if (draft.trim() === original) return;
     try {
       app.chart = await correctExcerpt(id, draft);
       app.status = "passage amended — re-sectioned";
@@ -42,12 +44,12 @@
     }
   }
 
-  function amendKeys(e: KeyboardEvent, id: string) {
+  function amendKeys(e: KeyboardEvent) {
     if (e.key === "Escape") {
       editing = null;
       e.preventDefault();
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      saveAmend(id);
+      saveAmend();
       e.preventDefault();
     }
   }
@@ -78,8 +80,8 @@
         bind:value={draft}
         rows={Math.max(2, Math.ceil(draft.length / 70))}
         autofocus
-        onkeydown={(e) => amendKeys(e, ex.id)}
-        onblur={() => saveAmend(ex.id)}
+        onkeydown={amendKeys}
+        onblur={saveAmend}
       ></textarea>
     {:else}
       <blockquote>
