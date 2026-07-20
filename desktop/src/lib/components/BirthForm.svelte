@@ -201,9 +201,10 @@
   }
   .duo {
     display: grid;
-    /* date is content-sized so "at" sits right beside it */
+    /* date is content-sized; explicit margins instead of a uniform grid
+       gap, so "at" hugs the date while label→field gaps stay 1rem */
     grid-template-columns: 7.5rem 9rem auto 1fr;
-    gap: 0 1rem;
+    gap: 0;
     align-items: baseline;
     margin-bottom: 1.1rem;
   }
@@ -211,6 +212,12 @@
     font-style: italic;
     color: var(--ink-3);
     text-align: right;
+  }
+  .duo input {
+    margin-left: 1rem; /* same gap after "born on" and after "at" */
+  }
+  .duo label[for="f-time"] {
+    margin-left: 0.4rem; /* pressed up against the date */
   }
   .browse {
     font-size: 0.85rem;
