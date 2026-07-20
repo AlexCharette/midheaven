@@ -35,16 +35,26 @@ pub enum Msg {
     Back,
     // global + effect results
     Quit,
+    /// Whole-percent transcription progress from the background build.
+    Progress(i32),
     Built(Result<Box<ChartData>, String>),
     Emitted(Result<String, String>),
 }
 
+/// Where the build's transcript comes from.
+pub enum TranscriptSource {
+    None,
+    File(PathBuf),
+    Audio { wav: PathBuf, model: PathBuf },
+}
+
 pub enum Cmd {
-    /// Run the pipeline: (optionally) load the transcript, compute the
-    /// chart, route + verify. Resolves to [`Msg::Built`].
+    /// Run the pipeline on a background thread: transcribe when the source
+    /// is audio (emitting [`Msg::Progress`]), compute, route + verify.
+    /// Resolves to [`Msg::Built`].
     Build {
         input: BirthInput,
-        transcript: Option<PathBuf>,
+        source: TranscriptSource,
     },
     /// Write an already-rendered artifact. Self-contained: the interpreter
     /// needs no view of the Model. Resolves to [`Msg::Emitted`].
@@ -97,7 +107,12 @@ pub fn update(model: &mut Model, msg: Msg) -> Vec<Cmd> {
             model.should_quit = true;
             Vec::new()
         }
+        Msg::Progress(pct) => {
+            model.status = format!("transcribing… {pct}%");
+            Vec::new()
+        }
         Msg::Built(Ok(chart)) => {
+            model.busy = false;
             // Build commands are only issued by the form's submit.
             let Screen::Form(form) = &model.screen else {
                 return Vec::new();
@@ -109,6 +124,7 @@ pub fn update(model: &mut Model, msg: Msg) -> Vec<Cmd> {
             Vec::new()
         }
         Msg::Built(Err(e)) => {
+            model.busy = false;
             model.status = format!("✗ {e}");
             Vec::new()
         }
@@ -128,7 +144,17 @@ pub fn update(model: &mut Model, msg: Msg) -> Vec<Cmd> {
             Vec::new()
         }
         other => match &mut model.screen {
-            Screen::Form(form) => update_form(form, &mut model.status, other),
+            Screen::Form(form) => {
+                if model.busy && matches!(other, Msg::Submit | Msg::Accept) {
+                    model.status = "still working — the figure is on its way".to_string();
+                    return Vec::new();
+                }
+                let cmds = update_form(form, &mut model.status, other);
+                if !cmds.is_empty() {
+                    model.busy = true;
+                }
+                cmds
+            }
             Screen::Reading(reading) => update_reading(reading, &mut model.status, other),
         },
     }
@@ -234,11 +260,35 @@ fn submit(form: &mut Form, status: &mut String) -> Vec<Cmd> {
     if !transcript.is_empty() && !std::path::Path::new(transcript).exists() {
         return fail(form, Field::Transcript, "no file at this path");
     }
+    let is_audio = transcript.to_lowercase().ends_with(".wav");
+    let model_path = form.model.trim();
+    if is_audio {
+        if model_path.is_empty() {
+            return fail(form, Field::Model, "a .wav transcript needs a ggml whisper model");
+        }
+        if !std::path::Path::new(model_path).exists() {
+            return fail(form, Field::Model, "no model file at this path");
+        }
+    }
+    let source = if transcript.is_empty() {
+        TranscriptSource::None
+    } else if is_audio {
+        TranscriptSource::Audio {
+            wav: PathBuf::from(transcript),
+            model: PathBuf::from(model_path),
+        }
+    } else {
+        TranscriptSource::File(PathBuf::from(transcript))
+    };
     if form.out.trim().is_empty() {
         return fail(form, Field::Out, "the artifact needs a path");
     }
     let name = if form.name.trim().is_empty() { "Anonymous" } else { form.name.trim() };
-    *status = "computing the figure…".to_string();
+    *status = if matches!(source, TranscriptSource::Audio { .. }) {
+        "transcribing… 0%".to_string()
+    } else {
+        "computing the figure…".to_string()
+    };
     vec![Cmd::Build {
         input: BirthInput {
             name: name.to_string(),
@@ -249,7 +299,7 @@ fn submit(form: &mut Form, status: &mut String) -> Vec<Cmd> {
             tz: place.tz,
             place: place.label(),
         },
-        transcript: (!transcript.is_empty()).then(|| PathBuf::from(transcript)),
+        source,
     }]
 }
 
@@ -378,14 +428,15 @@ mod tests {
         let cmds = update(&mut m, Msg::Submit);
         assert_eq!(cmds.len(), 1);
         match &cmds[0] {
-            Cmd::Build { input, transcript } => {
+            Cmd::Build { input, source } => {
                 assert!((input.lat - 52.52).abs() < 0.1);
                 assert_eq!(input.tz, chrono_tz::Europe::Berlin);
-                assert!(transcript.is_none());
+                assert!(matches!(source, TranscriptSource::None));
             }
             _ => panic!("expected Build"),
         }
         assert_eq!(form(&m).out, "reading.html");
+        assert!(m.busy, "a submitted build marks the model busy");
     }
 
     use crate::tui::testkit::reading_model;
@@ -417,6 +468,55 @@ mod tests {
         assert!(all <= any, "All ({all}) must be at most Any ({any})");
         // the sample transcript has exactly one sun-in-tenth passage
         assert_eq!(all, 1);
+    }
+
+    #[test]
+    fn wav_transcript_requires_a_model() {
+        let mut m = Model::default();
+        let wav = std::env::temp_dir().join("astro-test-empty.wav");
+        std::fs::write(&wav, b"").unwrap();
+        if let Screen::Form(f) = &mut m.screen {
+            f.date = "1990-07-13".into();
+            f.time = "14:30".into();
+            f.place_query = "berlin".into();
+            f.transcript = wav.to_string_lossy().into_owned();
+        }
+        let cmds = update(&mut m, Msg::Submit);
+        assert!(cmds.is_empty());
+        assert!(matches!(form(&m).error, Some((Field::Model, _))));
+        assert!(!m.busy);
+    }
+
+    #[test]
+    fn wav_with_model_builds_audio_source_and_marks_busy() {
+        let mut m = Model::default();
+        let dir = std::env::temp_dir();
+        let wav = dir.join("astro-test-a.wav");
+        let ggml = dir.join("astro-test-model.bin");
+        std::fs::write(&wav, b"").unwrap();
+        std::fs::write(&ggml, b"").unwrap();
+        if let Screen::Form(f) = &mut m.screen {
+            f.date = "1990-07-13".into();
+            f.time = "14:30".into();
+            f.place_query = "berlin".into();
+            f.transcript = wav.to_string_lossy().into_owned();
+            f.model = ggml.to_string_lossy().into_owned();
+        }
+        let cmds = update(&mut m, Msg::Submit);
+        assert!(matches!(
+            cmds.as_slice(),
+            [Cmd::Build { source: TranscriptSource::Audio { .. }, .. }]
+        ));
+        assert!(m.busy);
+        assert_eq!(m.status, "transcribing… 0%");
+        // a second submit while busy is refused
+        assert!(update(&mut m, Msg::Submit).is_empty());
+        assert!(m.status.contains("still working"));
+        // progress flows into the status line; a failed build clears busy
+        update(&mut m, Msg::Progress(42));
+        assert_eq!(m.status, "transcribing… 42%");
+        update(&mut m, Msg::Built(Err("boom".into())));
+        assert!(!m.busy);
     }
 
     #[test]

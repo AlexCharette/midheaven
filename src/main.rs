@@ -184,15 +184,15 @@ fn run() -> Result<(), String> {
             let (chart, n_routed) = match (transcript, audio) {
                 (Some(path), _) => build_reading(&input, Some(&path))?,
                 (None, Some(audio)) => {
-                    let segments = transcribe_with_progress(&audio, &model.expect("clap requires"))?;
-                    let transcript = astro::route::Transcript::from_segments(
-                        segments.into_iter().map(|s| (s.start, s.text)),
-                    );
-                    let mut chart = compute_chart(&input)?;
-                    let router =
-                        astro::route::LexiconRouter::new(&chart.vocab(), &chart.aspects);
-                    let n = astro::route::index_transcript(&mut chart, &transcript, &router);
-                    (chart, n)
+                    eprintln!("transcribing {} (this can take a while)…", audio.display());
+                    let result = astro::build_reading_from_audio(
+                        &input,
+                        &audio,
+                        &model.expect("clap requires"),
+                        |pct| eprint!("\r  {pct:>3}%"),
+                    )?;
+                    eprintln!("\r  done");
+                    result
                 }
                 (None, None) => unreachable!("clap enforces transcript|audio"),
             };

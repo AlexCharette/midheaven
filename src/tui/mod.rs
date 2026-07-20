@@ -11,8 +11,9 @@ mod wheel;
 
 use model::Model;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
+use std::sync::mpsc;
 use std::time::Duration;
-use update::{Cmd, Msg, decode, update};
+use update::{Cmd, Msg, TranscriptSource, decode, update};
 
 pub fn run() -> Result<(), String> {
     // The gazetteer's one-time parse happens before raw mode, so the first
@@ -22,8 +23,14 @@ pub fn run() -> Result<(), String> {
 
     let mut terminal = ratatui::init();
     let mut model = Model::default();
+    // Effect results (and background-thread progress) flow back as messages.
+    let (tx, rx) = mpsc::channel::<Msg>();
     let mut dirty = true; // redraw only when something changed
     let result = loop {
+        while let Ok(msg) = rx.try_recv() {
+            dispatch(&mut model, msg, &tx);
+            dirty = true;
+        }
         if dirty {
             if let Err(e) = terminal.draw(|f| view::view(&model, f)) {
                 break Err(e.to_string());
@@ -35,7 +42,7 @@ pub fn run() -> Result<(), String> {
             Ok(true) => match event::read() {
                 Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                     if let Some(msg) = decode(&model, key) {
-                        dispatch(&mut model, msg);
+                        dispatch(&mut model, msg, &tx);
                         dirty = true;
                     }
                 }
@@ -52,30 +59,43 @@ pub fn run() -> Result<(), String> {
     result
 }
 
-/// Run a message through update, then execute the commands it produced,
-/// feeding each command's result message back through update.
-fn dispatch(model: &mut Model, msg: Msg) {
-    let mut msgs = vec![msg];
-    while let Some(msg) = msgs.pop() {
-        for cmd in update(model, msg) {
-            msgs.extend(execute(cmd));
-        }
+/// Run a message through update, handing its commands to the interpreter.
+/// Command results come back through the channel on a later loop turn.
+fn dispatch(model: &mut Model, msg: Msg, tx: &mpsc::Sender<Msg>) {
+    for cmd in update(model, msg) {
+        execute(cmd, tx);
     }
 }
 
 /// The effect interpreter: commands are self-contained, so this needs no
-/// view of the Model — the only place the TUI touches the filesystem.
-fn execute(cmd: Cmd) -> Option<Msg> {
+/// view of the Model. Fast effects reply immediately; the pipeline build
+/// runs on a background thread (transcription can take minutes) and streams
+/// progress + result back through the channel.
+fn execute(cmd: Cmd, tx: &mpsc::Sender<Msg>) {
     match cmd {
-        Cmd::Build { input, transcript } => Some(Msg::Built(
-            astro::build_reading(&input, transcript.as_deref())
-                .map(|(chart, _)| Box::new(chart)),
-        )),
-        Cmd::WriteFile { path, contents } => Some(Msg::Emitted(
-            std::fs::write(&path, contents)
-                .map_err(|e| format!("cannot write {path}: {e}"))
-                .map(|()| path),
-        )),
+        Cmd::Build { input, source } => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let progress_tx = tx.clone();
+                let result = match source {
+                    TranscriptSource::None => astro::build_reading(&input, None),
+                    TranscriptSource::File(path) => astro::build_reading(&input, Some(&path)),
+                    TranscriptSource::Audio { wav, model } => {
+                        astro::build_reading_from_audio(&input, &wav, &model, move |pct| {
+                            let _ = progress_tx.send(Msg::Progress(pct));
+                        })
+                    }
+                };
+                let _ = tx.send(Msg::Built(result.map(|(chart, _)| Box::new(chart))));
+            });
+        }
+        Cmd::WriteFile { path, contents } => {
+            let _ = tx.send(Msg::Emitted(
+                std::fs::write(&path, contents)
+                    .map_err(|e| format!("cannot write {path}: {e}"))
+                    .map(|()| path),
+            ));
+        }
     }
 }
 

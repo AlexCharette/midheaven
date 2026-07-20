@@ -32,12 +32,39 @@ pub fn build_reading(
     input: &chart::BirthInput,
     transcript: Option<&std::path::Path>,
 ) -> Result<(contract::ChartData, usize), String> {
+    let transcript = match transcript {
+        Some(path) => {
+            let raw = std::fs::read_to_string(path)
+                .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+            Some(route::Transcript::load(&raw))
+        }
+        None => None,
+    };
+    route_into_chart(input, transcript)
+}
+
+/// [`build_reading`] with the transcript coming from audio: transcribe the
+/// WAV with the given ggml model first (reporting whole-percent progress),
+/// then route as usual.
+pub fn build_reading_from_audio(
+    input: &chart::BirthInput,
+    audio: &std::path::Path,
+    model: &std::path::Path,
+    progress: impl FnMut(i32) + Send + 'static,
+) -> Result<(contract::ChartData, usize), String> {
+    let segments = transcribe::transcribe(audio, model, progress)?;
+    let transcript =
+        route::Transcript::from_segments(segments.into_iter().map(|s| (s.start, s.text)));
+    route_into_chart(input, Some(transcript))
+}
+
+fn route_into_chart(
+    input: &chart::BirthInput,
+    transcript: Option<route::Transcript>,
+) -> Result<(contract::ChartData, usize), String> {
     let mut chart = chart::compute_chart(input)?;
     let mut n_routed = 0;
-    if let Some(path) = transcript {
-        let raw = std::fs::read_to_string(path)
-            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-        let transcript = route::Transcript::load(&raw);
+    if let Some(transcript) = transcript {
         let router = route::LexiconRouter::new(&chart.vocab(), &chart.aspects);
         n_routed = route::index_transcript(&mut chart, &transcript, &router);
     }

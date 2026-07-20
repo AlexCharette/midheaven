@@ -11,6 +11,9 @@ pub struct Model {
     pub screen: Screen,
     pub status: String,
     pub should_quit: bool,
+    /// A background build (transcription) is running; submits are blocked
+    /// and the status line carries its progress.
+    pub busy: bool,
 }
 
 impl Default for Model {
@@ -19,6 +22,7 @@ impl Default for Model {
             screen: Screen::Form(Form::default()),
             status: String::new(),
             should_quit: false,
+            busy: false,
         }
     }
 }
@@ -35,15 +39,17 @@ pub enum Field {
     Time,
     Place,
     Transcript,
+    Model,
     Out,
 }
 
-pub const FIELDS: [Field; 6] = [
+pub const FIELDS: [Field; 7] = [
     Field::Name,
     Field::Date,
     Field::Time,
     Field::Place,
     Field::Transcript,
+    Field::Model,
     Field::Out,
 ];
 
@@ -55,6 +61,7 @@ impl Field {
             Field::Time => "at",
             Field::Place => "in",
             Field::Transcript => "transcript",
+            Field::Model => "model",
             Field::Out => "artifact",
         }
     }
@@ -65,7 +72,8 @@ impl Field {
             Field::Date => "YYYY-MM-DD",
             Field::Time => "HH:MM, local civil time",
             Field::Place => "type a city — the gazetteer will offer choices",
-            Field::Transcript => "path to .txt or .jsonl (optional)",
+            Field::Transcript => "path to .txt, .jsonl — or a .wav to transcribe (optional)",
+            Field::Model => "ggml whisper model, needed for .wav transcripts",
             Field::Out => "where the HTML artifact is written",
         }
     }
@@ -91,6 +99,7 @@ pub struct Form {
     pub place_query: String,
     pub picked: Option<&'static Place>,
     pub transcript: String,
+    pub model: String,
     pub out: String,
     pub focus: Field,
     pub suggestions: Vec<&'static Place>,
@@ -108,6 +117,7 @@ impl Default for Form {
             place_query: String::new(),
             picked: None,
             transcript: String::new(),
+            model: String::new(),
             out: "reading.html".to_string(),
             focus: Field::Name,
             suggestions: Vec::new(),
@@ -125,6 +135,7 @@ impl Form {
             Field::Time => &self.time,
             Field::Place => &self.place_query,
             Field::Transcript => &self.transcript,
+            Field::Model => &self.model,
             Field::Out => &self.out,
         }
     }
@@ -136,6 +147,7 @@ impl Form {
             Field::Time => &mut self.time,
             Field::Place => &mut self.place_query,
             Field::Transcript => &mut self.transcript,
+            Field::Model => &mut self.model,
             Field::Out => &mut self.out,
         }
     }

@@ -26,7 +26,10 @@ cargo run            # bare invocation opens the terminal UI (same as `astro tui
 
 An Elm-architecture ratatui interface in the artifact's engraved style: a
 birth-data form with a live gazetteer typeahead, then the computed plate —
-braille chart wheel, Index of Elements, and filtered Commentary.
+braille chart wheel, Index of Elements, and filtered Commentary. The
+transcript field also accepts a `.wav` recording (set the model field to a
+ggml file): transcription runs on a background thread with live progress in
+the status line.
 
 | Keys (form) | | Keys (reading) | |
 |---|---|---|---|
