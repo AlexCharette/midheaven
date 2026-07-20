@@ -201,7 +201,8 @@
   }
   .duo {
     display: grid;
-    grid-template-columns: 7.5rem 1fr auto 1fr;
+    /* date is content-sized so "at" sits right beside it */
+    grid-template-columns: 7.5rem 9rem auto 1fr;
     gap: 0 1rem;
     align-items: baseline;
     margin-bottom: 1.1rem;
