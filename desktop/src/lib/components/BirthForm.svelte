@@ -92,7 +92,6 @@
 
 <div class="plate">
   <div class="ornament">✶</div>
-  <p class="apparatus-text">The Nativity Desk</p>
   <h1>MIDHEAVEN</h1>
   <p class="apparatus-text">your data never leaves this device</p>
 
