@@ -9,8 +9,7 @@ mod view;
 mod wheel;
 
 
-use astro::route::{LexiconRouter, Transcript, index_transcript};
-use model::{Model, Screen};
+use model::Model;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use std::time::Duration;
 use update::{Cmd, Msg, decode, update};
@@ -19,13 +18,17 @@ pub fn run() -> Result<(), String> {
     // The gazetteer's one-time parse happens before raw mode, so the first
     // keystroke in the place field is instant.
     eprintln!("consulting the gazetteer…");
-    let _ = astro::geo::search("x", 1);
+    astro::geo::warm();
 
     let mut terminal = ratatui::init();
     let mut model = Model::default();
+    let mut dirty = true; // redraw only when something changed
     let result = loop {
-        if let Err(e) = terminal.draw(|f| view::view(&model, f)) {
-            break Err(e.to_string());
+        if dirty {
+            if let Err(e) = terminal.draw(|f| view::view(&model, f)) {
+                break Err(e.to_string());
+            }
+            dirty = false;
         }
         match event::poll(Duration::from_millis(250)) {
             Ok(false) => {}
@@ -33,9 +36,10 @@ pub fn run() -> Result<(), String> {
                 Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                     if let Some(msg) = decode(&model, key) {
                         dispatch(&mut model, msg);
+                        dirty = true;
                     }
                 }
-                Ok(_) => {} // resize etc. — the next draw handles it
+                Ok(_) => dirty = true, // resize etc.
                 Err(e) => break Err(e.to_string()),
             },
             Err(e) => break Err(e.to_string()),
@@ -51,49 +55,28 @@ pub fn run() -> Result<(), String> {
 /// Run a message through update, then execute the commands it produced,
 /// feeding each command's result message back through update.
 fn dispatch(model: &mut Model, msg: Msg) {
-    let mut queue = vec![msg];
-    while !queue.is_empty() {
-        let mut cmds = Vec::new();
-        for msg in queue.drain(..) {
-            cmds.extend(update(model, msg));
+    let mut msgs = vec![msg];
+    while let Some(msg) = msgs.pop() {
+        for cmd in update(model, msg) {
+            msgs.extend(execute(cmd));
         }
-        queue.extend(cmds.into_iter().filter_map(|c| execute(c, model)));
     }
 }
 
-/// The effect interpreter: the only place the TUI touches the filesystem or
-/// the pipeline.
-fn execute(cmd: Cmd, model: &Model) -> Option<Msg> {
+/// The effect interpreter: commands are self-contained, so this needs no
+/// view of the Model — the only place the TUI touches the filesystem.
+fn execute(cmd: Cmd) -> Option<Msg> {
     match cmd {
-        Cmd::Build { input, transcript } => Some(Msg::Built(build(input, transcript))),
-        Cmd::Emit => {
-            let Screen::Reading(reading) = &model.screen else {
-                return None;
-            };
-            Some(Msg::Emitted(
-                astro::emit::emit(&reading.chart)
-                    .and_then(|html| {
-                        std::fs::write(&reading.out, html).map_err(|e| e.to_string())
-                    })
-                    .map(|()| reading.out.clone()),
-            ))
-        }
+        Cmd::Build { input, transcript } => Some(Msg::Built(
+            astro::build_reading(&input, transcript.as_deref())
+                .map(|(chart, _)| Box::new(chart)),
+        )),
+        Cmd::WriteFile { path, contents } => Some(Msg::Emitted(
+            std::fs::write(&path, contents)
+                .map_err(|e| format!("cannot write {path}: {e}"))
+                .map(|()| path),
+        )),
     }
-}
-
-fn build(
-    input: astro::chart::BirthInput,
-    transcript: Option<std::path::PathBuf>,
-) -> Result<Box<astro::contract::ChartData>, String> {
-    let mut chart = astro::chart::compute_chart(&input)?;
-    if let Some(path) = transcript {
-        let raw = std::fs::read_to_string(&path)
-            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-        let transcript = Transcript::load(&raw);
-        let router = LexiconRouter::new(&chart.vocab(), &chart.aspects);
-        index_transcript(&mut chart, &transcript, &router);
-    }
-    Ok(Box::new(chart))
 }
 
 /// Shared fixtures for the TEA unit tests and view snapshots.
@@ -112,15 +95,8 @@ pub(crate) mod testkit {
             tz: chrono_tz::Europe::Berlin,
             place: "Berlin, Germany".into(),
         };
-        let mut chart = astro::chart::compute_chart(&input).unwrap();
-        let raw = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/examples/transcript.jsonl"
-        ))
-        .unwrap();
-        let transcript = astro::route::Transcript::load(&raw);
-        let router = astro::route::LexiconRouter::new(&chart.vocab(), &chart.aspects);
-        astro::route::index_transcript(&mut chart, &transcript, &router);
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/transcript.jsonl");
+        let (chart, _) = astro::build_reading(&input, Some(path.as_ref())).unwrap();
         Model {
             screen: Screen::Reading(Reading::new(Box::new(chart), "reading.html".into())),
             ..Model::default()

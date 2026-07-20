@@ -1,8 +1,11 @@
 //! The Model of the Elm loop: everything the view renders and update mutates.
 
 use astro::contract::{ChartData, Excerpt};
+
+/// Re-exported so TUI modules keep one import path for filter mode.
+pub use astro::contract::Mode;
 use astro::geo::Place;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 pub struct Model {
     pub screen: Screen,
@@ -68,13 +71,16 @@ impl Field {
     }
 
     pub fn next(self) -> Field {
-        let i = FIELDS.iter().position(|f| *f == self).unwrap();
-        FIELDS[(i + 1) % FIELDS.len()]
+        self.step(1)
     }
 
     pub fn prev(self) -> Field {
+        self.step(FIELDS.len() - 1)
+    }
+
+    fn step(self, offset: usize) -> Field {
         let i = FIELDS.iter().position(|f| *f == self).unwrap();
-        FIELDS[(i + FIELDS.len() - 1) % FIELDS.len()]
+        FIELDS[(i + offset) % FIELDS.len()]
     }
 }
 
@@ -135,12 +141,6 @@ impl Form {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Mode {
-    Any,
-    All,
-}
-
 /// One row of the Index of Elements.
 pub struct IndexEntry {
     pub tag: String,
@@ -148,6 +148,12 @@ pub struct IndexEntry {
     pub name: String,
     /// Planets carry their position ("20° ♋"); other categories none.
     pub detail: String,
+}
+
+/// A titled column of the Index of Elements.
+pub struct Column {
+    pub head: &'static str,
+    pub entries: Vec<IndexEntry>,
 }
 
 pub struct Reading {
@@ -159,16 +165,16 @@ pub struct Reading {
     pub cursor: (usize, usize),
     /// Commentary scroll offset, in rendered lines.
     pub scroll: u16,
-    /// The four index columns: planets, signs, houses, aspects.
-    pub columns: [Vec<IndexEntry>; 4],
+    /// The index columns: planets, signs, houses, aspects.
+    pub columns: [Column; 4],
+    /// tag-id → "glyph name", for the commentary's vide references.
+    pub tag_names: HashMap<String, String>,
 }
 
 impl Reading {
     pub fn new(chart: Box<ChartData>, out: String) -> Reading {
-        let sign_glyph_at = |lon: f64| {
-            let idx = (lon.rem_euclid(360.0) / 30.0) as usize;
-            chart.signs[idx.min(11)].glyph.clone()
-        };
+        // compute_chart guarantees longitudes in [0, 360)
+        let sign_glyph_at = |lon: f64| chart.signs[(lon / 30.0) as usize].glyph.clone();
         let planets = chart
             .planets
             .iter()
@@ -176,7 +182,7 @@ impl Reading {
                 tag: p.id.clone(),
                 glyph: p.glyph.clone(),
                 name: p.name.clone(),
-                detail: format!("{}° {}", (p.lon.rem_euclid(360.0) % 30.0) as u32, sign_glyph_at(p.lon)),
+                detail: format!("{}° {}", (p.lon % 30.0) as u32, sign_glyph_at(p.lon)),
             })
             .collect();
         let signs = chart
@@ -199,15 +205,8 @@ impl Reading {
                 detail: String::new(),
             })
             .collect();
-        let planet_name = |id: &str| {
-            chart
-                .planets
-                .iter()
-                .find(|p| p.id == id)
-                .map(|p| p.name.as_str())
-                .unwrap_or(id)
-                .to_string()
-        };
+        let planet_name =
+            |id: &str| chart.planet(id).map(|p| p.name.as_str()).unwrap_or(id).to_string();
         let aspects = chart
             .aspects
             .iter()
@@ -218,6 +217,17 @@ impl Reading {
                 detail: String::new(),
             })
             .collect();
+        let columns = [
+            Column { head: "planets", entries: planets },
+            Column { head: "signs", entries: signs },
+            Column { head: "houses", entries: houses },
+            Column { head: "aspects", entries: aspects },
+        ];
+        let tag_names = columns
+            .iter()
+            .flat_map(|c| &c.entries)
+            .map(|e| (e.tag.clone(), format!("{} {}", e.glyph, e.name)))
+            .collect();
         Reading {
             chart,
             out,
@@ -225,29 +235,22 @@ impl Reading {
             mode: Mode::Any,
             cursor: (0, 0),
             scroll: 0,
-            columns: [planets, signs, houses, aspects],
+            columns,
+            tag_names,
         }
     }
 
-    /// The filter semantics shared with the HTML viewer: no selection shows
-    /// everything; Any = passage touches any selected tag; All = every one.
+    /// Filtering delegates to the contract's [`Excerpt::matches`] — the same
+    /// semantics the HTML viewer implements in JS.
     pub fn visible(&self) -> Vec<&Excerpt> {
         self.chart
             .excerpts
             .iter()
-            .filter(|ex| {
-                if self.selected.is_empty() {
-                    return true;
-                }
-                match self.mode {
-                    Mode::Any => self.selected.iter().any(|t| ex.tags.contains(t)),
-                    Mode::All => self.selected.iter().all(|t| ex.tags.contains(t)),
-                }
-            })
+            .filter(|ex| ex.matches(&self.selected, self.mode))
             .collect()
     }
 
     pub fn cursor_entry(&self) -> Option<&IndexEntry> {
-        self.columns[self.cursor.0].get(self.cursor.1)
+        self.columns[self.cursor.0].entries.get(self.cursor.1)
     }
 }

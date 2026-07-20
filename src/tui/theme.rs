@@ -38,6 +38,22 @@ pub fn error() -> Style {
     Style::new().fg(OXBLOOD).add_modifier(Modifier::ITALIC)
 }
 
+/// What "focused / chosen" looks like, everywhere: bright ink, underlined;
+/// inactive items sit in ink-2.
+pub fn highlight(active: bool) -> Style {
+    if active {
+        Style::new().fg(INK).add_modifier(Modifier::UNDERLINED)
+    } else {
+        Style::new().fg(INK2)
+    }
+}
+
+/// The manicule marks the active/selected row; its blank twin keeps columns
+/// aligned.
+pub fn marker(active: bool) -> &'static str {
+    if active { "☞ " } else { "  " }
+}
+
 /// Category color for a tag-id (`planet:sun` → brass, …).
 pub fn cat_color(tag: &str) -> Color {
     match tag.split(':').next().unwrap_or("") {

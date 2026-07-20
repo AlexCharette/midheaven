@@ -32,6 +32,33 @@ impl ChartData {
             .chain(self.aspects.iter().map(|a| a.id.clone()))
             .collect()
     }
+
+    /// Look up a planet body (including the Ascendant point) by tag-id.
+    pub fn planet(&self, id: &str) -> Option<&Body> {
+        self.planets.iter().find(|p| p.id == id)
+    }
+}
+
+/// Filter match mode for excerpt selections, shared by every viewer
+/// (the HTML template implements the same semantics in JS).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Mode {
+    Any,
+    All,
+}
+
+impl Excerpt {
+    /// An empty selection matches everything; Any = the excerpt touches any
+    /// selected tag; All = it touches every one.
+    pub fn matches(&self, selected: &BTreeSet<String>, mode: Mode) -> bool {
+        if selected.is_empty() {
+            return true;
+        }
+        match mode {
+            Mode::Any => selected.iter().any(|t| self.tags.contains(t)),
+            Mode::All => selected.iter().all(|t| self.tags.contains(t)),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

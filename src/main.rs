@@ -1,8 +1,7 @@
 mod tui;
 
-use astro::chart::{BirthInput, compute_chart};
-use astro::route::{LexiconRouter, Transcript, index_transcript};
-use astro::{emit, geo};
+use astro::chart::{BirthInput, compute_chart, parse_time};
+use astro::{build_reading, emit, geo};
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -74,11 +73,7 @@ struct BirthArgs {
 
 impl BirthArgs {
     fn into_input(self) -> Result<BirthInput, String> {
-        let time = self
-            .time
-            .parse()
-            .or_else(|_| format!("{}:00", self.time).parse())
-            .map_err(|e| format!("invalid --time {:?}: {e}", self.time))?;
+        let time = parse_time(&self.time)?;
 
         let resolved: Option<&'static geo::Place> = if let Some(id) = self.place_id {
             Some(geo::by_id(id).ok_or(format!("no place with geonames id {id}"))?)
@@ -150,30 +145,15 @@ fn print_places(places: &[&geo::Place]) {
 
 fn run() -> Result<(), String> {
     match Cli::parse().command {
-        None | Some(Command::Tui) => tui::run(),
-        Some(command) => run_command(command),
-    }
-}
-
-fn run_command(command: Command) -> Result<(), String> {
-    match command {
-        Command::Tui => unreachable!("handled in run"),
-        Command::Chart(birth) => {
+        None | Some(Command::Tui) => return tui::run(),
+        Some(Command::Chart(birth)) => {
             let input = birth.into_input()?;
             let chart = compute_chart(&input)?;
             println!("{}", serde_json::to_string_pretty(&chart).map_err(|e| e.to_string())?);
         }
-        Command::Build { birth, transcript, out } => {
+        Some(Command::Build { birth, transcript, out }) => {
             let input = birth.into_input()?;
-            let mut chart = compute_chart(&input)?;
-
-            let raw = std::fs::read_to_string(&transcript)
-                .map_err(|e| format!("cannot read {}: {e}", transcript.display()))?;
-            let transcript = Transcript::load(&raw);
-
-            let router = LexiconRouter::new(&chart.vocab(), &chart.aspects);
-            let n_routed = index_transcript(&mut chart, &transcript, &router);
-
+            let (chart, n_routed) = build_reading(&input, Some(&transcript))?;
             let html = emit::emit(&chart)?;
             std::fs::write(&out, &html).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
             eprintln!(
@@ -185,7 +165,7 @@ fn run_command(command: Command) -> Result<(), String> {
             );
             eprintln!("wrote {}", out.display());
         }
-        Command::Places { query } => {
+        Some(Command::Places { query }) => {
             let query = query.join(" ");
             let hits = geo::search(&query, 10);
             if hits.is_empty() {

@@ -54,25 +54,23 @@ fn view_form(form: &Form, area: Rect, frame: &mut Frame) {
         Line::raw(""),
     ];
 
+    let mut place_row: u16 = 0;
     for field in FIELDS {
         let focused = form.focus == field;
-        let marker = if focused { "☞ " } else { "  " };
+        if field == Field::Place {
+            place_row = lines.len() as u16; // dropdown anchor: the row being pushed
+        }
         let label = format!("{:>10}  ", field.label());
         let value = display_value(form, field);
-        let value_style = if focused {
-            Style::new().fg(theme::INK).add_modifier(Modifier::UNDERLINED)
-        } else {
-            Style::new().fg(theme::INK2)
-        };
         let mut spans = vec![
-            Span::styled(marker, Style::new().fg(theme::INK2)),
+            Span::styled(theme::marker(focused), theme::ink2()),
             Span::styled(label, theme::apparatus()),
-            Span::styled(value.clone(), value_style),
+            Span::styled(value.clone(), theme::highlight(focused)),
         ];
         if focused {
             spans.push(Span::styled("▏", Style::new().fg(theme::BRASS)));
             if value.is_empty() {
-                spans.push(Span::styled(field.hint(), Style::new().fg(theme::HAIRLINE).italic()));
+                spans.push(Span::styled(field.hint(), theme::hairline().italic()));
             }
         }
         lines.push(Line::from(spans));
@@ -95,10 +93,10 @@ fn view_form(form: &Form, area: Rect, frame: &mut Frame) {
 
     frame.render_widget(Paragraph::new(lines), col);
 
-    // the gazetteer dropdown floats under the place field
+    // the gazetteer dropdown floats under the place field, anchored to the
+    // row recorded while the form lines were built
     if !form.suggestions.is_empty() && form.focus == Field::Place {
-        // field rows start at y+6, two rows per field; place is index 3
-        let place_row = col.y + 6 + 2 * 3;
+        let place_row = col.y + place_row;
         let drop = Rect {
             x: col.x + 14,
             y: place_row + 1,
@@ -112,15 +110,9 @@ fn view_form(form: &Form, area: Rect, frame: &mut Frame) {
             .enumerate()
             .map(|(i, p)| {
                 let current = form.sel == Some(i);
-                let marker = if current { "☞ " } else { "  " };
-                let style = if current {
-                    Style::new().fg(theme::INK).add_modifier(Modifier::UNDERLINED)
-                } else {
-                    Style::new().fg(theme::INK2)
-                };
                 Line::from(vec![
-                    Span::styled(marker, Style::new().fg(theme::INK2)),
-                    Span::styled(p.label(), style),
+                    Span::styled(theme::marker(current), theme::ink2()),
+                    Span::styled(p.label(), theme::highlight(current)),
                     Span::styled(format!("  {}", p.tz), theme::apparatus()),
                 ])
             })
@@ -153,8 +145,8 @@ fn view_reading(reading: &Reading, area: Rect, frame: &mut Frame) {
 
     view_plate(reading, plate_area, frame);
 
-    let index_height = (reading.columns.iter().map(Vec::len).max().unwrap_or(0) as u16 + 3)
-        .min(area.height / 2);
+    let rows = reading.columns.iter().map(|c| c.entries.len()).max().unwrap_or(0);
+    let index_height = (rows as u16 + 3).min(area.height / 2);
     let [index_area, apparatus, commentary] = Layout::vertical([
         Constraint::Length(index_height),
         Constraint::Length(1),
@@ -162,9 +154,10 @@ fn view_reading(reading: &Reading, area: Rect, frame: &mut Frame) {
     ])
     .areas(right);
 
+    let visible = reading.visible();
     view_index(reading, index_area, frame);
-    view_apparatus(reading, apparatus, frame);
-    view_commentary(reading, commentary, frame);
+    view_apparatus(reading, visible.len(), apparatus, frame);
+    view_commentary(reading, &visible, commentary, frame);
 }
 
 fn view_plate(reading: &Reading, area: Rect, frame: &mut Frame) {
@@ -205,22 +198,16 @@ fn view_index(reading: &Reading, area: Rect, frame: &mut Frame) {
     ])
     .areas(cols_area);
 
-    const HEADS: [&str; 4] = ["planets", "signs", "houses", "aspects"];
-    for (c, (entries, col_area)) in reading.columns.iter().zip(col_areas).enumerate() {
-        let mut lines = vec![Line::from(Span::styled(HEADS[c], theme::apparatus()))];
-        for (r, entry) in entries.iter().enumerate() {
+    for (c, (column, col_area)) in reading.columns.iter().zip(col_areas).enumerate() {
+        let mut lines = vec![Line::from(Span::styled(column.head, theme::apparatus()))];
+        for (r, entry) in column.entries.iter().enumerate() {
             let selected = reading.selected.contains(&entry.tag);
-            let at_cursor = reading.cursor == (c, r);
-            let marker = if selected { "☞" } else { " " };
-            let mut name_style = Style::new().fg(theme::INK2);
-            if selected {
-                name_style = name_style.fg(theme::INK).add_modifier(Modifier::UNDERLINED);
-            }
-            if at_cursor {
+            let mut name_style = theme::highlight(selected);
+            if reading.cursor == (c, r) {
                 name_style = name_style.add_modifier(Modifier::REVERSED);
             }
             let mut spans = vec![
-                Span::styled(marker.to_string(), Style::new().fg(theme::INK2)),
+                Span::styled(if selected { "☞" } else { " " }, theme::ink2()),
                 Span::styled(format!("{:>2} ", entry.glyph), Style::new().fg(theme::cat_color(&entry.tag))),
                 Span::styled(entry.name.clone(), name_style),
             ];
@@ -233,8 +220,7 @@ fn view_index(reading: &Reading, area: Rect, frame: &mut Frame) {
     }
 }
 
-fn view_apparatus(reading: &Reading, area: Rect, frame: &mut Frame) {
-    let visible = reading.visible().len();
+fn view_apparatus(reading: &Reading, visible: usize, area: Rect, frame: &mut Frame) {
     let total = reading.chart.excerpts.len();
     let (any_style, all_style) = match reading.mode {
         Mode::Any => (Style::new().fg(theme::BG).bg(theme::INK2), theme::ink2()),
@@ -250,13 +236,17 @@ fn view_apparatus(reading: &Reading, area: Rect, frame: &mut Frame) {
     frame.render_widget(Paragraph::new(line), area);
 }
 
-fn view_commentary(reading: &Reading, area: Rect, frame: &mut Frame) {
+fn view_commentary(
+    reading: &Reading,
+    visible: &[&astro::contract::Excerpt],
+    area: Rect,
+    frame: &mut Frame,
+) {
     let [rubric_area, body] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
     frame.render_widget(Paragraph::new(rubric_line("Commentary")), rubric_area);
 
     let mut lines: Vec<Line> = Vec::new();
-    let visible = reading.visible();
     if visible.is_empty() {
         lines.push(Line::raw(""));
         lines.push(
@@ -289,7 +279,7 @@ fn view_commentary(reading: &Reading, area: Rect, frame: &mut Frame) {
             if i > 0 {
                 tag_spans.push(Span::styled(" · ", Style::new().fg(theme::INK3)));
             }
-            let name = tag_name(reading, tag);
+            let name = reading.tag_names.get(tag).cloned().unwrap_or_else(|| tag.clone());
             tag_spans.push(Span::styled(name, Style::new().fg(theme::cat_color(tag))));
         }
         lines.push(Line::from(tag_spans));
@@ -317,17 +307,6 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
     rows
 }
 
-fn tag_name(reading: &Reading, tag: &str) -> String {
-    for col in &reading.columns {
-        if let Some(e) = col.iter().find(|e| e.tag == tag) {
-            return match tag.split(':').next() {
-                Some("house") => format!("{} {}", e.glyph, e.name),
-                _ => format!("{} {}", e.glyph, e.name),
-            };
-        }
-    }
-    tag.to_string()
-}
 
 // -------------------------------------------------------------- status ----
 
@@ -342,7 +321,7 @@ fn view_status(model: &Model, area: Rect, frame: &mut Frame) {
     let line = Line::from(vec![
         Span::styled(format!(" {}", model.status), theme::ink2().italic()),
         Span::raw("   "),
-        Span::styled(hints, Style::new().fg(theme::HAIRLINE).italic()),
+        Span::styled(hints, theme::hairline().italic()),
     ]);
     frame.render_widget(Paragraph::new(line).style(theme::base()), area);
 }

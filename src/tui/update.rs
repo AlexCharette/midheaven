@@ -2,9 +2,9 @@
 //! Key events are decoded to semantic messages by [`decode`]; side effects
 //! leave `update` only as [`Cmd`]s for the runtime to execute.
 
-use super::model::{Field, Form, Mode, Model, Reading, Screen};
+use super::model::{Field, Form, Model, Reading, Screen};
 use astro::chart::BirthInput;
-use astro::contract::ChartData;
+use astro::contract::{ChartData, Mode};
 use astro::geo;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
@@ -46,8 +46,9 @@ pub enum Cmd {
         input: BirthInput,
         transcript: Option<PathBuf>,
     },
-    /// Emit the current chart to its artifact path. Resolves to [`Msg::Emitted`].
-    Emit,
+    /// Write an already-rendered artifact. Self-contained: the interpreter
+    /// needs no view of the Model. Resolves to [`Msg::Emitted`].
+    WriteFile { path: String, contents: String },
 }
 
 /// Key event → semantic message, per screen. Returns None for keys that mean
@@ -97,10 +98,11 @@ pub fn update(model: &mut Model, msg: Msg) -> Vec<Cmd> {
             Vec::new()
         }
         Msg::Built(Ok(chart)) => {
-            let out = match &model.screen {
-                Screen::Form(f) => f.out.clone(),
-                Screen::Reading(r) => r.out.clone(),
+            // Build commands are only issued by the form's submit.
+            let Screen::Form(form) = &model.screen else {
+                return Vec::new();
             };
+            let out = form.out.clone();
             let n = chart.excerpts.len();
             model.screen = Screen::Reading(Reading::new(chart, out));
             model.status = format!("{n} passages routed past the verify gate");
@@ -132,41 +134,42 @@ pub fn update(model: &mut Model, msg: Msg) -> Vec<Cmd> {
     }
 }
 
-fn refresh_suggestions(form: &mut Form) {
+/// One keystroke of editing the focused field, with its shared bookkeeping:
+/// errors clear, a Place edit invalidates the picked place, and only a Place
+/// edit re-queries the gazetteer (`geo::search` is a pure read of process-
+/// static data, so it may live in update).
+fn edit_field(form: &mut Form, edit: impl FnOnce(&mut String)) {
+    form.error = None;
+    if form.focus == Field::Place {
+        form.picked = None;
+    }
+    edit(form.value_mut(form.focus));
     if form.focus == Field::Place && !form.place_query.trim().is_empty() {
         form.suggestions = geo::search(&form.place_query, 6);
         form.sel = if form.suggestions.is_empty() { None } else { Some(0) };
     } else {
-        form.suggestions.clear();
-        form.sel = None;
+        close_suggestions(form);
     }
+}
+
+fn close_suggestions(form: &mut Form) {
+    form.suggestions.clear();
+    form.sel = None;
 }
 
 fn update_form(form: &mut Form, status: &mut String, msg: Msg) -> Vec<Cmd> {
     match msg {
-        Msg::Input(c) => {
-            form.error = None;
-            if form.focus == Field::Place {
-                form.picked = None;
-            }
-            form.value_mut(form.focus).push(c);
-            refresh_suggestions(form);
-        }
-        Msg::Backspace => {
-            form.error = None;
-            if form.focus == Field::Place {
-                form.picked = None;
-            }
-            form.value_mut(form.focus).pop();
-            refresh_suggestions(form);
-        }
+        Msg::Input(c) => edit_field(form, |v| v.push(c)),
+        Msg::Backspace => edit_field(form, |v| {
+            v.pop();
+        }),
         Msg::NextField => {
             form.focus = form.focus.next();
-            refresh_suggestions(form);
+            close_suggestions(form);
         }
         Msg::PrevField => {
             form.focus = form.focus.prev();
-            refresh_suggestions(form);
+            close_suggestions(form);
         }
         Msg::SuggestionDown => {
             if let Some(i) = form.sel {
@@ -178,17 +181,13 @@ fn update_form(form: &mut Form, status: &mut String, msg: Msg) -> Vec<Cmd> {
                 form.sel = Some(i.saturating_sub(1));
             }
         }
-        Msg::Dismiss => {
-            form.suggestions.clear();
-            form.sel = None;
-        }
+        Msg::Dismiss => close_suggestions(form),
         Msg::Accept => {
             if let Some(i) = form.sel {
                 if let Some(p) = form.suggestions.get(i).copied() {
                     form.picked = Some(p);
                     form.place_query = p.label();
-                    form.suggestions.clear();
-                    form.sel = None;
+                    close_suggestions(form);
                     form.focus = form.focus.next();
                 }
             } else if form.focus == Field::Out {
@@ -213,8 +212,7 @@ fn submit(form: &mut Form, status: &mut String) -> Vec<Cmd> {
     let Ok(date) = form.date.parse::<chrono::NaiveDate>() else {
         return fail(form, Field::Date, "a date as YYYY-MM-DD, e.g. 1990-07-13");
     };
-    let time_str = if form.time.len() == 5 { format!("{}:00", form.time) } else { form.time.clone() };
-    let Ok(time) = time_str.parse::<chrono::NaiveTime>() else {
+    let Ok(time) = astro::chart::parse_time(&form.time) else {
         return fail(form, Field::Time, "a time as HH:MM, e.g. 14:30");
     };
     let place = match form.picked {
@@ -258,16 +256,17 @@ fn submit(form: &mut Form, status: &mut String) -> Vec<Cmd> {
 fn update_reading(reading: &mut Reading, status: &mut String, msg: Msg) -> Vec<Cmd> {
     match msg {
         Msg::CursorLeft => {
-            reading.cursor.0 = (reading.cursor.0 + 3) % 4;
+            let n = reading.columns.len();
+            reading.cursor.0 = (reading.cursor.0 + n - 1) % n;
             clamp_row(reading);
         }
         Msg::CursorRight => {
-            reading.cursor.0 = (reading.cursor.0 + 1) % 4;
+            reading.cursor.0 = (reading.cursor.0 + 1) % reading.columns.len();
             clamp_row(reading);
         }
         Msg::CursorUp => reading.cursor.1 = reading.cursor.1.saturating_sub(1),
         Msg::CursorDown => {
-            let max = reading.columns[reading.cursor.0].len().saturating_sub(1);
+            let max = reading.columns[reading.cursor.0].entries.len().saturating_sub(1);
             reading.cursor.1 = (reading.cursor.1 + 1).min(max);
         }
         Msg::ToggleSel => {
@@ -293,8 +292,17 @@ fn update_reading(reading: &mut Reading, status: &mut String, msg: Msg) -> Vec<C
         Msg::ScrollDown => reading.scroll = reading.scroll.saturating_add(2),
         Msg::ScrollUp => reading.scroll = reading.scroll.saturating_sub(2),
         Msg::Emit => {
-            *status = "engraving…".to_string();
-            return vec![Cmd::Emit];
+            // Rendering is pure, so it happens here; only the write is an effect.
+            return match astro::emit::emit(&reading.chart) {
+                Ok(contents) => {
+                    *status = "engraving…".to_string();
+                    vec![Cmd::WriteFile { path: reading.out.clone(), contents }]
+                }
+                Err(e) => {
+                    *status = format!("✗ {e}");
+                    Vec::new()
+                }
+            };
         }
         _ => {}
     }
@@ -302,7 +310,7 @@ fn update_reading(reading: &mut Reading, status: &mut String, msg: Msg) -> Vec<C
 }
 
 fn clamp_row(reading: &mut Reading) {
-    let max = reading.columns[reading.cursor.0].len().saturating_sub(1);
+    let max = reading.columns[reading.cursor.0].entries.len().saturating_sub(1);
     reading.cursor.1 = reading.cursor.1.min(max);
 }
 
@@ -417,7 +425,7 @@ mod tests {
         assert!(update(&mut m, Msg::Emit).is_empty());
         let mut r = reading_model();
         let cmds = update(&mut r, Msg::Emit);
-        assert!(matches!(cmds.as_slice(), [Cmd::Emit]));
+        assert!(matches!(cmds.as_slice(), [Cmd::WriteFile { .. }]));
     }
 
     #[test]

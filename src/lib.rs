@@ -20,3 +20,23 @@ pub mod contract;
 pub mod emit;
 pub mod geo;
 pub mod route;
+
+/// The whole pipeline in one call: compute the chart, then (when a transcript
+/// is given) route + verify its passages into `excerpts`. Returns the chart
+/// and the number of spans the router emitted before gating. This is the
+/// single entry point the CLI, the TUI, and tests share.
+pub fn build_reading(
+    input: &chart::BirthInput,
+    transcript: Option<&std::path::Path>,
+) -> Result<(contract::ChartData, usize), String> {
+    let mut chart = chart::compute_chart(input)?;
+    let mut n_routed = 0;
+    if let Some(path) = transcript {
+        let raw = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        let transcript = route::Transcript::load(&raw);
+        let router = route::LexiconRouter::new(&chart.vocab(), &chart.aspects);
+        n_routed = route::index_transcript(&mut chart, &transcript, &router);
+    }
+    Ok((chart, n_routed))
+}

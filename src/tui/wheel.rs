@@ -72,7 +72,7 @@ fn paint(ctx: &mut Context, chart: &ChartData, pt: &impl Fn(f64, f64) -> (f64, f
     }
 
     // aspect chords under the glyphs
-    let lon_of = |id: &str| chart.planets.iter().find(|p| p.id == id).map(|p| p.lon);
+    let lon_of = |id: &str| chart.planet(id).map(|p| p.lon);
     for a in &chart.aspects {
         if let (Some(la), Some(lb)) = (lon_of(&a.a), lon_of(&a.b)) {
             let (x1, y1) = pt(la, R_CHORD);
@@ -103,10 +103,7 @@ fn paint(ctx: &mut Context, chart: &ChartData, pt: &impl Fn(f64, f64) -> (f64, f
     let mut prev_lon: Option<f64> = None;
     let mut prev_r = R_PLANET;
     for p in by_lon {
-        let crowded = prev_lon.is_some_and(|pl| {
-            let d = (p.lon - pl).abs();
-            d.min(360.0 - d) < 9.0
-        });
+        let crowded = prev_lon.is_some_and(|pl| astro::chart::separation(p.lon, pl) < 9.0);
         let r = if crowded { (prev_r - 0.11).max(0.30) } else { R_PLANET };
         prev_lon = Some(p.lon);
         prev_r = r;

@@ -132,6 +132,12 @@ fn places() -> &'static [Place] {
     })
 }
 
+/// Force the one-time decompress/parse of the embedded gazetteer now, so an
+/// interactive caller can front-load it instead of paying on the first search.
+pub fn warm() {
+    let _ = places();
+}
+
 /// Split "city, qualifier, qualifier" into a lowercase city token + qualifiers.
 fn parse_query(query: &str) -> Option<(String, Vec<String>)> {
     let mut parts = query

@@ -35,6 +35,14 @@ pub fn separation(a: f64, b: f64) -> f64 {
     d.min(360.0 - d)
 }
 
+/// Parse a birth time, accepting HH:MM:SS or HH:MM (seconds default to 00).
+/// The one time-input rule shared by every frontend.
+pub fn parse_time(s: &str) -> Result<NaiveTime, String> {
+    s.parse()
+        .or_else(|_| format!("{s}:00").parse())
+        .map_err(|e| format!("invalid time {s:?}: {e}"))
+}
+
 /// The spine: each stage is a named step; the data flows top to bottom.
 pub fn compute_chart(input: &BirthInput) -> Result<ChartData, String> {
     let moment = birth_moment(input)?;
