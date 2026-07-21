@@ -60,6 +60,26 @@ fn save_chart_json(dir: &Path, chart: &ChartData) -> Result<(), String> {
     std::fs::write(&path, json).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
+/// Highest `n` among the `take-{n}.jsonl` files already in a reading folder, so
+/// a take recorded after reopening never overwrites one. 0 when none exist or
+/// the folder can't be read.
+fn max_take_ordinal(dir: &Path) -> usize {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter_map(|e| e.file_name().into_string().ok())
+                .filter_map(|n| {
+                    n.strip_prefix("take-")
+                        .and_then(|r| r.strip_suffix(".jsonl"))
+                        .and_then(|d| d.parse::<usize>().ok())
+                })
+                .max()
+                .unwrap_or(0)
+        })
+        .unwrap_or(0)
+}
+
 #[derive(Default)]
 struct AppState(Mutex<Inner>);
 
@@ -69,6 +89,60 @@ struct AppState(Mutex<Inner>);
 struct PlaceDto {
     id: u32,
     label: String,
+}
+
+/// One row of the readings library: enough to list and reopen a saved
+/// reading without the frontend touching the filesystem.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadingEntry {
+    /// `{dir}/chart.json` — fed straight to `load_chart`.
+    chart_path: String,
+    /// The reading's folder — fed to `delete_reading`.
+    dir: String,
+    name: String,
+    born: String,
+    place: String,
+    excerpts: usize,
+    /// `chart.json`'s mtime, ms since the epoch — sort key and "saved" date.
+    modified_ms: Option<u64>,
+}
+
+/// Read a library folder's `chart.json` into a listing row. `None` (skipped
+/// from the list) when the folder holds no chart or an unreadable one.
+fn reading_entry(dir: &Path) -> Option<ReadingEntry> {
+    let chart_path = dir.join("chart.json");
+    let raw = std::fs::read_to_string(&chart_path).ok()?;
+    let chart: ChartData = serde_json::from_str(&raw).ok()?;
+    let modified_ms = std::fs::metadata(&chart_path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64);
+    Some(ReadingEntry {
+        chart_path: chart_path.to_string_lossy().into_owned(),
+        dir: dir.to_string_lossy().into_owned(),
+        name: chart.meta.name,
+        born: chart.meta.born,
+        place: chart.meta.place,
+        excerpts: chart.excerpts.len(),
+        modified_ms,
+    })
+}
+
+/// Resolve a delete target safely: it must canonicalize to a *direct* child of
+/// the library root and actually be a saved reading (contain `chart.json`), so
+/// no path outside the library or non-reading folder can be removed.
+fn reading_to_remove(root: &Path, dir: &str) -> Result<PathBuf, String> {
+    let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
+    let target = std::fs::canonicalize(dir).map_err(|e| format!("no folder at {dir}: {e}"))?;
+    if target.parent() != Some(root.as_path()) {
+        return Err("that folder is not in the readings library".to_string());
+    }
+    if !target.join("chart.json").is_file() {
+        return Err("that folder is not a saved reading".to_string());
+    }
+    Ok(target)
 }
 
 // async: keeps the gazetteer scan (and a possible cold-parse stall on the
@@ -435,6 +509,72 @@ fn list_models(dir: String) -> Vec<String> {
     models
 }
 
+/// Reopen a saved reading: parse a library `chart.json` back into the session
+/// so it renders, curates, and re-exports exactly like a fresh build. The
+/// file's own folder becomes the session dir (curation re-saves there, the
+/// library convention), the folder name the suggested export stem, and new
+/// live takes continue past any already on disk.
+#[tauri::command]
+fn load_chart(state: State<'_, AppState>, path: String) -> Result<ChartData, String> {
+    let path = PathBuf::from(path.trim());
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let chart: ChartData =
+        serde_json::from_str(&raw).map_err(|e| format!("not a Midheaven chart.json: {e}"))?;
+
+    let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).map(Path::to_path_buf);
+    let stem = dir
+        .as_ref()
+        .and_then(|d| d.file_name())
+        .and_then(|s| s.to_str())
+        .map(String::from)
+        .unwrap_or_else(|| {
+            format!("{}_{}", slug(&chart.meta.name), chrono::Local::now().format("%Y-%m-%d"))
+        });
+    let takes = dir.as_deref().map(max_take_ordinal).unwrap_or(0);
+
+    let mut inner = state.0.lock().unwrap();
+    inner.session_secs = 0.0;
+    inner.takes = takes;
+    inner.session_dir = dir;
+    inner.artifact_name = format!("{stem}.html");
+    inner.chart = Some(chart.clone());
+    drop(inner);
+    Ok(chart)
+}
+
+/// The readings library, newest first: every direct subfolder of the
+/// configured readings dir that holds a `chart.json`. Empty when no readings
+/// folder is set. Foreign or unreadable folders are silently skipped.
+#[tauri::command]
+fn list_readings(app: AppHandle) -> Vec<ReadingEntry> {
+    let Some(root) = prefs::load(&app).readings_dir else {
+        return Vec::new();
+    };
+    let mut entries: Vec<ReadingEntry> = std::fs::read_dir(root)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .filter_map(|p| reading_entry(&p))
+                .collect()
+        })
+        .unwrap_or_default();
+    // newest first; entries without an mtime sink to the end
+    entries.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    entries
+}
+
+/// Remove a reading from the library, folder and all. Guarded by
+/// [`reading_to_remove`] so only a real reading inside the library root can go.
+#[tauri::command]
+fn delete_reading(app: AppHandle, dir: String) -> Result<(), String> {
+    let root = prefs::load(&app).readings_dir.ok_or("no readings folder configured")?;
+    let target = reading_to_remove(Path::new(&root), &dir)?;
+    std::fs::remove_dir_all(&target)
+        .map_err(|e| format!("cannot remove {}: {e}", target.display()))
+}
+
 /// The generated export name, `{name}_{date}.html` — the save dialog's
 /// default, matching the library folder convention.
 #[tauri::command]
@@ -500,7 +640,10 @@ pub fn run() {
         get_preferences,
         set_preferences,
         list_models,
-        artifact_filename
+        artifact_filename,
+        load_chart,
+        list_readings,
+        delete_reading
     ]);
     #[cfg(mobile)]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -515,7 +658,10 @@ pub fn run() {
         get_preferences,
         set_preferences,
         list_models,
-        artifact_filename
+        artifact_filename,
+        load_chart,
+        list_readings,
+        delete_reading
     ]);
 
     builder
@@ -548,6 +694,47 @@ mod tests {
             text: text.into(),
             tags: tags.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn reading_to_remove_only_accepts_readings_inside_the_library() {
+        let base = std::env::temp_dir().join("astro-lib-remove-test");
+        std::fs::remove_dir_all(&base).ok(); // clean any prior run
+        let root = base.join("readings");
+        let reading = root.join("mira_2026-07-18");
+        std::fs::create_dir_all(&reading).unwrap();
+        std::fs::write(reading.join("chart.json"), "{}").unwrap();
+        let stray = root.join("notes"); // a folder, but no chart.json
+        std::fs::create_dir_all(&stray).unwrap();
+        let outside = base.join("elsewhere"); // not a child of root
+        std::fs::create_dir_all(&outside).unwrap();
+
+        assert!(reading_to_remove(&root, reading.to_str().unwrap()).is_ok());
+        assert!(reading_to_remove(&root, stray.to_str().unwrap()).is_err());
+        assert!(reading_to_remove(&root, outside.to_str().unwrap()).is_err());
+        assert!(reading_to_remove(&root, root.join("ghost").to_str().unwrap()).is_err());
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn chart_json_round_trips_for_loading() {
+        // The load_chart path relies on ChartData deserializing from the same
+        // pretty JSON `save_chart_json` writes. Route a passage first so the
+        // excerpt list is non-empty.
+        let mut chart = chart_fixture();
+        chart.excerpts = vec![ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"])];
+        let json = serde_json::to_string_pretty(&chart).unwrap();
+        let back: ChartData = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.meta.name, chart.meta.name);
+        assert_eq!(back.planets.len(), chart.planets.len());
+        assert_eq!(back.aspects.len(), chart.aspects.len());
+        assert_eq!(back.excerpts.len(), 1);
+        assert_eq!(back.excerpts[0].text, "The sun in cancer.");
+        assert_eq!(back.excerpts[0].tags, vec!["planet:sun", "sign:cancer"]);
+        assert_eq!(back.excerpts[0].span, [0, "The sun in cancer.".len()]);
+        // `Aspect::kind` is #[serde(skip)] — it defaults to "" on load.
+        assert!(back.aspects.iter().all(|a| a.kind.is_empty()));
     }
 
     #[test]

@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChartData {
     pub meta: Meta,
     pub axes: Axes,
@@ -81,7 +81,7 @@ impl Excerpt {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Meta {
     pub name: String,
     pub born: String,
@@ -97,14 +97,14 @@ pub struct Meta {
     pub logo: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Axes {
     /// Ecliptic longitude in degrees; 0 = 0° Aries.
     pub asc: f64,
     pub mc: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Body {
     pub id: String,
     pub glyph: String,
@@ -113,7 +113,7 @@ pub struct Body {
     pub house: u8,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ref {
     pub id: String,
     pub glyph: String,
@@ -122,7 +122,7 @@ pub struct Ref {
     pub element: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HouseRef {
     pub id: String,
     /// Roman numeral.
@@ -130,7 +130,7 @@ pub struct HouseRef {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Aspect {
     pub id: String,
     pub glyph: String,
@@ -147,7 +147,7 @@ pub struct Aspect {
     pub kind: &'static str,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Excerpt {
     /// Unique among the chart's excerpts (the `x{n}` scheme is convention;
     /// uniqueness is the invariant consumers rely on).

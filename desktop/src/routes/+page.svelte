@@ -8,7 +8,7 @@
     startRecording,
     stopRecording,
   } from "$lib/api";
-  import { app, selected, visibleExcerpts } from "$lib/state.svelte";
+  import { app, notify, selected, visibleExcerpts } from "$lib/state.svelte";
   import BirthForm from "$lib/components/BirthForm.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
   import IndexOfElements from "$lib/components/IndexOfElements.svelte";
@@ -41,21 +41,21 @@
         recording = true;
         recSecs = 0;
         recTimer = setInterval(() => recSecs++, 1000);
-        app.status = "listening — speak the reading; stop to route it";
+        notify("listening — speak the reading; stop to route it");
       } catch (e) {
-        app.status = `✗ ${e}`;
+        notify(`${e}`, "error");
       }
       return;
     }
     clearInterval(recTimer);
     recording = false;
     app.busy = "compute";
-    app.status = "routing the recording…";
+    notify("routing the recording…");
     try {
       app.chart = await stopRecording();
-      app.status = `${app.chart.excerpts.length} passages on the chart`;
+      notify(`${app.chart.excerpts.length} passages on the chart`);
     } catch (e) {
-      app.status = `✗ ${e}`;
+      notify(`${e}`, "error");
     } finally {
       app.busy = false;
     }
@@ -70,9 +70,9 @@
     if (!path) return;
     try {
       const written = await saveArtifact(path);
-      app.status = `wrote ${written} ☞ open it in a browser`;
+      notify(`wrote ${written} ☞ open it in a browser`);
     } catch (e) {
-      app.status = `✗ ${e}`;
+      notify(`${e}`, "error");
     }
   }
 
@@ -85,15 +85,14 @@
     if (!path) return;
     try {
       const written = await savePdf(path);
-      app.status = `wrote ${written}`;
+      notify(`wrote ${written}`);
     } catch (e) {
-      app.status = `✗ ${e}`;
+      notify(`${e}`, "error");
     }
   }
 
   function back() {
     app.chart = null;
-    app.status = "";
     selected.clear();
   }
 </script>
@@ -124,7 +123,6 @@
     </section>
   </div>
   <footer>
-    <span class="apparatus-text status">{app.status}</span>
     <span class="foot-actions">
       <button class="ghost" onclick={back}>← new reading</button>
       {#if app.model}
@@ -149,7 +147,6 @@
   </footer>
 {:else}
   <BirthForm />
-  {#if app.status}<footer><span class="apparatus-text status">{app.status}</span></footer>{/if}
 {/if}
 
 <style>
@@ -212,6 +209,7 @@
     left: 0;
     right: 0;
     bottom: 0;
+    z-index: 40;
     display: flex;
     align-items: center;
     gap: 1rem;
@@ -224,9 +222,6 @@
     margin-left: auto;
     display: inline-flex;
     gap: 1.4rem;
-  }
-  .status {
-    min-height: 1.2em;
   }
   .rec.on {
     border-color: var(--brass);
