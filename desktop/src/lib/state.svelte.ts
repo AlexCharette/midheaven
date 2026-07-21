@@ -10,6 +10,11 @@ export const app = $state({
   busy: false as false | "compute" | number,
   /** The form's whisper-model path; a non-empty value enables live recording. */
   model: "",
+  /** Layout: the document reading vs the chart-centric hover view. */
+  view: "reading" as "reading" | "chart",
+  /** The tag under the pointer/focus in chart view — a transient preview,
+   * distinct from the pinned `selected` set. Null outside chart view. */
+  hovered: null as string | null,
 });
 
 export const selected = new SvelteSet<string>();
@@ -33,14 +38,22 @@ export function dismissToast(id: number) {
 }
 
 /** The contract's Excerpt::matches semantics, mirrored (as in the artifact):
- * empty selection shows all; any = intersection, all = superset. */
-export function visibleExcerpts(chart: ChartData): Excerpt[] {
-  const sel = [...selected];
-  if (sel.length === 0) return chart.excerpts;
+ * empty tag list shows all; any = intersection, all = superset. Shared by the
+ * selection filter and the chart-view hover preview. */
+export function excerptsMatching(
+  chart: ChartData,
+  tags: string[],
+  mode: "any" | "all",
+): Excerpt[] {
+  if (tags.length === 0) return chart.excerpts;
   const has = (ex: Excerpt) => (t: string) => ex.tags.includes(t);
   return chart.excerpts.filter((ex) =>
-    app.mode === "any" ? sel.some(has(ex)) : sel.every(has(ex)),
+    mode === "any" ? tags.some(has(ex)) : tags.every(has(ex)),
   );
+}
+
+export function visibleExcerpts(chart: ChartData): Excerpt[] {
+  return excerptsMatching(chart, [...selected], app.mode);
 }
 
 export function toggle(tag: string) {

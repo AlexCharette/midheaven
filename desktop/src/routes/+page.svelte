@@ -8,14 +8,38 @@
     startRecording,
     stopRecording,
   } from "$lib/api";
-  import { app, notify, selected, visibleExcerpts } from "$lib/state.svelte";
+  import { app, excerptsMatching, notify, selected, visibleExcerpts } from "$lib/state.svelte";
+  import { catOf, elementsOf, textGlyph } from "$lib/types";
   import BirthForm from "$lib/components/BirthForm.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
   import IndexOfElements from "$lib/components/IndexOfElements.svelte";
   import Wheel from "$lib/components/Wheel.svelte";
   import { onMount } from "svelte";
 
-  const visible = $derived(app.chart ? visibleExcerpts(app.chart) : []);
+  // In chart view a hovered/focused element previews just its passages;
+  // otherwise the panel tracks the pinned selection (empty = everything).
+  const previewing = $derived(app.view === "chart" && app.hovered !== null);
+  const visible = $derived(
+    app.chart
+      ? previewing
+        ? excerptsMatching(app.chart, [app.hovered!], "any")
+        : visibleExcerpts(app.chart)
+      : [],
+  );
+
+  // The element named in the chart-view panel header: the hovered tag, or a
+  // lone pinned selection.
+  const elemMap = $derived(
+    app.chart ? new Map(elementsOf(app.chart).map((e) => [e.tag, e])) : new Map(),
+  );
+  const focusTag = $derived(
+    app.view === "chart" ? (app.hovered ?? (selected.size === 1 ? [...selected][0] : null)) : null,
+  );
+
+  function setView(v: "reading" | "chart") {
+    app.view = v;
+    if (v === "reading") app.hovered = null; // a stale hover must not linger
+  }
 
   // transcription progress can arrive during a form build or a live take
   onMount(() => {
@@ -93,12 +117,14 @@
 
   function back() {
     app.chart = null;
+    app.status = "";
+    app.hovered = null;
     selected.clear();
   }
 </script>
 
 {#if app.chart}
-  <div class="reading">
+  <div class="reading" class:chart={app.view === "chart"}>
     <figure class="plate">
       <div class="plate-frame">
         <Wheel chart={app.chart} />
@@ -106,23 +132,42 @@
     </figure>
 
     <section>
-      <IndexOfElements chart={app.chart} />
+      {#if app.view === "reading"}
+        <IndexOfElements chart={app.chart} />
 
-      <div class="toolbar">
-        <span class="apparatus-text">passages touching</span>
-        <span class="segmented">
-          <button aria-pressed={app.mode === "any"} onclick={() => (app.mode = "any")}>any</button>
-          <button aria-pressed={app.mode === "all"} onclick={() => (app.mode = "all")}>all</button>
-        </span>
-        <span class="apparatus-text">of the selection ·</span>
-        <button class="ghost" onclick={() => selected.clear()}>clear</button>
-        <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
-      </div>
+        <div class="toolbar">
+          <span class="apparatus-text">passages touching</span>
+          <span class="segmented">
+            <button aria-pressed={app.mode === "any"} onclick={() => (app.mode = "any")}>any</button>
+            <button aria-pressed={app.mode === "all"} onclick={() => (app.mode = "all")}>all</button>
+          </span>
+          <span class="apparatus-text">of the selection ·</span>
+          <button class="ghost" onclick={() => selected.clear()}>clear</button>
+          <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
+        </div>
+      {:else}
+        {@const el = focusTag ? elemMap.get(focusTag) : undefined}
+        <div class="panel-head">
+          {#if el}
+            <span class="g g-{catOf(focusTag!)}">{textGlyph(el.glyph)}</span>
+            <span class="ph-name">{el.name}</span>
+            <span class="count apparatus-text">{visible.length} {visible.length === 1 ? "passage" : "passages"}</span>
+          {:else}
+            <span class="apparatus-text ph-hint">hover or select an element</span>
+            <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
+          {/if}
+        </div>
+      {/if}
 
       <Commentary chart={app.chart} {visible} />
     </section>
   </div>
   <footer>
+    <span class="segmented view-toggle">
+      <button aria-pressed={app.view === "reading"} onclick={() => setView("reading")}>≡ reading</button>
+      <button aria-pressed={app.view === "chart"} onclick={() => setView("chart")}>⊙ chart</button>
+    </span>
+    <span class="apparatus-text status">{app.status}</span>
     <span class="foot-actions">
       <button class="ghost" onclick={back}>← new reading</button>
       {#if app.model}
@@ -157,6 +202,33 @@
     padding: 1.6rem 1.8rem 3.4rem;
     max-width: 1400px;
     margin: 0 auto;
+  }
+  /* chart-centric: the wheel becomes the hero plate, the passages a caption */
+  .reading.chart {
+    grid-template-columns: minmax(420px, 56%) minmax(300px, 1fr);
+  }
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.7rem 0;
+    margin-bottom: 1.4rem;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    font-size: 0.95rem;
+  }
+  .panel-head .g {
+    flex: none;
+    width: 1.25em;
+    text-align: center;
+    font-size: 1.15rem;
+  }
+  .panel-head .ph-name {
+    color: var(--ink);
+    font-size: 1.05rem;
+  }
+  .panel-head .ph-hint {
+    font-style: italic;
   }
   .plate {
     margin: 0;
