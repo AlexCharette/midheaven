@@ -1,8 +1,8 @@
 # Midheaven — an offline astrology workspace
 
-Offline-only birth-chart generator in Rust that routes an astrologer's *verbatim*
-reading-transcript excerpts to the chart elements they mention, and emits a single
-self-contained HTML artifact (computed SVG wheel as filter surface + excerpt index).
+Offline-only birth-chart generator that allows astrologers to compute and annotate birth charts with
+their commentary, either manually or from a transcript, and emits a single
+self-contained HTML artifact that can be branded and sent to clients.
 Build brief: `docs/natal-reading-indexer.md`.
 
 ## Download
@@ -20,10 +20,6 @@ Windows systems without WebView2 the installer fetches it from Microsoft.)
   the output HTML runs from `file://` and makes no requests.
 - **Permissive deps only** — no AGPL anywhere in the chain (`xalen-*` Apache-2.0,
   everything else MIT/Apache).
-- **Verbatim provenance** — the router only emits `{span, tags}`; the Verify gate
-  rejects any excerpt whose text is not a byte-exact slice of the transcript or
-  whose tags fall outside the chart-derived vocabulary
-  (`planet:sun`, `sign:leo`, `house:5`, `aspect:sun-moon`).
 
 ## Usage
 
@@ -86,27 +82,6 @@ webkit2gtk/Tauri system packages (Windows uses the preinstalled WebView2).
 This is the dependency-heavy target by design — the CLI binary remains
 the zero-runtime-dependency path.
 
-### Scripting (CLI)
-
-```sh
-# full pipeline → reading.html; --place resolves lat/lon/tz offline
-cargo run -- build --name "Sample Chart" \
-    --date 1990-07-13 --time 14:30 --place berlin \
-    --transcript examples/transcript.jsonl --out reading.html
-
-# search the offline gazetteer (ambiguous places list candidates + ids)
-cargo run -- places "portland, oregon"
-
-# chart only → ChartData JSON on stdout; manual coordinates still work
-cargo run -- chart --date 1990-07-13 --time 14:30 \
-    --lat 52.52 --lon 13.405 --tz Europe/Berlin
-```
-
-Place resolution auto-picks only when safe: a single exact-name match, or one
-that dominates by population ("berlin" → Berlin, DE). Otherwise it prints a
-numbered candidate list — narrow with a qualifier (`--place "springfield, missouri"`)
-or `--place-id <geonames id>`. `--lat/--lon/--tz` override any resolved field.
-
 ### Gazetteer data
 
 The first `cargo build` downloads GeoNames `cities500` (~235k places; the IANA
@@ -141,7 +116,6 @@ through the public library API.
 ## Later phases (trait boundaries already in place)
 
 - Local-LLM closed-set router (Ollama / llama.cpp) implementing `Router`
-- Offline gazetteer geocoding (place → lat/lon); sidereal mode
 
 ## Verify
 
