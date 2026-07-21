@@ -1,7 +1,7 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { getPreferences, listModels, setPreferences } from "$lib/api";
-  import { app } from "$lib/state.svelte";
+  import { notify } from "$lib/state.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -65,7 +65,7 @@
         logo: logo || null,
         page_size: pageSize === "a4" ? null : pageSize,
       });
-      app.status = "preferences kept";
+      notify("preferences kept");
       onclose();
     } catch (e) {
       error = String(e);
