@@ -44,7 +44,7 @@
   function pick(p: PlaceDto) {
     latest++;
     picked = p;
-    placeQuery = `${p.label} · ${p.tz}`;
+    placeQuery = p.label;
     suggestions = [];
   }
 
@@ -140,7 +140,6 @@
             <li>
               <button type="button" class:current={i === sel} onclick={() => pick(p)}>
                 <span class="marker">{i === sel ? "☞" : ""}</span>{p.label}
-                <span class="apparatus-text">{p.tz}</span>
               </button>
             </li>
           {/each}
@@ -270,10 +269,6 @@
   .dropdown button:hover {
     color: var(--ink);
     text-decoration: underline;
-  }
-  .dropdown .apparatus-text {
-    margin-left: 0.6em;
-    font-size: 0.85em;
   }
   .error {
     color: var(--oxblood);

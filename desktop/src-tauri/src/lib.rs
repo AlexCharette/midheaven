@@ -58,13 +58,12 @@ fn save_chart_json(dir: &Path, chart: &ChartData) -> Result<(), String> {
 #[derive(Default)]
 struct AppState(Mutex<Inner>);
 
+/// Just enough for the typeahead: the id round-trips to `geo::by_id` at
+/// build time — coordinates and zone stay backend-side.
 #[derive(Serialize)]
 struct PlaceDto {
     id: u32,
     label: String,
-    tz: String,
-    lat: f64,
-    lon: f64,
 }
 
 // async: keeps the gazetteer scan (and a possible cold-parse stall on the
@@ -73,13 +72,7 @@ struct PlaceDto {
 async fn search_places(query: String) -> Vec<PlaceDto> {
     geo::search(&query, 6)
         .into_iter()
-        .map(|p| PlaceDto {
-            id: p.id,
-            label: p.label(),
-            tz: p.tz.to_string(),
-            lat: p.lat,
-            lon: p.lon,
-        })
+        .map(|p| PlaceDto { id: p.id, label: p.label() })
         .collect()
 }
 

@@ -113,7 +113,6 @@ fn view_form(form: &Form, area: Rect, frame: &mut Frame) {
                 Line::from(vec![
                     Span::styled(theme::marker(current), theme::ink2()),
                     Span::styled(p.label(), theme::highlight(current)),
-                    Span::styled(format!("  {}", p.tz), theme::apparatus()),
                 ])
             })
             .collect();
@@ -132,7 +131,7 @@ fn display_value(form: &Form, field: Field) -> String {
     if field == Field::Place
         && let Some(p) = form.picked
     {
-        return format!("{} · {}", p.label(), p.tz);
+        return p.label();
     }
     form.value(field).to_string()
 }

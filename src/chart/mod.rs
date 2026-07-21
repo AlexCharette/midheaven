@@ -6,7 +6,7 @@ pub mod catalog;
 
 use crate::contract::{Aspect, Axes, Body, ChartData, HouseRef, Meta, Ref};
 use catalog::{ASPECT_TYPES, HOUSE_NAMES, PLANETS, SIGNS_ALL};
-use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, TimeZone, Timelike};
+use chrono::{Datelike, NaiveDate, NaiveTime, TimeZone, Timelike};
 use chrono_tz::Tz;
 use xalen_coords::mean_obliquity;
 use xalen_ephem::Almanac;
@@ -48,14 +48,14 @@ pub fn parse_time(s: &str) -> Result<NaiveTime, String> {
 
 /// The spine: each stage is a named step; the data flows top to bottom.
 pub fn compute_chart(input: &BirthInput) -> Result<ChartData, String> {
-    let moment = birth_moment(input)?;
-    let cusps = natal_houses(moment.jd_ut1, input.lat, input.lon)?;
-    let mut planets = planet_positions(moment.jd_ut1, &cusps)?;
+    let jd_ut1 = birth_moment(input)?;
+    let cusps = natal_houses(jd_ut1, input.lat, input.lon)?;
+    let mut planets = planet_positions(jd_ut1, &cusps)?;
     let aspects = detect_aspects(&planets);
     let asc = norm360(cusps.ascendant.to_degrees());
     planets.push(ascendant_point(asc));
     Ok(ChartData {
-        meta: birth_meta(input, &moment),
+        meta: birth_meta(input),
         axes: Axes { asc, mc: norm360(cusps.mc.to_degrees()) },
         house_cusps: (0..12).map(|i| cusps.cusp_deg(i)).collect(),
         planets,
@@ -66,15 +66,9 @@ pub fn compute_chart(input: &BirthInput) -> Result<ChartData, String> {
     })
 }
 
-/// The birth instant, resolved: local civil time in its historical timezone
-/// plus the UT1 Julian Day the astronomy runs on.
-struct BirthMoment {
-    local: DateTime<Tz>,
-    jd_ut1: JdUT1,
-}
-
-/// Local civil time → UTC (via the historical IANA tz database) → Julian Day.
-fn birth_moment(input: &BirthInput) -> Result<BirthMoment, String> {
+/// The birth instant, resolved: local civil time → UTC (via the historical
+/// IANA tz database) → the UT1 Julian Day the astronomy runs on.
+fn birth_moment(input: &BirthInput) -> Result<JdUT1, String> {
     let naive = input.date.and_time(input.time);
     let local = match input.tz.from_local_datetime(&naive) {
         chrono::LocalResult::Single(dt) => dt,
@@ -96,7 +90,7 @@ fn birth_moment(input: &BirthInput) -> Result<BirthMoment, String> {
         frac_hour,
         CalendarSystem::ProlepticGregorian,
     );
-    Ok(BirthMoment { local, jd_ut1 })
+    Ok(jd_ut1)
 }
 
 /// Whole Sign cusps and angles for the birth place, using the mean obliquity
@@ -195,16 +189,12 @@ fn house_refs() -> Vec<HouseRef> {
         .collect()
 }
 
-fn birth_meta(input: &BirthInput, moment: &BirthMoment) -> Meta {
+fn birth_meta(input: &BirthInput) -> Meta {
     Meta {
         name: input.name.clone(),
-        born: format!(
-            "{} {} ({}, UTC{})",
-            input.date,
-            input.time.format("%H:%M"),
-            input.tz,
-            moment.local.format("%:z")
-        ),
+        // The zone/offset stays out of `born`: it drives the local→UT
+        // conversion but is noise to the reader.
+        born: format!("{} {}", input.date, input.time.format("%H:%M")),
         place: input.place.clone(),
         system: "Whole Sign".to_string(),
         zodiac: "Tropical".to_string(),
@@ -256,10 +246,21 @@ mod tests {
 
     #[test]
     fn historical_dst_offset_applied() {
-        // Berlin, July 1990 → CEST (UTC+2): 14:30 local = 12:30 UT.
-        let input = birth("1990-07-13", "14:30:00", 52.52, 13.405, "Europe/Berlin");
-        let chart = compute_chart(&input).unwrap();
-        assert!(chart.meta.born.contains("+02:00"), "born: {}", chart.meta.born);
+        // Berlin, July 1990 → CEST (UTC+2): 14:30 local = 12:30 UT. The same
+        // instant expressed in either zone must give the same Ascendant —
+        // the Asc moves ~1° per 4 minutes, so a wrong offset shifts it ~30°.
+        let local = birth("1990-07-13", "14:30:00", 52.52, 13.405, "Europe/Berlin");
+        let utc = birth("1990-07-13", "12:30:00", 52.52, 13.405, "UTC");
+        let chart = compute_chart(&local).unwrap();
+        let same_instant = compute_chart(&utc).unwrap();
+        assert!(
+            separation(chart.axes.asc, same_instant.axes.asc) < 1e-6,
+            "asc {} vs {}",
+            chart.axes.asc,
+            same_instant.axes.asc
+        );
+        // The zone stays out of the displayed birth data.
+        assert_eq!(chart.meta.born, "1990-07-13 14:30");
         // Sun in mid-July is in Cancer [90°, 120°).
         let sun = &chart.planets[0];
         assert!((90.0..120.0).contains(&sun.lon), "Sun lon {}", sun.lon);

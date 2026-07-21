@@ -54,9 +54,6 @@ export interface Excerpt {
 export interface PlaceDto {
   id: number;
   label: string;
-  tz: string;
-  lat: number;
-  lon: number;
 }
 
 /** Mirrors prefs::Preferences — every field optional; None ⇔ null. */

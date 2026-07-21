@@ -168,7 +168,7 @@
         bind:value={draftText}
         rows={rowsFor(draftText)}
         autofocus
-        placeholder="a passage in the astrologer's words…"
+        placeholder="what do you notice?"
         onkeydown={composerKeys}
       ></textarea>
       <div class="tag-row">
