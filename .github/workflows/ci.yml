@@ -1,0 +1,39 @@
+# Lean checks on the root crate + the webview frontend. The desktop Rust
+# crate is exercised by the release workflow (it needs platform webview
+# toolchains that aren't worth installing here).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/astro-geonames
+          key: geonames-${{ hashFiles('build.rs') }}
+      - run: cargo test -p astro
+      - run: cargo clippy -p astro --all-targets -- -D warnings
+
+  svelte:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+        working-directory: desktop
+      - run: npm run check
+        working-directory: desktop

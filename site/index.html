@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Midheaven — download</title>
+<meta name="description" content="Midheaven — a natal reading indexer. Offline-only; your data never leaves your device.">
+<style>
+  /* Engraved design system, mirrored from the app's artifact (templates/reading.html). */
+  :root {
+    --bg: #131735;
+    --bg-deep: #0d1026;
+    --ink: #e9e4d3;
+    --ink-2: #bcb6a0;
+    --ink-3: #9a957f;
+    --line: rgba(233, 228, 211, 0.16);
+    --hairline: rgba(233, 228, 211, 0.30);
+    --brass: #c49a30;
+    --verdigris: #35ab7c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: Baskerville, 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+    line-height: 1.6;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0; z-index: -1;
+    background:
+      radial-gradient(1px 1px at 12% 22%, rgba(233,228,211,.32) 50%, transparent 51%),
+      radial-gradient(1px 1px at 78% 12%, rgba(233,228,211,.26) 50%, transparent 51%),
+      radial-gradient(1.4px 1.4px at 62% 74%, rgba(233,228,211,.20) 50%, transparent 51%),
+      radial-gradient(1px 1px at 32% 86%, rgba(233,228,211,.28) 50%, transparent 51%),
+      radial-gradient(1px 1px at 90% 55%, rgba(233,228,211,.22) 50%, transparent 51%),
+      radial-gradient(ellipse at 50% -20%, #1b2049 0%, var(--bg) 55%, var(--bg-deep) 100%);
+  }
+  .sheet { max-width: 44rem; margin: 0 auto; padding: clamp(2.5rem, 7vw, 5rem) 1.4rem 4rem; text-align: center; }
+
+  .ornament { display: block; margin: 0 auto .9rem; opacity: .75; }
+  h1 {
+    font-weight: 400; font-size: clamp(1.9rem, 5vw, 2.6rem);
+    letter-spacing: .34em; text-indent: .34em; margin: .2rem 0 .4rem;
+  }
+  .tagline { font-style: italic; color: var(--ink-2); margin: 0; }
+  .note {
+    max-width: 52ch; margin: 1rem auto 0; font-style: italic;
+    font-size: .92rem; color: var(--ink-3); text-wrap: pretty;
+  }
+  .double-rule {
+    height: 8px; margin: 1.8rem auto; max-width: 380px;
+    border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--line);
+  }
+
+  .rubric {
+    display: flex; align-items: center; gap: 1rem; margin: 0 0 1.2rem;
+    font-size: .85rem; font-variant: small-caps; letter-spacing: .28em; color: var(--ink-2);
+  }
+  .rubric::before, .rubric::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+
+  .downloads { list-style: none; margin: 0 auto 0; padding: 0; max-width: 34rem; text-align: left; }
+  .downloads li {
+    display: flex; align-items: baseline; gap: .8rem;
+    padding: .55rem .2rem; border-bottom: 1px solid var(--line);
+  }
+  .downloads li:first-child { border-top: 1px solid var(--line); }
+  .downloads .marker { width: 1.3em; flex: none; color: var(--brass); }
+  .downloads .os { color: var(--ink); }
+  .downloads .arch { font-style: italic; color: var(--ink-3); font-size: .9rem; }
+  .downloads a {
+    margin-left: auto; color: var(--ink-2);
+    text-decoration-color: var(--hairline); text-underline-offset: 3px;
+  }
+  .downloads a:hover { color: var(--ink); }
+  .downloads .size { font-size: .85rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .version { margin: .9rem 0 0; font-size: .88rem; font-style: italic; color: var(--ink-3); }
+  .version a { color: inherit; }
+
+  .apparatus { max-width: 36rem; margin: 0 auto; text-align: left; font-size: .92rem; color: var(--ink-2); }
+  .apparatus p { margin: .5rem 0; text-wrap: pretty; }
+  .apparatus .lbl { font-variant: small-caps; letter-spacing: .1em; color: var(--ink-3); }
+  .apparatus a { color: var(--ink-2); text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .apparatus a:hover { color: var(--ink); }
+
+  footer {
+    margin-top: 3rem; font-size: .85rem; font-style: italic; color: var(--ink-3);
+  }
+  footer a { color: inherit; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  footer a:hover { color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <svg class="ornament" width="52" height="52" viewBox="0 0 44 44" aria-hidden="true">
+    <g stroke="#c49a30" stroke-width="0.9" fill="none">
+      <path d="M22 2 L22 42 M2 22 L42 22"/>
+      <path d="M9 9 L35 35 M35 9 L9 35" opacity="0.55"/>
+      <circle cx="22" cy="22" r="3.2"/>
+      <circle cx="22" cy="22" r="7" opacity="0.4"/>
+    </g>
+  </svg>
+  <h1>MIDHEAVEN</h1>
+  <p class="tagline">a natal reading indexer</p>
+  <p class="note">
+    Record or load a reading, and the astrologer's <em>verbatim</em> words are
+    filed under the chart elements they concern — then engraved into a single
+    self-contained page. Offline only: your data never leaves your device.
+  </p>
+
+  <div class="double-rule"></div>
+
+  <h2 class="rubric">Downloads</h2>
+  <ul class="downloads" id="downloads">
+    <li data-os="mac">
+      <span class="marker" aria-hidden="true"></span>
+      <span class="os">macOS</span> <span class="arch">Apple Silicon</span>
+      <a data-suffix="_aarch64.dmg" href="#">…</a> <span class="size"></span>
+    </li>
+    <li data-os="mac">
+      <span class="marker" aria-hidden="true"></span>
+      <span class="os">macOS</span> <span class="arch">Intel</span>
+      <a data-suffix="_x64.dmg" href="#">…</a> <span class="size"></span>
+    </li>
+    <li data-os="win">
+      <span class="marker" aria-hidden="true"></span>
+      <span class="os">Windows</span> <span class="arch">x64 installer</span>
+      <a data-suffix="-setup.exe" data-fallback=".msi" href="#">…</a> <span class="size"></span>
+    </li>
+  </ul>
+  <p class="version" id="version"><a href="https://github.com/AlexCharette/midheaven/releases">all releases ☞</a></p>
+
+  <div class="double-rule"></div>
+
+  <div class="apparatus">
+    <p><span class="lbl">first launch ·</span> The builds are not yet code-signed.
+      On macOS, right-click the app and choose <em>Open</em> the first time
+      (or approve it under System Settings → Privacy &amp; Security). On
+      Windows, choose <em>More info → Run anyway</em> when SmartScreen asks.</p>
+    <p><span class="lbl">transcription ·</span> Live transcription is local
+      (whisper.cpp) and needs a user-supplied ggml model file — see the
+      <a href="https://github.com/AlexCharette/midheaven#readme">README</a>
+      for where to get one. Nothing downloads at runtime.</p>
+    <p><span class="lbl">offline ·</span> The app makes no network requests:
+      the ephemeris is computed analytically and the place gazetteer is
+      embedded. Exported readings are single HTML files that work from disk.</p>
+  </div>
+
+  <footer>
+    <a href="https://github.com/AlexCharette/midheaven">source</a> ·
+    MIT license ·
+    place data © <a href="https://www.geonames.org/">GeoNames</a>,
+    <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>
+  </footer>
+</div>
+
+<script>
+(async function () {
+  const releases = 'https://github.com/AlexCharette/midheaven/releases';
+  const mb = n => (n / 1048576).toFixed(0) + ' MB';
+  // manicule marks the visitor's platform, as in the app's typeahead
+  const os = /Mac/i.test(navigator.platform || navigator.userAgent) ? 'mac'
+    : /Win/i.test(navigator.platform || navigator.userAgent) ? 'win' : '';
+  for (const li of document.querySelectorAll(`#downloads li[data-os="${os}"]`)) {
+    li.querySelector('.marker').textContent = '☞';
+  }
+  try {
+    const resp = await fetch('https://api.github.com/repos/AlexCharette/midheaven/releases/latest');
+    if (!resp.ok) throw new Error(resp.status);
+    const rel = await resp.json();
+    for (const a of document.querySelectorAll('#downloads a[data-suffix]')) {
+      const asset = rel.assets.find(x => x.name.endsWith(a.dataset.suffix))
+        || (a.dataset.fallback && rel.assets.find(x => x.name.endsWith(a.dataset.fallback)));
+      if (asset) {
+        a.href = asset.browser_download_url;
+        a.textContent = asset.name;
+        a.nextElementSibling.textContent = mb(asset.size);
+      } else {
+        a.textContent = 'see all releases';
+        a.href = releases;
+      }
+    }
+    document.getElementById('version').innerHTML =
+      `${rel.name || rel.tag_name} · <a href="${releases}">all releases ☞</a>`;
+  } catch {
+    for (const a of document.querySelectorAll('#downloads a[data-suffix]')) {
+      a.textContent = 'releases page ☞';
+      a.href = releases;
+    }
+  }
+})();
+</script>
+</body>
+</html>

@@ -7,6 +7,15 @@ reading-transcript excerpts to the chart elements they mention, and emits a sing
 self-contained HTML artifact (computed SVG wheel as filter surface + excerpt index).
 Build brief: `docs/natal-reading-indexer.md`.
 
+## Download
+
+Installers for **macOS** (Apple Silicon + Intel) and **Windows** are on the
+[download page](https://alexcharette.github.io/midheaven/) /
+[releases](https://github.com/AlexCharette/midheaven/releases). The builds are
+not yet code-signed: on macOS right-click the app and choose *Open* the first
+time; on Windows pick *More info → Run anyway* when SmartScreen asks. (On
+Windows systems without WebView2 the installer fetches it from Microsoft.)
+
 ## Guarantees
 
 - **Offline** — analytic ephemeris (VSOP87A + ELP2000-82), no data files, no network;

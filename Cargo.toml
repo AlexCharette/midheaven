@@ -5,6 +5,7 @@ members = [".", "desktop/src-tauri"]
 name = "astro"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 chrono = "0.4.45"

@@ -127,7 +127,7 @@
           {/if}
         </button>
       {/if}
-      <button class="frame-btn" onclick={engrave} disabled={recording}>engrave the artifact</button>
+      <button class="frame-btn" onclick={engrave} disabled={recording}>export birth chart</button>
     </span>
   </footer>
 {:else}

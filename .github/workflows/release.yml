@@ -1,0 +1,70 @@
+# Tag-triggered installers: push a `v*` tag and each platform job builds its
+# bundle into one shared DRAFT release — inspect, then publish by hand
+# (`gh release edit vX.Y.Z --draft=false`). Binaries are unsigned for now;
+# the download page documents the Gatekeeper/SmartScreen steps.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest # Apple Silicon, native
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest # Intel, cross-built on the arm runner
+            args: --target x86_64-apple-darwin
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # both mac targets everywhere mac; harmless elsewhere
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.args }}
+
+      # build.rs fetches GeoNames once and caches it (~/.cache on unix, a
+      # crate-local dir when HOME is absent) — keep it across runs
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/astro-geonames
+            .astro-geonames-cache
+          key: geonames-${{ hashFiles('build.rs') }}
+
+      - run: npm ci
+        working-directory: desktop
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: "Midheaven ${{ github.ref_name }}"
+          releaseBody: >
+            Installers below — unsigned for now: on macOS right-click the app
+            and choose Open the first time; on Windows use SmartScreen's
+            "More info → Run anyway". Whisper models are user-supplied
+            (see the README).
+          releaseDraft: true
+          args: ${{ matrix.args }}

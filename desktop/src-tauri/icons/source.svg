@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Midheaven app icon: the artifact's title-plate compass ornament,
+       engraved in brass on the night-sky ground. Apple grid: 824px rounded
+       square centered on a transparent 1024 canvas. -->
+  <defs>
+    <radialGradient id="sky" cx="0.5" cy="0.32" r="0.85">
+      <stop offset="0" stop-color="#1b2049"/>
+      <stop offset="0.62" stop-color="#131735"/>
+      <stop offset="1" stop-color="#0d1026"/>
+    </radialGradient>
+    <clipPath id="plate">
+      <rect x="100" y="100" width="824" height="824" rx="186"/>
+    </clipPath>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#sky)"/>
+
+  <g clip-path="url(#plate)">
+    <!-- star field -->
+    <g fill="#e9e4d3">
+      <circle cx="256" cy="238" r="7" opacity="0.34"/>
+      <circle cx="778" cy="200" r="6" opacity="0.28"/>
+      <circle cx="836" cy="470" r="5" opacity="0.22"/>
+      <circle cx="700" cy="806" r="7" opacity="0.26"/>
+      <circle cx="236" cy="740" r="5" opacity="0.24"/>
+      <circle cx="180" cy="470" r="4" opacity="0.20"/>
+      <circle cx="612" cy="152" r="4" opacity="0.22"/>
+      <circle cx="418" cy="854" r="4" opacity="0.20"/>
+    </g>
+  </g>
+
+  <!-- engraved double frame, echoing the plate -->
+  <rect x="128" y="128" width="768" height="768" rx="168" fill="none"
+        stroke="#e9e4d3" stroke-opacity="0.30" stroke-width="4"/>
+  <rect x="152" y="152" width="720" height="720" rx="152" fill="none"
+        stroke="#e9e4d3" stroke-opacity="0.14" stroke-width="3"/>
+
+  <!-- compass ornament, brass -->
+  <g stroke="#c49a30" fill="none" stroke-linecap="round">
+    <path d="M512 236 L512 788 M236 512 L788 512" stroke-width="26"/>
+    <path d="M322 322 L702 702 M702 322 L322 702" stroke-width="16" opacity="0.58"/>
+    <circle cx="512" cy="512" r="150" stroke-width="11" opacity="0.5"/>
+    <circle cx="512" cy="512" r="66" stroke-width="22"/>
+  </g>
+  <circle cx="512" cy="512" r="20" fill="#e9e4d3"/>
+</svg>
