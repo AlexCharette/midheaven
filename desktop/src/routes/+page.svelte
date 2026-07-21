@@ -117,7 +117,6 @@
 
   function back() {
     app.chart = null;
-    app.status = "";
     app.hovered = null;
     selected.clear();
   }
@@ -167,7 +166,6 @@
       <button aria-pressed={app.view === "reading"} onclick={() => setView("reading")}>≡ reading</button>
       <button aria-pressed={app.view === "chart"} onclick={() => setView("chart")}>⊙ chart</button>
     </span>
-    <span class="apparatus-text status">{app.status}</span>
     <span class="foot-actions">
       <button class="ghost" onclick={back}>← new reading</button>
       {#if app.model}
