@@ -9,9 +9,12 @@ self-contained HTML artifact that can be branded with a logo and sent to clients
 Installers for **macOS** (Apple Silicon + Intel) and **Windows** are on the
 [download page](https://alexcharette.github.io/midheaven/) /
 [releases](https://github.com/AlexCharette/midheaven/releases). The builds are
-not yet code-signed: on macOS right-click the app and choose *Open* the first
-time; on Windows pick *More info → Run anyway* when SmartScreen asks. (On
-Windows systems without WebView2 the installer fetches it from Microsoft.)
+not notarized with Apple yet: on macOS, open the app once, then approve it
+under System Settings → Privacy & Security (*Open Anyway*); if macOS calls a
+v0.1.0 download "damaged", clear the quarantine flag with
+`xattr -d com.apple.quarantine /Applications/Midheaven.app`. On Windows pick
+*More info → Run anyway* when SmartScreen asks. (On Windows systems without
+WebView2 the installer fetches it from Microsoft.)
 
 ## Guarantees
 

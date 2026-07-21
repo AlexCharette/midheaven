@@ -84,6 +84,10 @@
   .apparatus .lbl { font-variant: small-caps; letter-spacing: .1em; color: var(--ink-3); }
   .apparatus a { color: var(--ink-2); text-decoration-color: var(--hairline); text-underline-offset: 3px; }
   .apparatus a:hover { color: var(--ink); }
+  .apparatus code {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: .82em; color: var(--ink); word-break: break-all;
+  }
 
   footer {
     margin-top: 3rem; font-size: .85rem; font-style: italic; color: var(--ink-3);
@@ -135,10 +139,13 @@
   <div class="double-rule"></div>
 
   <div class="apparatus">
-    <p><span class="lbl">first launch ·</span> The builds are not yet code-signed.
-      On macOS, right-click the app and choose <em>Open</em> the first time
-      (or approve it under System Settings → Privacy &amp; Security). On
-      Windows, choose <em>More info → Run anyway</em> when SmartScreen asks.</p>
+    <p><span class="lbl">first launch ·</span> The builds are not notarized
+      with Apple yet. On macOS, open the app once, dismiss the warning, then
+      approve it under System Settings → Privacy &amp; Security
+      (<em>Open Anyway</em>). If macOS instead claims the app is “damaged”
+      (downloads of v0.1.0), clear the quarantine flag in Terminal:
+      <code>xattr -d com.apple.quarantine /Applications/Midheaven.app</code>.
+      On Windows, choose <em>More info → Run anyway</em> when SmartScreen asks.</p>
     <p><span class="lbl">transcription ·</span> Live transcription is local
       (whisper.cpp) and needs a user-supplied ggml model file — see the
       <a href="https://github.com/AlexCharette/midheaven#readme">README</a>
