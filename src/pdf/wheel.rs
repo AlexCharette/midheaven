@@ -5,14 +5,15 @@
 //! carry over unchanged.
 
 use super::palette::*;
-use super::{fill, filled, stroke, stroked};
+use super::{center_str, circle_path, fill, filled, stroke, stroked};
+use crate::chart::separation;
 use crate::contract::ChartData;
-use crate::pdf::fonts::{Face, Fonts, sym};
-use krilla::geom::{Path, PathBuilder, Point};
+use crate::pdf::fonts::{Face, Fonts, glyph_face};
+use krilla::geom::{Path, PathBuilder};
 use krilla::surface::Surface;
-use krilla::text::TextDirection;
 
-/// Template radii (SVG units; outer label ring ≈ 361 units).
+/// Template radii (SVG units; outer label ring ≈ 361 units). Mirrored from
+/// `templates/reading.html`'s `R = {...}` — change them there first.
 const UNITS: f32 = 361.0;
 const R_OUTER: f32 = 348.0;
 const R_BAND_OUT: f32 = 344.0;
@@ -68,12 +69,7 @@ impl Plate {
     }
 
     fn circle(&self, r: f32) -> Path {
-        let mut pb = PathBuilder::new();
-        let (x, y) = self.at(0.0, r);
-        pb.move_to(x, y);
-        self.arc(&mut pb, r, 0.0, std::f32::consts::TAU);
-        pb.close();
-        pb.finish().expect("circle path")
+        circle_path(self.cx, self.cy, self.k * r)
     }
 
     /// Annular sector between longitudes `l1`→`l2` (ccw), radii `r1 < r2` —
@@ -91,12 +87,17 @@ impl Plate {
         pb.finish().expect("sector path")
     }
 
-    fn line(&self, lon: f32, r1: f32, r2: f32) -> Path {
-        let mut pb = PathBuilder::new();
+    /// Append a radial segment to `pb`.
+    fn seg(&self, pb: &mut PathBuilder, lon: f32, r1: f32, r2: f32) {
         let (x1, y1) = self.pt(lon, r1);
         let (x2, y2) = self.pt(lon, r2);
         pb.move_to(x1, y1);
         pb.line_to(x2, y2);
+    }
+
+    fn line(&self, lon: f32, r1: f32, r2: f32) -> Path {
+        let mut pb = PathBuilder::new();
+        self.seg(&mut pb, lon, r1, r2);
         pb.finish().expect("line path")
     }
 }
@@ -118,18 +119,7 @@ fn label(
     y: f32,
     text: &str,
 ) {
-    let text = sym(text);
-    let w = fonts.width(face, size, 0.0, &text);
-    s.set_stroke(None);
-    s.set_fill(Some(fill(color, 1.0)));
-    s.draw_text(
-        Point::from_xy(x - w / 2.0, y + size * 0.34),
-        fonts.font(face),
-        size,
-        &text,
-        false,
-        TextDirection::LeftToRight,
-    );
+    center_str(s, fonts, face, size, color, x, y + size * 0.34, text);
 }
 
 /// Draw the full plate with its center at (`cx`, `cy`) and the outermost
@@ -151,21 +141,27 @@ pub fn draw(s: &mut Surface, fonts: &Fonts, chart: &ChartData, cx: f32, cy: f32,
         stroked(s, &p.circle(r), stroke(if strong { HAIRLINE } else { LINE }, 0.9 * k.max(0.7), 1.0));
     }
 
-    // graduation band: 1° / 5° / 10° ticks
+    // graduation band: 1° / 5° / 10° ticks, one path per tick class
+    let mut grads = [PathBuilder::new(), PathBuilder::new(), PathBuilder::new()];
     for d in 0..360 {
-        let (len, w) = match d {
-            d if d % 10 == 0 => (12.0, 0.9),
-            d if d % 5 == 0 => (8.0, 0.7),
-            _ => (4.5, 0.45),
+        let (class, len) = match d {
+            d if d % 10 == 0 => (0, 12.0),
+            d if d % 5 == 0 => (1, 8.0),
+            _ => (2, 4.5),
         };
-        stroked(s, &p.line(d as f32, R_SIGN_IN - len, R_SIGN_IN), stroke(LINE, (w * k).max(0.3), 1.0));
+        p.seg(&mut grads[class], d as f32, R_SIGN_IN - len, R_SIGN_IN);
+    }
+    for (pb, w) in grads.into_iter().zip([0.9, 0.7, 0.45]) {
+        stroked(s, &pb.finish().expect("ticks"), stroke(LINE, (w * k).max(0.3), 1.0));
     }
 
-    // centre ornament: compass rays
+    // centre ornament: compass rays, one path
+    let mut rays = PathBuilder::new();
     for i in 0..8 {
         let len = if i % 2 == 0 { 22.0 } else { 13.0 };
-        stroked(s, &p.line(i as f32 * 45.0, 5.0, len), stroke(LINE, 0.8 * k, 1.0));
+        p.seg(&mut rays, i as f32 * 45.0, 5.0, len);
     }
+    stroked(s, &rays.finish().expect("rays"), stroke(LINE, 0.8 * k, 1.0));
     stroked(s, &p.circle(3.0), stroke(HAIRLINE, 0.9 * k, 1.0));
 
     // sign band: element washes under verdigris identity
@@ -180,14 +176,16 @@ pub fn draw(s: &mut Surface, fonts: &Fonts, chart: &ChartData, cx: f32, cy: f32,
 
     // house cusp spokes + roman labels
     let cusps: Vec<f32> = chart.house_cusps.iter().map(|c| *c as f32).collect();
+    let mut spokes = PathBuilder::new();
     for (i, house) in chart.houses.iter().enumerate() {
         let c = cusps[i];
         let next = cusps[(i + 1) % 12];
-        stroked(s, &p.line(c, R_HUB, R_GRAD_IN), stroke(LINE, 0.7 * k, 1.0));
+        p.seg(&mut spokes, c, R_HUB, R_GRAD_IN);
         let sweep = if norm360(next - c) == 0.0 { 30.0 } else { norm360(next - c) };
         let (lx, ly) = p.pt(c + sweep / 2.0, R_HOUSE_LBL);
         label(s, fonts, Face::Regular, 11.0 * k, STEEL, lx, ly, &house.label);
     }
+    stroked(s, &spokes.finish().expect("spokes"), stroke(LINE, 0.7 * k, 1.0));
 
     // ASC/MC axes
     let axes = [
@@ -217,23 +215,19 @@ pub fn draw(s: &mut Surface, fonts: &Fonts, chart: &ChartData, cx: f32, cy: f32,
     // planets + Ascendant point, nudged inward on crowding
     let mut by_lon: Vec<_> = chart.planets.iter().collect();
     by_lon.sort_by(|a, b| a.lon.total_cmp(&b.lon));
-    let mut prev: Option<(f32, f32)> = None; // (lon, radius)
+    let mut prev: Option<(f64, f32)> = None; // (lon, radius)
     for body in by_lon {
-        let lon = body.lon as f32;
         let r = match prev {
-            Some((plon, pr))
-                if (lon - plon).abs().min(360.0 - (lon - plon).abs()) < 8.0 =>
-            {
-                (pr - 27.0).max(176.0)
-            }
+            Some((plon, pr)) if separation(body.lon, plon) < 8.0 => (pr - 27.0).max(176.0),
             _ => R_PLANET,
         };
-        prev = Some((lon, r));
+        prev = Some((body.lon, r));
+        let lon = body.lon as f32;
 
         stroked(s, &p.line(lon, R_GRAD_IN - 8.0, R_GRAD_IN), stroke(BRASS, 1.1 * k, 1.0));
         let (gx, gy) = p.pt(lon, r);
-        let size = if body.glyph.chars().count() > 1 { 13.0 } else { 22.0 };
-        let face = if body.glyph.chars().count() > 1 { Face::Regular } else { Face::Symbols };
+        let face = glyph_face(&body.glyph);
+        let size = if face == Face::Regular { 13.0 } else { 22.0 };
         label(s, fonts, face, size * k, BRASS, gx, gy, &body.glyph);
         let (dx, dy) = p.pt(lon, r - 21.0);
         let deg = format!("{}\u{b0}", (norm360(lon) % 30.0).floor());

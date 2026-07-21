@@ -58,4 +58,26 @@ mod tests {
             assert!(!html.contains(needle), "external reference found: {needle}");
         }
     }
+
+    /// A `getElementById` whose element was edited out of the markup throws
+    /// at view time and kills everything after it — the artifact renders
+    /// "almost empty". Catch the rot here instead.
+    #[test]
+    fn every_dom_id_the_script_references_exists_in_the_markup() {
+        let mut rest = TEMPLATE;
+        let mut checked = 0;
+        while let Some(at) = rest.find("getElementById('") {
+            rest = &rest[at + "getElementById('".len()..];
+            let id = &rest[..rest.find('\'').expect("unterminated id")];
+            // dynamic ids (template literals) are covered by their creation site
+            if !id.contains("${") {
+                assert!(
+                    TEMPLATE.contains(&format!("id=\"{id}\"")),
+                    "script references #{id} but no element carries it"
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked >= 8, "only {checked} ids checked — did the scan break?");
+    }
 }

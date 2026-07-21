@@ -81,11 +81,6 @@
     background: radial-gradient(ellipse at 50% 42%, rgba(27,32,73,.6) 0%, transparent 70%);
   }
   svg#wheel { width: 100%; height: auto; display: block; }
-  figcaption {
-    margin-top: .9rem; text-align: center; font-size: .88rem;
-    color: var(--ink-3); font-style: italic; text-wrap: pretty; padding: 0 .5rem;
-  }
-  figcaption .fig { font-style: normal; font-variant: small-caps; letter-spacing: .08em; color: var(--ink-2); }
 
   /* ---- SVG engraving ---- */
   #wheel text { font-family: inherit; fill: var(--ink-2); }
@@ -372,7 +367,8 @@ const DATA = /*__DATA__*/null;
   const signAt = lon => DATA.signs[Math.floor(norm360(lon) / 30)];
   const fmtPos = lon => {
     const within = lon % 30;
-    const d = Math.floor(within), m = Math.round((within - d) * 60);
+    let d = Math.floor(within), m = Math.round((within - d) * 60);
+    if (m >= 60) { d += 1; m = 0; } // rounding carry — src/pdf's fmt_pos mirrors this
     return `${d}°${String(m).padStart(2, '0')}′ ${signAt(lon).name}`;
   };
   // Annular sector path between longitudes l1→l2 (ccw), radii r1<r2.
@@ -405,13 +401,11 @@ const DATA = /*__DATA__*/null;
     p.textContent = `prepared by ${m.astrologer}`;
     document.getElementById('h-details').after(p);
   }
-  document.getElementById('plate-caption').innerHTML =
-    `<span class="fig">Fig. I.</span> — The natal figure of ${esc(m.name)}, calculated for ` +
-    `${esc(m.born)}${m.place ? ', ' + esc(m.place) : ''}. ${esc(m.system)} houses upon the ${esc(m.zodiac.toLowerCase())} zodiac.`;
-
   // ---------- wheel ----------
   const wheel = document.getElementById('wheel');
   const taggable = [];            // svg nodes carrying data-tag
+  // canonical radii — mirrored by desktop/src/lib/components/Wheel.svelte
+  // and src/pdf/wheel.rs; change here first, then both mirrors
   const R = { outer: 348, bandOut: 344, signIn: 306, gradIn: 294, planet: 260, wedgeOut: 230, chord: 222, hub: 92, houseLbl: 112 };
 
   // engraved concentric rings (pathLength lets CSS draw them in)

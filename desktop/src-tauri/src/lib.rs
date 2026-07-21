@@ -447,7 +447,7 @@ async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<Strin
 /// unless set to letter).
 #[tauri::command]
 async fn save_pdf(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<String, String> {
-    let size = astro::pdf::PageSize::parse(prefs::load(&app).page_size.as_deref().unwrap_or("a4"))?;
+    let size = astro::pdf::PageSize::from_pref(prefs::load(&app).page_size.as_deref())?;
     let chart = {
         let guard = state.0.lock().unwrap();
         guard.chart.as_ref().ok_or("no chart has been built yet")?.clone()
