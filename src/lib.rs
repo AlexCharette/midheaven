@@ -108,7 +108,7 @@ pub fn birth_at_place(
 /// transcribing audio while reporting whole-percent `progress`), compute the
 /// chart, route + verify passages into `excerpts`. Returns the chart and the
 /// number of spans the router emitted before gating. This is the single
-/// entry point the CLI, the TUI, and tests share.
+/// entry point the CLI and tests share.
 pub fn build_reading(
     input: &chart::BirthInput,
     source: TranscriptSource,

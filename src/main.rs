@@ -1,5 +1,3 @@
-mod tui;
-
 use astro::chart::{BirthInput, compute_chart, parse_time};
 use astro::{TranscriptSource, build_reading, emit, geo};
 use clap::{Args, Parser, Subcommand};
@@ -7,12 +5,12 @@ use std::path::PathBuf;
 
 /// Natal reading indexer — offline birth-chart computation plus routing of
 /// verbatim reading-transcript excerpts to chart elements, emitted as one
-/// self-contained HTML artifact. Run without a subcommand for the TUI.
+/// self-contained HTML artifact.
 #[derive(Parser)]
 #[command(name = "astro", version)]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Command>,
+    command: Command,
 }
 
 #[derive(Subcommand)]
@@ -54,8 +52,6 @@ enum Command {
         /// Query, e.g. "portland, oregon" — quotes optional, words are joined.
         query: Vec<String>,
     },
-    /// Open the interactive terminal interface (also the bare default).
-    Tui,
 }
 
 #[derive(Args)]
@@ -177,13 +173,12 @@ fn print_places(places: &[&geo::Place]) {
 
 fn run() -> Result<(), String> {
     match Cli::parse().command {
-        None | Some(Command::Tui) => return tui::run(),
-        Some(Command::Chart(birth)) => {
+        Command::Chart(birth) => {
             let input = birth.into_input()?;
             let chart = compute_chart(&input)?;
             println!("{}", serde_json::to_string_pretty(&chart).map_err(|e| e.to_string())?);
         }
-        Some(Command::Build { birth, transcript, audio, model, out }) => {
+        Command::Build { birth, transcript, audio, model, out } => {
             let input = birth.into_input()?;
             let source = match (transcript, audio) {
                 (Some(path), _) => TranscriptSource::File(path),
@@ -207,7 +202,7 @@ fn run() -> Result<(), String> {
             );
             eprintln!("wrote {}", out.display());
         }
-        Some(Command::Transcribe { audio, model, out }) => {
+        Command::Transcribe { audio, model, out } => {
             transcription_banner(&audio);
             let segments = astro::transcribe::transcribe(&audio, &model, cli_progress)?;
             eprintln!("\r  done — {} segments", segments.len());
@@ -221,7 +216,7 @@ fn run() -> Result<(), String> {
                 None => print!("{jsonl}"),
             }
         }
-        Some(Command::Places { query }) => {
+        Command::Places { query } => {
             let query = query.join(" ");
             let hits = geo::search(&query, 10);
             if hits.is_empty() {

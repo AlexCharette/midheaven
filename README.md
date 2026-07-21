@@ -29,27 +29,6 @@ Windows systems without WebView2 the installer fetches it from Microsoft.)
 
 ## Usage
 
-### Interactive (TUI)
-
-```sh
-cargo run            # bare invocation opens the terminal UI (same as `astro tui`)
-```
-
-An Elm-architecture ratatui interface in the artifact's engraved style: a
-birth-data form with a live gazetteer typeahead, then the computed plate —
-braille chart wheel, Index of Elements, and filtered Commentary. The
-transcript field also accepts a `.wav` recording (set the model field to a
-ggml file): transcription runs on a background thread with live progress in
-the status line.
-
-| Keys (form) | | Keys (reading) | |
-|---|---|---|---|
-| tab / ↑↓ | move fields | arrows / hjkl-ish | move in the index |
-| ↑↓ + enter | pick a place | space | toggle an element filter |
-| F5 | compute the figure | a / c | any↔all / clear selection |
-| esc | dismiss dropdown | j / k | scroll commentary |
-| ctrl-c | leave | e / b / q | engrave HTML / back / quit |
-
 ### Transcription (built in, cross-platform)
 
 ```sh
@@ -106,7 +85,7 @@ dir; everything is optional and off until set.
 
 Added prerequisites for this target only: Node, and on Linux the
 webkit2gtk/Tauri system packages (Windows uses the preinstalled WebView2).
-This is the dependency-heavy target by design — the CLI/TUI binary remains
+This is the dependency-heavy target by design — the CLI binary remains
 the zero-runtime-dependency path.
 
 ### Scripting (CLI)
@@ -164,7 +143,6 @@ through the public library API.
 ## Later phases (trait boundaries already in place)
 
 - Local-LLM closed-set router (Ollama / llama.cpp) implementing `Router`
-- ratatui TUI on the same core
 - Offline gazetteer geocoding (place → lat/lon); sidereal mode
 
 ## Verify

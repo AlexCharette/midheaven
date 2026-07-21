@@ -40,7 +40,7 @@ type CacheKey = (PathBuf, PathBuf, Option<SystemTime>);
 
 /// Single-slot result cache: transcription is by far the most expensive step
 /// (minutes for an hour of audio), and "tweak a birth field, resubmit the
-/// same recording" is a common loop in the TUI.
+/// same recording" is a common loop in the desktop app.
 static LAST_RUN: Mutex<Option<(CacheKey, Vec<Segment>)>> = Mutex::new(None);
 
 fn cache_key(audio: &Path, model: &Path) -> CacheKey {
