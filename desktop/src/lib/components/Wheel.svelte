@@ -1,9 +1,26 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
   import { degInSign, norm360, planetById, textGlyph } from "$lib/types";
-  import { selected, toggle } from "$lib/state.svelte";
+  import { app, selected, toggle } from "$lib/state.svelte";
 
   let { chart }: { chart: ChartData } = $props();
+
+  // Chart view turns the wheel into a live index: hover or keyboard-focus an
+  // element to preview its passages, click/Enter to pin it. Reading view keeps
+  // the wheel a plain click-to-filter plate (tabindex -1, no hover preview).
+  const chartView = $derived(app.view === "chart");
+  const peek = (tag: string) => {
+    if (chartView) app.hovered = tag;
+  };
+  const unpeek = () => {
+    app.hovered = null;
+  };
+  const pinKey = (tag: string) => (e: KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      toggle(tag);
+      e.preventDefault();
+    }
+  };
 
   // Geometry ports templates/reading.html: ASC on the left, ecliptic
   // longitude increasing counterclockwise.
@@ -142,9 +159,14 @@
       class="sign-band"
       class:sel={selected.has(band.s.id)}
       role="button"
-      tabindex="-1"
+      tabindex={chartView ? 0 : -1}
       aria-label="{band.s.name} — {band.s.element}"
       onclick={() => toggle(band.s.id)}
+      onmouseenter={() => peek(band.s.id)}
+      onmouseleave={unpeek}
+      onfocus={() => peek(band.s.id)}
+      onblur={unpeek}
+      onkeydown={pinKey(band.s.id)}
     ><title>{band.s.name} — {band.s.element}</title></path>
     <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
       >{textGlyph(band.s.glyph)}</text
@@ -158,9 +180,14 @@
       class="house-wedge"
       class:sel={selected.has(w.h.id)}
       role="button"
-      tabindex="-1"
+      tabindex={chartView ? 0 : -1}
       aria-label={w.h.name}
       onclick={() => toggle(w.h.id)}
+      onmouseenter={() => peek(w.h.id)}
+      onmouseleave={unpeek}
+      onfocus={() => peek(w.h.id)}
+      onblur={unpeek}
+      onkeydown={pinKey(w.h.id)}
     ><title>{w.h.name}</title></path>
     <line x1={w.spoke.x1} y1={w.spoke.y1} x2={w.spoke.x2} y2={w.spoke.y2} class="cusp-spoke" />
     <text x={w.lx} y={w.ly} class="house-label" text-anchor="middle" dominant-baseline="central">{w.h.label}</text>
@@ -173,7 +200,18 @@
 
   {#each chords as c (c.a.id)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <g class="aspect" class:sel={selected.has(c.a.id)} role="button" tabindex="-1" onclick={() => toggle(c.a.id)}>
+    <g
+      class="aspect"
+      class:sel={selected.has(c.a.id)}
+      role="button"
+      tabindex={chartView ? 0 : -1}
+      onclick={() => toggle(c.a.id)}
+      onmouseenter={() => peek(c.a.id)}
+      onmouseleave={unpeek}
+      onfocus={() => peek(c.a.id)}
+      onblur={unpeek}
+      onkeydown={pinKey(c.a.id)}
+    >
       <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} class="chord nature-{c.a.nature}" />
       <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} class="chord-hit" />
       <title>{c.a.name} {textGlyph(c.a.glyph)}</title>
@@ -182,7 +220,18 @@
 
   {#each planets as pl (pl.p.id)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <g class="planet" class:sel={selected.has(pl.p.id)} role="button" tabindex="-1" onclick={() => toggle(pl.p.id)}>
+    <g
+      class="planet"
+      class:sel={selected.has(pl.p.id)}
+      role="button"
+      tabindex={chartView ? 0 : -1}
+      onclick={() => toggle(pl.p.id)}
+      onmouseenter={() => peek(pl.p.id)}
+      onmouseleave={unpeek}
+      onfocus={() => peek(pl.p.id)}
+      onblur={unpeek}
+      onkeydown={pinKey(pl.p.id)}
+    >
       <line x1={pl.tick.x1} y1={pl.tick.y1} x2={pl.tick.x2} y2={pl.tick.y2} class="tick" />
       <circle cx={pl.gx} cy={pl.gy} r="15" class="halo" />
       <text x={pl.gx} y={pl.gy} class="glyph" font-size={pl.p.glyph.length > 1 ? 13 : 22} text-anchor="middle" dominant-baseline="central"
@@ -239,8 +288,10 @@
     stroke: var(--line);
     cursor: pointer;
   }
-  .sign-band:hover {
+  .sign-band:hover,
+  .sign-band:focus-visible {
     fill: rgba(53, 171, 124, 0.1);
+    outline: none;
   }
   .sign-band.sel {
     fill: rgba(53, 171, 124, 0.22);
@@ -255,8 +306,10 @@
     fill: transparent;
     cursor: pointer;
   }
-  .house-wedge:hover {
+  .house-wedge:hover,
+  .house-wedge:focus-visible {
     fill: rgba(123, 160, 224, 0.08);
+    outline: none;
   }
   .house-wedge.sel {
     fill: rgba(123, 160, 224, 0.18);
@@ -297,8 +350,12 @@
     fill: transparent;
     stroke: transparent;
   }
-  .planet:hover .halo {
+  .planet:hover .halo,
+  .planet:focus-visible .halo {
     stroke: rgba(196, 154, 48, 0.5);
+  }
+  .planet:focus-visible {
+    outline: none;
   }
   .planet.sel .halo {
     fill: rgba(196, 154, 48, 0.16);
@@ -324,9 +381,13 @@
     stroke-width: 11;
     cursor: pointer;
   }
-  .aspect:hover .chord {
+  .aspect:hover .chord,
+  .aspect:focus-visible .chord {
     opacity: 1;
     stroke-width: 2.2;
+  }
+  .aspect:focus-visible {
+    outline: none;
   }
   .aspect.sel .chord {
     opacity: 1;

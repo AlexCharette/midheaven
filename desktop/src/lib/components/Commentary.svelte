@@ -11,9 +11,12 @@
   const elements = $derived(elementsOf(chart));
   const lookup = $derived(new Map(elements.map((e) => [e.tag, e])));
 
-  // Curation only when unfiltered: adjacency in the visible list then equals
-  // adjacency in the chart's list, so "merge ↑" is unambiguous.
-  const curatable = $derived(selected.size === 0 && app.busy === false);
+  // merge ↑ joins into the previous *visible* passage, so it's only
+  // unambiguous when nothing filters the list — no selection and no chart-view
+  // hover preview. amend/remove/add are id-based and safe under any filter, so
+  // in chart view they stay available while an element is focused.
+  const mergeable = $derived(selected.size === 0 && app.hovered === null && app.busy === false);
+  const editable = $derived(app.busy === false && (app.view === "chart" || selected.size === 0));
 
   let editing = $state<string | null>(null);
   let draft = $state("");
@@ -111,12 +114,12 @@
   <article class="passage">
     <div class="folio">
       {ex.time || "—"}
-      {#if curatable && i > 0}
+      {#if mergeable && i > 0}
         <button class="curate" title="join this passage to the previous one" onclick={() => join(ex.id)}
           >merge ↑</button
         >
       {/if}
-      {#if curatable}
+      {#if editable}
         <button
           class="curate destructive"
           title="remove this passage (asks first)"
@@ -138,7 +141,7 @@
     {:else}
       <blockquote>
         “{ex.text}”
-        {#if curatable}
+        {#if editable}
           <button class="curate amend" title="correct the transcription" onclick={() => beginAmend(ex)}
             >amend</button
           >
@@ -159,7 +162,7 @@
   </article>
 {/each}
 
-{#if curatable}
+{#if editable}
   <div class="composer">
     {#if composing}
       <!-- svelte-ignore a11y_autofocus -->
