@@ -21,6 +21,7 @@ pub mod chart;
 pub mod contract;
 pub mod emit;
 pub mod geo;
+pub mod pdf;
 pub mod route;
 pub mod transcribe;
 

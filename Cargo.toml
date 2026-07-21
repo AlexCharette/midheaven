@@ -13,8 +13,10 @@ chrono-tz = "0.10.4"
 clap = { version = "4.6.2", features = ["derive"] }
 flate2 = "1.1.9"
 hound = "3.5.1"
+krilla = { version = "0.8", default-features = false, features = ["pdf", "simple-text", "raster-images"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+ttf-parser = "0.25.1"
 # whisper.cpp uses std::filesystem → macOS deployment target must be ≥ 10.15
 # (see desktop/src-tauri/tauri.conf.json bundle.macOS.minimumSystemVersion)
 whisper-rs = "0.16.0"

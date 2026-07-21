@@ -33,6 +33,12 @@ enum Command {
         /// Output HTML path.
         #[arg(long, default_value = "reading.html")]
         out: PathBuf,
+        /// Also engrave a PDF (cream-paper rendition) to this path.
+        #[arg(long)]
+        pdf: Option<PathBuf>,
+        /// PDF page size: a4 or letter.
+        #[arg(long, default_value = "a4")]
+        page_size: String,
     },
     /// Transcribe a WAV recording to timestamped JSONL (local whisper.cpp).
     Transcribe {
@@ -178,7 +184,8 @@ fn run() -> Result<(), String> {
             let chart = compute_chart(&input)?;
             println!("{}", serde_json::to_string_pretty(&chart).map_err(|e| e.to_string())?);
         }
-        Command::Build { birth, transcript, audio, model, out } => {
+        Command::Build { birth, transcript, audio, model, out, pdf, page_size } => {
+            let page_size = astro::pdf::PageSize::parse(&page_size)?;
             let input = birth.into_input()?;
             let source = match (transcript, audio) {
                 (Some(path), _) => TranscriptSource::File(path),
@@ -193,6 +200,10 @@ fn run() -> Result<(), String> {
             };
             let (chart, n_routed) = build_reading(&input, source, cli_progress)?;
             emit::write_artifact(&chart, &out)?;
+            if let Some(pdf_out) = pdf {
+                astro::pdf::write_pdf(&chart, page_size, &pdf_out)?;
+                eprintln!("wrote {}", pdf_out.display());
+            }
             eprintln!(
                 "chart: {} planets, {} aspects · router: {} spans → {} excerpts past verify gate",
                 chart.planets.len(),

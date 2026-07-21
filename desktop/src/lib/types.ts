@@ -63,6 +63,7 @@ export interface Preferences {
   readings_dir: string | null;
   astrologer: string | null;
   logo: string | null;
+  page_size: string | null;
 }
 
 export interface BirthForm {

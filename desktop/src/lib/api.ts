@@ -12,6 +12,8 @@ export const build = (form: BirthForm) => invoke<ChartData>("build", { form });
 export const saveArtifact = (path: string) =>
   invoke<string>("save_artifact", { path });
 
+export const savePdf = (path: string) => invoke<string>("save_pdf", { path });
+
 export const onTranscribeProgress = (handler: (pct: number) => void) =>
   listen<number>("transcribe-progress", (e) => handler(e.payload));
 

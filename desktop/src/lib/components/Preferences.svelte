@@ -10,6 +10,7 @@
   let defaultModel = $state("");
   let astrologer = $state("");
   let logo = $state("");
+  let pageSize = $state("a4");
   let models = $state<string[]>([]);
   let error = $state("");
 
@@ -28,6 +29,7 @@
       defaultModel = p.default_model ?? "";
       astrologer = p.astrologer ?? "";
       logo = p.logo ?? "";
+      pageSize = p.page_size ?? "a4";
       refreshModels();
     });
   });
@@ -61,6 +63,7 @@
         readings_dir: readingsDir || null,
         astrologer: astrologer || null,
         logo: logo || null,
+        page_size: pageSize === "a4" ? null : pageSize,
       });
       app.status = "preferences kept";
       onclose();
@@ -107,6 +110,13 @@
     <span>your logo</span>
     <input bind:value={logo} placeholder="engraved on the title plate (optional)" />
     <button type="button" class="browse" onclick={pickLogo}>browse…</button>
+  </label>
+  <label>
+    <span>paper size</span>
+    <select bind:value={pageSize}>
+      <option value="a4">A4</option>
+      <option value="letter">US Letter</option>
+    </select>
   </label>
 
   {#if error}<p class="error">✗ {error}</p>{/if}

@@ -4,6 +4,7 @@
     artifactFilename,
     onTranscribeProgress,
     saveArtifact,
+    savePdf,
     startRecording,
     stopRecording,
   } from "$lib/api";
@@ -75,6 +76,21 @@
     }
   }
 
+  async function engravePdf() {
+    const suggested = await artifactFilename().catch(() => "reading.html");
+    const path = await save({
+      defaultPath: suggested.replace(/\.html$/, ".pdf"),
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (!path) return;
+    try {
+      const written = await savePdf(path);
+      app.status = `wrote ${written}`;
+    } catch (e) {
+      app.status = `✗ ${e}`;
+    }
+  }
+
   function back() {
     app.chart = null;
     app.status = "";
@@ -128,6 +144,7 @@
         </button>
       {/if}
       <button class="frame-btn" onclick={engrave} disabled={recording}>export birth chart</button>
+      <button class="frame-btn" onclick={engravePdf} disabled={recording}>export PDF</button>
     </span>
   </footer>
 {:else}

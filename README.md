@@ -2,8 +2,7 @@
 
 Offline-only birth-chart generator that allows astrologers to compute and annotate birth charts with
 their commentary, either manually or from a transcript, and emits a single
-self-contained HTML artifact that can be branded and sent to clients.
-Build brief: `docs/natal-reading-indexer.md`.
+self-contained HTML artifact that can be branded with a logo and sent to clients.
 
 ## Download
 
@@ -77,6 +76,13 @@ embedded as a data URI so artifacts stay self-contained). Exports propose a
 generated `{name}_{date}.html` filename. Preferences live in the OS app-config
 dir; everything is optional and off until set.
 
+**PDF export**: beside the HTML artifact, *export PDF* engraves a cream-paper
+rendition — title plate (with your branding), the wheel as vector paths, an
+index of positions and aspects, and the full commentary with folio anchors
+and tag glyphs. Page size (A4 default / US Letter) is a preference. Fonts are
+embedded and subset; the PDF, like everything else, is produced entirely
+offline.
+
 Added prerequisites for this target only: Node, and on Linux the
 webkit2gtk/Tauri system packages (Windows uses the preinstalled WebView2).
 This is the dependency-heavy target by design — the CLI binary remains
@@ -92,7 +98,10 @@ strips and embeds it (~7 MB), and caches the sources under
 `ASTRO_GEONAMES_DIR` to it. Runtime never touches the network.
 
 Place data © [GeoNames](https://www.geonames.org/), licensed
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). PDF export embeds
+[Libre Baskerville](https://fonts.google.com/specimen/Libre+Baskerville)
+(OFL 1.1) and [DejaVu Sans](https://dejavu-fonts.github.io/) (Bitstream Vera
+license) — license texts in `assets/fonts/`.
 
 Transcripts are plain `.txt` (no timestamps) or JSONL segments
 `{"start": seconds, "text": "..."}` as produced by the transcription stage
@@ -108,6 +117,7 @@ The crate is a library (pipeline stages) plus a thin CLI binary (`src/main.rs`).
 | 2 Compute | `src/chart/` | Tropical, Whole Sign; symbol tables in `chart/catalog.rs`; place lookup in `src/geo.rs` |
 | 3 Route | `src/route/` | `Router` trait (`mod.rs`); `transcript.rs` parsing/segmentation, `lexicon.rs` matcher, `verify.rs` gate — the LLM router later lands as `route/llm.rs` |
 | 4 Emit | `src/emit.rs` + `templates/reading.html` | injects `ChartData` at `/*__DATA__*/null` |
+| 4b PDF | `src/pdf/` | krilla; the wheel as vector paths, embedded subset fonts, cream-paper palette |
 
 `src/contract.rs` holds the `ChartData` contract shared by all stages (mirrors
 the TS interface in the brief); `tests/pipeline.rs` drives the whole pipeline

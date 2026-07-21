@@ -383,7 +383,11 @@ fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), Stri
         readings_dir: norm(prefs.readings_dir),
         astrologer: norm(prefs.astrologer),
         logo: norm(prefs.logo),
+        page_size: norm(prefs.page_size),
     };
+    if let Some(size) = &prefs.page_size {
+        astro::pdf::PageSize::parse(size)?;
+    }
     for (label, dir) in [("models folder", &prefs.models_dir), ("readings folder", &prefs.readings_dir)] {
         if let Some(d) = dir {
             if !Path::new(d).is_dir() {
@@ -439,6 +443,22 @@ async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<Strin
     Ok(path)
 }
 
+/// The cream-paper PDF rendition; page size comes from preferences (A4
+/// unless set to letter).
+#[tauri::command]
+async fn save_pdf(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<String, String> {
+    let size = astro::pdf::PageSize::parse(prefs::load(&app).page_size.as_deref().unwrap_or("a4"))?;
+    let chart = {
+        let guard = state.0.lock().unwrap();
+        guard.chart.as_ref().ok_or("no chart has been built yet")?.clone()
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        astro::pdf::write_pdf(&chart, size, path.as_ref()).map(|()| path)
+    })
+    .await
+    .map_err(|e| format!("pdf task failed: {e}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -454,6 +474,7 @@ pub fn run() {
             search_places,
             build,
             save_artifact,
+            save_pdf,
             start_recording,
             stop_recording,
             merge_up,

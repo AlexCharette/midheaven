@@ -19,6 +19,8 @@ pub struct Preferences {
     pub astrologer: Option<String>,
     /// Path to the practitioner's logo image, embedded into artifacts.
     pub logo: Option<String>,
+    /// PDF page size, "a4" or "letter" (absent = a4).
+    pub page_size: Option<String>,
 }
 
 fn path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
