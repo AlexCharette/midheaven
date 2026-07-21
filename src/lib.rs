@@ -1,4 +1,4 @@
-//! Natal reading indexer — turn a recorded birth-chart reading into a single
+//! An offline astrology workspace — turn a recorded birth-chart reading into a single
 //! offline HTML artifact where the astrologer's *verbatim* words are filed
 //! under the chart elements they refer to.
 //!

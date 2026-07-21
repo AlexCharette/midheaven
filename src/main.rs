@@ -3,7 +3,7 @@ use astro::{TranscriptSource, build_reading, emit, geo};
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
-/// Natal reading indexer — offline birth-chart computation plus routing of
+/// An offline astrology workspace — birth-chart computation plus routing of
 /// verbatim reading-transcript excerpts to chart elements, emitted as one
 /// self-contained HTML artifact.
 #[derive(Parser)]

@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Midheaven \u2014 Natal Reading Indexer",
+        "title": "Midheaven \u2014 an offline astrology workspace",
         "width": 1280,
         "height": 860
       }

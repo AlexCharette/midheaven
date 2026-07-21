@@ -1,4 +1,4 @@
-# Midheaven — natal reading indexer
+# Midheaven — an offline astrology workspace
 
 (The Rust crates and the CLI binary keep the working name `astro`.)
 
