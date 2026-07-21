@@ -6,7 +6,6 @@ import type { ChartData, Excerpt } from "./types";
 export const app = $state({
   chart: null as ChartData | null,
   mode: "any" as "any" | "all",
-  status: "",
   /** false = idle · "compute" = fast build · number = transcription percent. */
   busy: false as false | "compute" | number,
   /** The form's whisper-model path; a non-empty value enables live recording. */
@@ -19,6 +18,24 @@ export const app = $state({
 });
 
 export const selected = new SvelteSet<string>();
+
+/** Transient status notifications — each auto-dismisses (errors linger
+ * longer) and any can be dismissed by a click. Replaces the old persistent
+ * footer status line. */
+export type Toast = { id: number; message: string; kind: "info" | "error" };
+export const toasts = $state<Toast[]>([]);
+let nextToastId = 0;
+
+export function notify(message: string, kind: "info" | "error" = "info") {
+  const id = nextToastId++;
+  toasts.push({ id, message, kind });
+  setTimeout(() => dismissToast(id), kind === "error" ? 7000 : 4000);
+}
+
+export function dismissToast(id: number) {
+  const i = toasts.findIndex((t) => t.id === id);
+  if (i !== -1) toasts.splice(i, 1);
+}
 
 /** The contract's Excerpt::matches semantics, mirrored (as in the artifact):
  * empty tag list shows all; any = intersection, all = superset. Shared by the

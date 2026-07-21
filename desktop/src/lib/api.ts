@@ -2,12 +2,18 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { BirthForm, ChartData, PlaceDto, Preferences } from "./types";
+import type { BirthForm, ChartData, PlaceDto, Preferences, ReadingEntry } from "./types";
 
 export const searchPlaces = (query: string) =>
   invoke<PlaceDto[]>("search_places", { query });
 
 export const build = (form: BirthForm) => invoke<ChartData>("build", { form });
+
+export const loadChart = (path: string) => invoke<ChartData>("load_chart", { path });
+
+export const listReadings = () => invoke<ReadingEntry[]>("list_readings");
+
+export const deleteReading = (dir: string) => invoke<void>("delete_reading", { dir });
 
 export const saveArtifact = (path: string) =>
   invoke<string>("save_artifact", { path });

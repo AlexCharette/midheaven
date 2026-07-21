@@ -4,7 +4,7 @@
   import { SvelteSet } from "svelte/reactivity";
   import type { ChartData, Excerpt } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
-  import { app, selected, toggle } from "$lib/state.svelte";
+  import { app, notify, selected, toggle } from "$lib/state.svelte";
 
   let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
 
@@ -25,9 +25,9 @@
   async function join(id: string) {
     try {
       app.chart = await mergeUp(id);
-      app.status = "two passages joined";
+      notify("two passages joined");
     } catch (e) {
-      app.status = `✗ ${e}`;
+      notify(`${e}`, "error");
     }
   }
 
@@ -44,9 +44,9 @@
     if (draft.trim() === original) return;
     try {
       app.chart = await correctExcerpt(id, draft);
-      app.status = "passage amended — re-sectioned";
+      notify("passage amended — re-sectioned");
     } catch (e) {
-      app.status = `✗ ${e}`;
+      notify(`${e}`, "error");
     }
   }
 
@@ -71,9 +71,9 @@
     if (!sure) return;
     try {
       app.chart = await deleteExcerpt(exId);
-      app.status = "passage removed";
+      notify("passage removed");
     } catch (e) {
-      app.status = `✗ ${e}`;
+      notify(`${e}`, "error");
     }
   }
 
@@ -93,9 +93,9 @@
     composing = false;
     try {
       app.chart = await addExcerpt(draftText, [...draftTags]);
-      app.status = "passage added";
+      notify("passage added");
     } catch (e) {
-      app.status = `✗ ${e}`;
+      notify(`${e}`, "error");
     }
   }
 

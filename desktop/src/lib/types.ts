@@ -68,6 +68,17 @@ export interface Preferences {
   page_size: string | null;
 }
 
+/** Mirrors the backend's ReadingEntry — one row of the saved-readings library. */
+export interface ReadingEntry {
+  chartPath: string;
+  dir: string;
+  name: string;
+  born: string;
+  place: string;
+  excerpts: number;
+  modifiedMs: number | null;
+}
+
 export interface BirthForm {
   name: string;
   date: string;

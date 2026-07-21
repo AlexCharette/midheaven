@@ -1,7 +1,8 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { build, getPreferences, searchPlaces } from "$lib/api";
-  import { app } from "$lib/state.svelte";
+  import { app, notify } from "$lib/state.svelte";
+  import Library from "./Library.svelte";
   import Preferences from "./Preferences.svelte";
   import type { PlaceDto } from "$lib/types";
 
@@ -16,6 +17,7 @@
   let model = $state("");
   let error = $state("");
   let prefsOpen = $state(false);
+  let libraryOpen = $state(false);
 
   // the preferred model prefills an untouched field (again on pane close,
   // so a freshly chosen default lands without retyping)
@@ -92,7 +94,7 @@
         transcript: transcript || null,
         model: model || null,
       });
-      app.status = `${app.chart.excerpts.length} passages routed past the verify gate`;
+      notify(`${app.chart.excerpts.length} passages routed past the verify gate`);
       app.model = model.trim();
     } catch (e) {
       error = String(e);
@@ -109,6 +111,8 @@
 
   {#if prefsOpen}
     <Preferences onclose={() => (prefsOpen = false)} />
+  {:else if libraryOpen}
+    <Library onclose={() => (libraryOpen = false)} />
   {:else}
   <form
     onsubmit={(e) => {
@@ -175,6 +179,10 @@
     {/if}
 
     <p class="prefs-line">
+      <button type="button" class="ghost" onclick={() => (libraryOpen = true)}>
+        open a saved reading
+      </button>
+      <span class="sep" aria-hidden="true">·</span>
       <button type="button" class="ghost" onclick={() => (prefsOpen = true)}>preferences</button>
     </p>
   </form>
@@ -298,5 +306,9 @@
     text-align: center;
     margin-top: 2rem;
     font-size: 0.85rem;
+  }
+  .prefs-line .sep {
+    color: var(--ink-3);
+    margin: 0 0.6rem;
   }
 </style>
