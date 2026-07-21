@@ -1,7 +1,5 @@
 # Midheaven — an offline astrology workspace
 
-(The Rust crates and the CLI binary keep the working name `astro`.)
-
 Offline-only birth-chart generator in Rust that routes an astrologer's *verbatim*
 reading-transcript excerpts to the chart elements they mention, and emits a single
 self-contained HTML artifact (computed SVG wheel as filter surface + excerpt index).
