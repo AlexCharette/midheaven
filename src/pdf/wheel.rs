@@ -1,6 +1,6 @@
 //! The chart wheel as native PDF vector paths — a port of the artifact
 //! viewer's SVG wheel (templates/reading.html), same radii and geometry,
-//! recolored for the cream-paper rendition. Coordinates are y-down with the
+//! recolored for the lighter rendition. Coordinates are y-down with the
 //! origin at the page's top-left, exactly like the SVG, so the formulas
 //! carry over unchanged.
 

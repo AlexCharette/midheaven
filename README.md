@@ -79,12 +79,10 @@ embedded as a data URI so artifacts stay self-contained). Exports propose a
 generated `{name}_{date}.html` filename. Preferences live in the OS app-config
 dir; everything is optional and off until set.
 
-**PDF export**: beside the HTML artifact, *export PDF* engraves a cream-paper
-rendition — title plate (with your branding), the wheel as vector paths, an
+**PDF export**: beside the HTML artifact, *export PDF* provides a more printer-friendly
+verion: a title plate (with your branding), the wheel as vector paths, an
 index of positions and aspects, and the full commentary with folio anchors
-and tag glyphs. Page size (A4 default / US Letter) is a preference. Fonts are
-embedded and subset; the PDF, like everything else, is produced entirely
-offline.
+and tag glyphs. Page size (A4 default / US Letter) can be changed in your preferences.
 
 Added prerequisites for this target only: Node, and on Linux the
 webkit2gtk/Tauri system packages (Windows uses the preinstalled WebView2).
@@ -120,7 +118,7 @@ The crate is a library (pipeline stages) plus a thin CLI binary (`src/main.rs`).
 | 2 Compute | `src/chart/` | Tropical, Whole Sign; symbol tables in `chart/catalog.rs`; place lookup in `src/geo.rs` |
 | 3 Route | `src/route/` | `Router` trait (`mod.rs`); `transcript.rs` parsing/segmentation, `lexicon.rs` matcher, `verify.rs` gate — the LLM router later lands as `route/llm.rs` |
 | 4 Emit | `src/emit.rs` + `templates/reading.html` | injects `ChartData` at `/*__DATA__*/null` |
-| 4b PDF | `src/pdf/` | krilla; the wheel as vector paths, embedded subset fonts, cream-paper palette |
+| 4b PDF | `src/pdf/` | krilla; the wheel as vector paths, embedded subset fonts, lighter palette |
 
 `src/contract.rs` holds the `ChartData` contract shared by all stages (mirrors
 the TS interface in the brief); `tests/pipeline.rs` drives the whole pipeline

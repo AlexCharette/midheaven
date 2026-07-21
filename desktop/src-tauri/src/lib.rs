@@ -443,7 +443,7 @@ async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<Strin
     Ok(path)
 }
 
-/// The cream-paper PDF rendition; page size comes from preferences (A4
+/// The PDF rendition; page size comes from preferences (A4
 /// unless set to letter).
 #[tauri::command]
 async fn save_pdf(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<String, String> {

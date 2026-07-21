@@ -1,4 +1,4 @@
-//! Stage 4b — the reading as a rich PDF: a cream-paper engraving of the same
+//! Stage 4b — the reading as a rich PDF: a lighter rendition of the same
 //! material the HTML artifact carries (title plate, wheel, index,
 //! commentary). Pure vector output via krilla; fonts are embedded and
 //! subset, nothing external. The dark rendition stays the artifact's; paper

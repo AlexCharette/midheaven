@@ -33,7 +33,7 @@ enum Command {
         /// Output HTML path.
         #[arg(long, default_value = "reading.html")]
         out: PathBuf,
-        /// Also engrave a PDF (cream-paper rendition) to this path.
+        /// Also engrave a PDF to this path.
         #[arg(long)]
         pdf: Option<PathBuf>,
         /// PDF page size: a4 or letter.
