@@ -51,12 +51,14 @@ pub const HOUSE_NAMES: &[(&str, &str)] = &[
     ("XII", "Twelfth House"),
 ];
 
-/// (kind, glyph, exact angle, orb) — the five Ptolemaic aspects. The kind
-/// doubles as the display word.
-pub const ASPECT_TYPES: &[(&str, &str, f64, f64)] = &[
-    ("conjunction", "☌", 0.0, 8.0),
-    ("sextile", "⚹", 60.0, 5.0),
-    ("square", "□", 90.0, 7.0),
-    ("trine", "△", 120.0, 7.0),
-    ("opposition", "☍", 180.0, 8.0),
+/// (kind, glyph, exact angle, orb, nature) — the five Ptolemaic aspects. The
+/// kind doubles as the display word; the nature drives the classic chord
+/// coloring (harmonious = ease and innate strengths, challenging = friction
+/// that drives growth, conjunction = neutral blending).
+pub const ASPECT_TYPES: &[(&str, &str, f64, f64, &str)] = &[
+    ("conjunction", "☌", 0.0, 8.0, "neutral"),
+    ("sextile", "⚹", 60.0, 5.0, "harmonious"),
+    ("square", "□", 90.0, 7.0, "challenging"),
+    ("trine", "△", 120.0, 7.0, "harmonious"),
+    ("opposition", "☍", 180.0, 8.0, "challenging"),
 ];

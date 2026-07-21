@@ -200,15 +200,21 @@ pub fn draw(s: &mut Surface, fonts: &Fonts, chart: &ChartData, cx: f32, cy: f32,
         label(s, fonts, Face::Regular, 10.0 * k, INK3, tx, ty, name);
     }
 
-    // aspect chords, under the planet glyphs
+    // aspect chords, under the planet glyphs — colored by NATURE (classic
+    // blue/red), not the category color, mirroring the artifact wheel
     for a in &chart.aspects {
         if let (Some(pa), Some(pb)) = (chart.planet(&a.a), chart.planet(&a.b)) {
+            let color = match a.nature.as_str() {
+                "harmonious" => STEEL,
+                "challenging" => OXBLOOD,
+                _ => INK3, // conjunction: neutral blending
+            };
             let mut pb2 = PathBuilder::new();
             let (x1, y1) = p.pt(pa.lon as f32, R_CHORD);
             let (x2, y2) = p.pt(pb.lon as f32, R_CHORD);
             pb2.move_to(x1, y1);
             pb2.line_to(x2, y2);
-            stroked(s, &pb2.finish().expect("chord"), stroke(OXBLOOD, 1.2 * k, 0.6));
+            stroked(s, &pb2.finish().expect("chord"), stroke(color, 1.2 * k, 0.6));
         }
     }
 

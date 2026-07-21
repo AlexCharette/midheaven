@@ -135,7 +135,7 @@ fn detect_aspects(planets: &[Body]) -> Vec<Aspect> {
     for i in 0..planets.len() {
         for j in (i + 1)..planets.len() {
             let sep = separation(planets[i].lon, planets[j].lon);
-            for &(kind, glyph, angle, orb) in ASPECT_TYPES {
+            for &(kind, glyph, angle, orb, nature) in ASPECT_TYPES {
                 if (sep - angle).abs() <= orb {
                     let (a_short, b_short) = (PLANETS[i].1, PLANETS[j].1);
                     aspects.push(Aspect {
@@ -144,6 +144,7 @@ fn detect_aspects(planets: &[Body]) -> Vec<Aspect> {
                         name: format!("{} {} {}", planets[i].name, kind, planets[j].name),
                         a: planets[i].id.clone(),
                         b: planets[j].id.clone(),
+                        nature: nature.to_string(),
                         kind,
                     });
                     break;

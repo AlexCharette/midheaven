@@ -174,7 +174,7 @@
   {#each chords as c (c.a.id)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <g class="aspect" class:sel={selected.has(c.a.id)} role="button" tabindex="-1" onclick={() => toggle(c.a.id)}>
-      <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} class="chord" />
+      <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} class="chord nature-{c.a.nature}" />
       <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} class="chord-hit" />
       <title>{c.a.name} {textGlyph(c.a.glyph)}</title>
     </g>
@@ -304,10 +304,20 @@
     fill: rgba(196, 154, 48, 0.16);
     stroke: var(--brass);
   }
+  /* chords carry the aspect's NATURE (classic blue/red), not the category
+     color — mirrors templates/reading.html */
   .chord {
-    stroke: var(--oxblood);
     stroke-width: 1.4;
     opacity: 0.6;
+  }
+  .chord.nature-harmonious {
+    stroke: var(--steel);
+  }
+  .chord.nature-challenging {
+    stroke: var(--oxblood);
+  }
+  .chord.nature-neutral {
+    stroke: var(--ink-3);
   }
   .chord-hit {
     stroke: transparent;

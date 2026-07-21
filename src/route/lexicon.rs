@@ -161,6 +161,7 @@ mod tests {
             name: "Sun trine Moon".into(),
             a: "planet:sun".into(),
             b: "planet:moon".into(),
+            nature: "harmonious".into(),
             kind: "trine",
         }];
         let router = LexiconRouter::new(&v, &aspects);

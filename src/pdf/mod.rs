@@ -632,7 +632,7 @@ mod tests {
         for (_, glyph, _, _) in SIGNS_ALL {
             assert!(fonts.covers(Face::Symbols, glyph), "sign glyph {glyph}");
         }
-        for (_, glyph, _, _) in ASPECT_TYPES {
+        for (_, glyph, _, _, _) in ASPECT_TYPES {
             assert!(fonts.covers(Face::Symbols, glyph), "aspect glyph {glyph}");
         }
         assert!(fonts.covers(Face::Symbols, "\u{2736}\u{261E}\u{b7}\u{b0} "));

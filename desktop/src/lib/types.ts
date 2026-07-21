@@ -42,6 +42,8 @@ interface Aspect {
   name: string;
   a: string;
   b: string;
+  /** "harmonious" | "challenging" | "neutral" — chord coloring. */
+  nature: string;
 }
 export interface Excerpt {
   id: string;

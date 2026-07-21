@@ -117,7 +117,14 @@
   #wheel .planet:hover .halo { stroke: rgba(196, 154, 48, 0.5); }
   #wheel .planet.sel .halo { fill: rgba(196, 154, 48, 0.16); stroke: var(--brass); }
 
-  #wheel .chord { stroke: var(--oxblood); stroke-width: 1.4; opacity: .6; fill: none; }
+  /* chords carry the aspect's NATURE (classic blue/red), not the category
+     color: harmonious = ease and innate strengths, challenging = friction
+     that drives growth, conjunction = neutral blending. Mirrored by
+     Wheel.svelte and src/pdf/wheel.rs. */
+  #wheel .chord { stroke-width: 1.4; opacity: .6; fill: none; }
+  #wheel .chord.nature-harmonious { stroke: var(--steel); }
+  #wheel .chord.nature-challenging { stroke: var(--oxblood); }
+  #wheel .chord.nature-neutral { stroke: var(--ink-3); }
   #wheel .chord-hit { stroke: transparent; stroke-width: 11; fill: none; cursor: pointer; }
   #wheel g.aspect:hover .chord { opacity: 1; stroke-width: 2.2; }
   #wheel g.aspect.sel .chord { opacity: 1; stroke-width: 3; }
@@ -493,7 +500,7 @@ const DATA = /*__DATA__*/null;
     const g = el('g', { class: 'aspect', 'data-tag': a.id }, wheel);
     const [x1, y1] = pt(planetLon[a.a], R.chord);
     const [x2, y2] = pt(planetLon[a.b], R.chord);
-    el('line', { x1, y1, x2, y2, class: 'chord' }, g);
+    el('line', { x1, y1, x2, y2, class: `chord nature-${a.nature}` }, g);
     const hit = el('line', { x1, y1, x2, y2, class: 'chord-hit' }, g);
     svgTitle(g, `${a.name} ${textGlyph(a.glyph)}`);
     hit.addEventListener('click', () => toggle(a.id));

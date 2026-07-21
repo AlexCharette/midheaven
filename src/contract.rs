@@ -138,6 +138,9 @@ pub struct Aspect {
     /// Planet ids.
     pub a: String,
     pub b: String,
+    /// "harmonious" (trine, sextile), "challenging" (square, opposition),
+    /// or "neutral" (conjunction) — drives the wheel's chord coloring.
+    pub nature: String,
     /// Aspect kind ("trine", …) for routers matching aspect words; not part
     /// of the serialized artifact contract.
     #[serde(skip)]
