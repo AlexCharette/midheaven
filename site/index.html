@@ -50,11 +50,6 @@
     max-width: 52ch; margin: 1rem auto 0; font-style: italic;
     font-size: .92rem; color: var(--ink-3); text-wrap: pretty;
   }
-  .double-rule {
-    height: 8px; margin: 1.8rem auto; max-width: 380px;
-    border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--line);
-  }
-
   .rubric {
     display: flex; align-items: center; gap: 1rem; margin: 0 0 1.2rem;
     font-size: .85rem; font-variant: small-caps; letter-spacing: .28em; color: var(--ink-2);
@@ -113,6 +108,41 @@
   .donate .btn:hover { color: var(--ink); border-color: var(--ink-3); }
   .donate .kofi-label { flex: 1 1 auto; color: var(--ink-2); font-size: .9rem; }
 
+  /* Two-up plate. Phones keep the single centred column (unchanged): the
+     sections stack in reading order via flex `order` while the two column
+     wrappers collapse with `display: contents`. Desktop / landscape tablet
+     promotes them to a real two-column grid so the hero + support sit beside
+     the downloads + instructions instead of leaving the sheet's sides empty. */
+  .layout { display: flex; flex-direction: column; }
+  .col { display: contents; }
+  .hero { order: 1; }
+  .downloads-block { order: 2; }
+  .apparatus { order: 3; }
+  .support { order: 4; }
+
+  /* The engraved double rule, hoisted above a block as its separator. */
+  .sep-top { position: relative; margin-top: 2.2rem; padding-top: 2.2rem; }
+  .sep-top::before {
+    content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: min(100%, 24rem); height: 8px;
+    border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--line);
+  }
+
+  @media (min-width: 60rem) {
+    .sheet { max-width: 68rem; }
+    .layout {
+      display: grid; grid-template-columns: 1fr 1fr; align-items: start;
+      column-gap: clamp(2.5rem, 5vw, 4rem);
+      /* plate gutter: a hairline down the centre, full height of the taller column */
+      background: linear-gradient(var(--line), var(--line)) no-repeat 50% 0 / 1px 100%;
+    }
+    .col { display: flex; flex-direction: column; }
+    /* downloads heads the right column, so its rule would sit at the very top */
+    .downloads-block.sep-top { margin-top: 0; padding-top: 0; }
+    .downloads-block.sep-top::before { display: none; }
+    footer { margin-top: 2.6rem; padding-top: 1.8rem; border-top: 1px solid var(--line); }
+  }
+
   footer {
     margin-top: 3rem; font-size: .85rem; font-style: italic; color: var(--ink-3);
   }
@@ -122,78 +152,82 @@
 </head>
 <body>
 <div class="sheet">
-  <svg class="ornament" width="52" height="52" viewBox="0 0 44 44" aria-hidden="true">
-    <g stroke="#c49a30" stroke-width="0.9" fill="none">
-      <path d="M22 2 L22 42 M2 22 L42 22"/>
-      <path d="M9 9 L35 35 M35 9 L9 35" opacity="0.55"/>
-      <circle cx="22" cy="22" r="3.2"/>
-      <circle cx="22" cy="22" r="7" opacity="0.4"/>
-    </g>
-  </svg>
-  <h1>MIDHEAVEN</h1>
-  <p class="tagline">an offline astrology workspace</p>
-  <p class="note">
-    Annotate a birth chart with astrologer's comments, either manually or from a 
-    transcription. If you connect a whisper model, you can transcribe in the app itself.
-    Notes are automatically tagged with the chart elements they refer to.
-  </p>
+  <div class="layout">
+    <div class="col col-left">
+      <section class="hero">
+        <svg class="ornament" width="52" height="52" viewBox="0 0 44 44" aria-hidden="true">
+          <g stroke="#c49a30" stroke-width="0.9" fill="none">
+            <path d="M22 2 L22 42 M2 22 L42 22"/>
+            <path d="M9 9 L35 35 M35 9 L9 35" opacity="0.55"/>
+            <circle cx="22" cy="22" r="3.2"/>
+            <circle cx="22" cy="22" r="7" opacity="0.4"/>
+          </g>
+        </svg>
+        <h1>MIDHEAVEN</h1>
+        <p class="tagline">an offline astrology workspace</p>
+        <p class="note">
+          Annotate a birth chart with astrologer's comments, either manually or from a
+          transcription. If you connect a whisper model, you can transcribe in the app itself.
+          Notes are automatically tagged with the chart elements they refer to.
+        </p>
+      </section>
 
-  <div class="double-rule"></div>
-
-  <h2 class="rubric">Downloads</h2>
-  <ul class="downloads" id="downloads">
-    <li data-os="mac">
-      <span class="marker" aria-hidden="true"></span>
-      <span class="os">macOS</span> <span class="arch">Apple Silicon</span>
-      <a data-suffix="_aarch64.dmg" href="#">…</a> <span class="size"></span>
-    </li>
-    <li data-os="mac">
-      <span class="marker" aria-hidden="true"></span>
-      <span class="os">macOS</span> <span class="arch">Intel</span>
-      <a data-suffix="_x64.dmg" href="#">…</a> <span class="size"></span>
-    </li>
-    <li data-os="win">
-      <span class="marker" aria-hidden="true"></span>
-      <span class="os">Windows</span> <span class="arch">x64 installer</span>
-      <a data-suffix="-setup.exe" data-fallback=".msi" href="#">…</a> <span class="size"></span>
-    </li>
-  </ul>
-  <p class="version" id="version"><a href="https://github.com/AlexCharette/midheaven/releases">all releases ☞</a></p>
-
-  <div class="double-rule"></div>
-
-  <div class="apparatus">
-    <p><span class="lbl">first launch ·</span> The builds are not notarized
-      with Apple yet. On macOS, open the app once, dismiss the warning, then
-      approve it under System Settings → Privacy &amp; Security
-      (<em>Open Anyway</em>). If macOS instead claims the app is “damaged”
-      (downloads of v0.1.0), clear the quarantine flag in Terminal:
-      <code>xattr -d com.apple.quarantine /Applications/Midheaven.app</code>.
-      On Windows, choose <em>More info → Run anyway</em> when SmartScreen asks.</p>
-    <p><span class="lbl">transcription ·</span> Live transcription is local
-      (whisper.cpp) and needs a user-supplied ggml model file — see the
-      <a href="https://github.com/AlexCharette/midheaven#readme">README</a>
-      for where to get one or download <a href="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q8_0.bin">this one</a> to get started.</p>
-    <p><span class="lbl">offline ·</span> The app makes no network requests:
-      places are embedded and all calculations are done locally.
-      Exported readings are single HTML files that can simply be opened in a
-      browser — or rich PDFs, in a more printer-friendly format.</p>
-  </div>
-
-  <div class="double-rule"></div>
-
-  <h2 class="rubric">Support this project</h2>
-  <div class="support">
-    <p class="note">If this tool is useful to you, you can support it with a small donation.</p>
-    <div class="donate">
-      <span class="marker" aria-hidden="true">₿</span>
-      <code id="btc-address">bc1qu48z5tfx5evegcr47v8tu63qpyhwdzemzfsrr2</code>
-      <button class="btn" id="copy-btc" type="button">Copy address</button>
+      <section class="support sep-top">
+        <h2 class="rubric">Support this project</h2>
+        <p class="note">If this tool is useful to you, you can support it with a small donation.</p>
+        <div class="donate">
+          <span class="marker" aria-hidden="true">₿</span>
+          <code id="btc-address">bc1qu48z5tfx5evegcr47v8tu63qpyhwdzemzfsrr2</code>
+          <button class="btn" id="copy-btc" type="button">Copy address</button>
+        </div>
+        <div class="donate">
+          <span class="marker" aria-hidden="true">☕</span>
+          <span class="kofi-label">Ko-fi</span>
+          <a class="btn" href="https://ko-fi.com/littlecarts" target="_blank" rel="noopener noreferrer">Support on Ko-fi ☞</a>
+        </div>
+      </section>
     </div>
-    <div class="donate">
-      <span class="marker" aria-hidden="true">☕</span>
-      <span class="kofi-label">Ko-fi</span>
-      <a class="btn" href="https://ko-fi.com/littlecarts" target="_blank" rel="noopener noreferrer">Support on Ko-fi ☞</a>
+
+    <div class="col col-right">
+      <section class="downloads-block sep-top">
+        <h2 class="rubric">Downloads</h2>
+        <ul class="downloads" id="downloads">
+          <li data-os="mac">
+            <span class="marker" aria-hidden="true"></span>
+            <span class="os">macOS</span> <span class="arch">Apple Silicon</span>
+            <a data-suffix="_aarch64.dmg" href="#">…</a> <span class="size"></span>
+          </li>
+          <li data-os="mac">
+            <span class="marker" aria-hidden="true"></span>
+            <span class="os">macOS</span> <span class="arch">Intel</span>
+            <a data-suffix="_x64.dmg" href="#">…</a> <span class="size"></span>
+          </li>
+          <li data-os="win">
+            <span class="marker" aria-hidden="true"></span>
+            <span class="os">Windows</span> <span class="arch">x64 installer</span>
+            <a data-suffix="-setup.exe" data-fallback=".msi" href="#">…</a> <span class="size"></span>
+          </li>
+        </ul>
+        <p class="version" id="version"><a href="https://github.com/AlexCharette/midheaven/releases">all releases ☞</a></p>
+      </section>
+
+      <section class="apparatus sep-top">
+        <p><span class="lbl">first launch ·</span> The builds are not notarized
+          with Apple yet. On macOS, open the app once, dismiss the warning, then
+          approve it under System Settings → Privacy &amp; Security
+          (<em>Open Anyway</em>). If macOS instead claims the app is “damaged”
+          (downloads of v0.1.0), clear the quarantine flag in Terminal:
+          <code>xattr -d com.apple.quarantine /Applications/Midheaven.app</code>.
+          On Windows, choose <em>More info → Run anyway</em> when SmartScreen asks.</p>
+        <p><span class="lbl">transcription ·</span> Live transcription is local
+          (whisper.cpp) and needs a user-supplied ggml model file — see the
+          <a href="https://github.com/AlexCharette/midheaven#readme">README</a>
+          for where to get one or download <a href="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q8_0.bin">this one</a> to get started.</p>
+        <p><span class="lbl">offline ·</span> The app makes no network requests:
+          places are embedded and all calculations are done locally.
+          Exported readings are single HTML files that can simply be opened in a
+          browser — or rich PDFs, in a more printer-friendly format.</p>
+      </section>
     </div>
   </div>
 

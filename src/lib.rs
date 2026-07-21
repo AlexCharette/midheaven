@@ -32,7 +32,9 @@ pub enum TranscriptSource {
     None,
     /// A transcript file: plain text or timestamped JSONL.
     File(std::path::PathBuf),
-    /// A WAV recording to transcribe with a ggml whisper model.
+    /// A WAV recording to transcribe with a ggml whisper model. Only present
+    /// in builds with the `transcribe` feature (off on mobile).
+    #[cfg(feature = "transcribe")]
     Audio { wav: std::path::PathBuf, model: std::path::PathBuf },
 }
 
@@ -43,6 +45,9 @@ pub enum ClassifyError {
     NoTranscriptFile(String),
     ModelRequired,
     NoModelFile(String),
+    /// This build has no on-device transcription (e.g. mobile) yet was handed
+    /// an audio file — the caller should offer a text/JSONL transcript instead.
+    TranscriptionUnavailable,
 }
 
 impl std::fmt::Display for ClassifyError {
@@ -53,6 +58,9 @@ impl std::fmt::Display for ClassifyError {
                 write!(f, "an audio transcript needs a ggml whisper model")
             }
             ClassifyError::NoModelFile(p) => write!(f, "no model file at {p}"),
+            ClassifyError::TranscriptionUnavailable => {
+                write!(f, "audio transcription is not available in this build")
+            }
         }
     }
 }
@@ -73,15 +81,26 @@ impl TranscriptSource {
         if !transcribe::is_audio(path) {
             return Ok(TranscriptSource::File(path.into()));
         }
-        let model = model.trim();
-        if model.is_empty() {
-            return Err(ClassifyError::ModelRequired);
+        // From here down the input is audio, which only the `transcribe` build
+        // can consume. Without the feature, refuse rather than mis-file a WAV
+        // as a text transcript.
+        #[cfg(not(feature = "transcribe"))]
+        {
+            let _ = model;
+            Err(ClassifyError::TranscriptionUnavailable)
         }
-        let model_path = std::path::Path::new(model);
-        if !model_path.exists() {
-            return Err(ClassifyError::NoModelFile(model.into()));
+        #[cfg(feature = "transcribe")]
+        {
+            let model = model.trim();
+            if model.is_empty() {
+                return Err(ClassifyError::ModelRequired);
+            }
+            let model_path = std::path::Path::new(model);
+            if !model_path.exists() {
+                return Err(ClassifyError::NoModelFile(model.into()));
+            }
+            Ok(TranscriptSource::Audio { wav: path.into(), model: model_path.into() })
         }
-        Ok(TranscriptSource::Audio { wav: path.into(), model: model_path.into() })
     }
 }
 
@@ -115,6 +134,10 @@ pub fn build_reading(
     source: TranscriptSource,
     progress: impl FnMut(i32) + Send + 'static,
 ) -> Result<(contract::ChartData, usize), String> {
+    // `progress` is only consumed by the audio arm; without the feature that
+    // arm is gone, so drop the callback to keep it from reading as unused.
+    #[cfg(not(feature = "transcribe"))]
+    let _ = progress;
     let transcript = match source {
         TranscriptSource::None => None,
         TranscriptSource::File(path) => {
@@ -122,6 +145,7 @@ pub fn build_reading(
                 .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
             Some(route::Transcript::load(&raw))
         }
+        #[cfg(feature = "transcribe")]
         TranscriptSource::Audio { wav, model } => {
             let segments = transcribe::transcribe(&wav, &model, progress)?;
             Some(route::Transcript::from_segments(segments))

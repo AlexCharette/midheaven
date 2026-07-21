@@ -8,12 +8,18 @@
 //! For m4a/mp3 recordings: `ffmpeg -i call.m4a -ar 16000 -ac 1 call.wav`.
 
 use crate::contract::Segment;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "transcribe")]
+use std::path::PathBuf;
+#[cfg(feature = "transcribe")]
 use std::sync::Mutex;
+#[cfg(feature = "transcribe")]
 use std::time::SystemTime;
+#[cfg(feature = "transcribe")]
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 /// Whisper's fixed input sample rate.
+#[cfg(feature = "transcribe")]
 const WHISPER_RATE: u32 = 16_000;
 
 /// Does this file look like audio we can transcribe? Decided by content
@@ -36,13 +42,16 @@ pub fn is_audio(path: &Path) -> bool {
 }
 
 /// (audio path, model path, audio mtime) — identifies one transcription run.
+#[cfg(feature = "transcribe")]
 type CacheKey = (PathBuf, PathBuf, Option<SystemTime>);
 
 /// Single-slot result cache: transcription is by far the most expensive step
 /// (minutes for an hour of audio), and "tweak a birth field, resubmit the
 /// same recording" is a common loop in the desktop app.
+#[cfg(feature = "transcribe")]
 static LAST_RUN: Mutex<Option<(CacheKey, Vec<Segment>)>> = Mutex::new(None);
 
+#[cfg(feature = "transcribe")]
 fn cache_key(audio: &Path, model: &Path) -> CacheKey {
     let mtime = std::fs::metadata(audio).and_then(|m| m.modified()).ok();
     (audio.to_path_buf(), model.to_path_buf(), mtime)
@@ -50,6 +59,7 @@ fn cache_key(audio: &Path, model: &Path) -> CacheKey {
 
 /// Transcribe a WAV file with a ggml whisper model. `progress` receives
 /// whole percentages from whisper.cpp as inference advances.
+#[cfg(feature = "transcribe")]
 pub fn transcribe(
     audio: &Path,
     model: &Path,
@@ -112,6 +122,7 @@ pub fn to_jsonl(segments: &[Segment]) -> String {
 /// Decode a WAV file of any rate/channel count into mono 16 kHz f32 samples.
 /// Decode and downmix are fused into one pass (an hour of stereo 44.1 kHz is
 /// ~1.3 GB as interleaved f32 — never materialized).
+#[cfg(feature = "transcribe")]
 pub fn load_wav_mono_16k(path: &Path) -> Result<Vec<f32>, String> {
     let reader = hound::WavReader::open(path).map_err(|e| {
         format!(
@@ -143,6 +154,7 @@ pub fn load_wav_mono_16k(path: &Path) -> Result<Vec<f32>, String> {
 }
 
 /// Average interleaved samples into mono frames, streaming.
+#[cfg(feature = "transcribe")]
 fn fold_mono(
     samples: impl Iterator<Item = Result<f32, String>>,
     channels: usize,
@@ -165,6 +177,7 @@ fn fold_mono(
 
 /// Linear-interpolation resampling — adequate for speech into whisper.
 /// The already-16k case (the documented ffmpeg recipe) is a move, not a copy.
+#[cfg(feature = "transcribe")]
 fn resample_linear(samples: Vec<f32>, from: u32, to: u32) -> Vec<f32> {
     if from == to || samples.is_empty() {
         return samples;
@@ -183,7 +196,9 @@ fn resample_linear(samples: Vec<f32>, from: u32, to: u32) -> Vec<f32> {
         .collect()
 }
 
-#[cfg(test)]
+// These exercise the WAV loader and whisper path, so they need the feature's
+// deps (hound); the `is_audio`/`to_jsonl` helpers stay covered here too.
+#[cfg(all(test, feature = "transcribe"))]
 mod tests {
     use super::*;
     use crate::route::Transcript;

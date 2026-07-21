@@ -19,16 +19,24 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-astro = { path = "../.." }
+# Mobile (Android/iOS) builds omit on-device transcription: no whisper.cpp
+# C++ toolchain, no ggml models. Desktop re-enables it in the target table below.
+astro = { path = "../..", default-features = false }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-cpal = "0.18.1"
-hound = "3.5.1"
 base64 = "0.22"
 chrono = "0.4"
+
+# Desktop-only: microphone capture (cpal) + WAV writing (hound), and the
+# transcription feature of the core crate. `cfg(desktop)` isn't known to Cargo
+# at resolution time, so key off the target OS instead — mobile is android/ios.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+astro = { path = "../..", default-features = false, features = ["transcribe"] }
+cpal = "0.18.1"
+hound = "3.5.1"
 
 [dev-dependencies]
 chrono-tz = "0.10.4"

@@ -3,11 +3,14 @@
 //! emission) runs natively here, exactly as in the CLI/TUI.
 
 mod prefs;
+#[cfg(desktop)]
 mod record;
 
 use astro::chart::parse_time;
 use astro::contract::{ChartData, Excerpt};
-use astro::route::{Transcript, append_transcript, index_transcript, lexicon_for, next_ordinal, retag};
+use astro::route::{Transcript, index_transcript, lexicon_for, next_ordinal, retag};
+#[cfg(desktop)]
+use astro::route::append_transcript;
 use astro::{TranscriptSource, geo};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -26,7 +29,9 @@ struct Inner {
     /// Total seconds recorded this session — offsets each new take's
     /// timestamps so folio anchors run continuously.
     session_secs: f64,
+    #[cfg(desktop)]
     model: Option<PathBuf>,
+    #[cfg(desktop)]
     recorder: Option<record::Recorder>,
     /// `{readings_dir}/{name}_{date}/` when a readings folder is configured —
     /// chart.json and transcriptions auto-save here through the session.
@@ -108,6 +113,8 @@ async fn build(
 
     // Unlike `build_reading` (the CLI/TUI path), the desktop keeps the
     // transcript at hand so the readings library can persist it verbatim.
+    // Only the audio arm reports progress; on mobile that arm is compiled out.
+    #[cfg(desktop)]
     let progress_app = app.clone();
     type Persisted = Option<(String, String)>; // (filename, contents) for the library
     let (mut chart, transcript_file) = tauri::async_runtime::spawn_blocking(
@@ -120,6 +127,7 @@ async fn build(
                     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("txt");
                     (Some(Transcript::load(&raw)), Some((format!("transcript.{ext}"), raw)))
                 }
+                #[cfg(desktop)]
                 TranscriptSource::Audio { wav, model } => {
                     let segments = astro::transcribe::transcribe(&wav, &model, move |pct| {
                         let _ = progress_app.emit("transcribe-progress", pct);
@@ -175,6 +183,8 @@ async fn build(
 
 /// Begin capturing the session from the default microphone. The model path
 /// comes from the form (the frontend only shows the button when it is set).
+/// Desktop-only: mobile builds ship no on-device recording/transcription.
+#[cfg(desktop)]
 #[tauri::command]
 fn start_recording(state: State<'_, AppState>, model: String) -> Result<(), String> {
     let model = PathBuf::from(model.trim());
@@ -197,6 +207,8 @@ fn start_recording(state: State<'_, AppState>, model: String) -> Result<(), Stri
 
 /// Stop capturing, transcribe the take (progress on the shared event), and
 /// route the whole session's passages into the chart after the build's own.
+/// Desktop-only: mobile builds ship no on-device recording/transcription.
+#[cfg(desktop)]
 #[tauri::command]
 async fn stop_recording(
     app: AppHandle,
@@ -461,7 +473,7 @@ async fn save_pdf(app: AppHandle, state: State<'_, AppState>, path: String) -> R
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
@@ -469,23 +481,44 @@ pub fn run() {
             // one-time gazetteer parse off the critical path
             tauri::async_runtime::spawn_blocking(geo::warm);
             Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            search_places,
-            build,
-            save_artifact,
-            save_pdf,
-            start_recording,
-            stop_recording,
-            merge_up,
-            correct_excerpt,
-            add_excerpt,
-            delete_excerpt,
-            get_preferences,
-            set_preferences,
-            list_models,
-            artifact_filename
-        ])
+        });
+
+    // The recording commands only exist on desktop; `generate_handler!` can't
+    // take `#[cfg]` on its entries, so the handler list is registered per target.
+    #[cfg(desktop)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        search_places,
+        build,
+        save_artifact,
+        save_pdf,
+        start_recording,
+        stop_recording,
+        merge_up,
+        correct_excerpt,
+        add_excerpt,
+        delete_excerpt,
+        get_preferences,
+        set_preferences,
+        list_models,
+        artifact_filename
+    ]);
+    #[cfg(mobile)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        search_places,
+        build,
+        save_artifact,
+        save_pdf,
+        merge_up,
+        correct_excerpt,
+        add_excerpt,
+        delete_excerpt,
+        get_preferences,
+        set_preferences,
+        list_models,
+        artifact_filename
+    ]);
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
