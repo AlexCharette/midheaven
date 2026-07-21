@@ -89,6 +89,30 @@
     font-size: .82em; color: var(--ink); word-break: break-all;
   }
 
+  .support { max-width: 36rem; margin: 0 auto; text-align: left; }
+  .support .note { margin: 0 0 1.1rem; text-align: left; max-width: none; }
+  .donate {
+    display: flex; align-items: center; gap: .8rem;
+    padding: .55rem .2rem; border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .donate + .donate { border-top: none; }
+  .donate .marker { flex: none; color: var(--brass); font-size: 1rem; width: 1.3em; text-align: center; }
+  .donate code {
+    flex: 1 1 auto; min-width: 0;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: .8rem; color: var(--ink); word-break: break-all;
+  }
+  .donate .btn {
+    flex: none; display: inline-flex; align-items: center; gap: .35rem;
+    background: none; border: 1px solid var(--hairline); border-radius: 2px;
+    color: var(--ink-2); font: inherit; font-size: .82rem; font-variant: small-caps;
+    letter-spacing: .08em; padding: .25rem .6rem; cursor: pointer;
+    text-decoration: none; white-space: nowrap;
+  }
+  .donate .btn:hover { color: var(--ink); border-color: var(--ink-3); }
+  .donate .kofi-label { flex: 1 1 auto; color: var(--ink-2); font-size: .9rem; }
+
   footer {
     margin-top: 3rem; font-size: .85rem; font-style: italic; color: var(--ink-3);
   }
@@ -156,6 +180,23 @@
       browser — or rich PDFs, in a more printer-friendly format.</p>
   </div>
 
+  <div class="double-rule"></div>
+
+  <h2 class="rubric">Support this project</h2>
+  <div class="support">
+    <p class="note">If this tool is useful to you, you can support it with a small donation.</p>
+    <div class="donate">
+      <span class="marker" aria-hidden="true">₿</span>
+      <code id="btc-address">bc1qu48z5tfx5evegcr47v8tu63qpyhwdzemzfsrr2</code>
+      <button class="btn" id="copy-btc" type="button">Copy address</button>
+    </div>
+    <div class="donate">
+      <span class="marker" aria-hidden="true">☕</span>
+      <span class="kofi-label">Ko-fi</span>
+      <a class="btn" href="https://ko-fi.com/littlecarts" target="_blank" rel="noopener noreferrer">Support on Ko-fi ☞</a>
+    </div>
+  </div>
+
   <footer>
     <a href="https://github.com/AlexCharette/midheaven">source</a> ·
     MIT license ·
@@ -198,6 +239,21 @@
       a.href = releases;
     }
   }
+})();
+
+(function () {
+  const btn = document.getElementById('copy-btc');
+  const addr = document.getElementById('btc-address');
+  if (!btn || !addr) return;
+  let timer;
+  btn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(addr.textContent.trim());
+      btn.textContent = 'Copied!';
+      clearTimeout(timer);
+      timer = setTimeout(() => (btn.textContent = 'Copy address'), 2000);
+    } catch {}
+  });
 })();
 </script>
 </body>
