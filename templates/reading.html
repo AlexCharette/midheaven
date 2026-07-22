@@ -709,7 +709,7 @@ const DATA = /*__DATA__*/null;
       const refsHtml = ex.tags.map(t => {
         const ref = lookup[t]; if (!ref) return '';
         const glyph = glyphOf(ref);
-        return `<button class="ref" data-cat="${catOf(t)}" data-tag="${esc(t)}" aria-pressed="${selected.has(t)}">` +
+        return `<button class="ref" data-cat="${esc(catOf(t))}" data-tag="${esc(t)}" aria-pressed="${selected.has(t)}">` +
                `<span class="g">${esc(textGlyph(glyph))}</span><span class="nm">${esc(ref.name)}</span></button>`;
       }).filter(Boolean).join('<span class="sep"> · </span>');
       art.innerHTML =

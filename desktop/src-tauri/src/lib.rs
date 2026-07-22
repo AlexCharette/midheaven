@@ -538,6 +538,10 @@ fn load_chart(state: State<'_, AppState>, path: String) -> Result<ChartData, Str
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     let chart: ChartData =
         serde_json::from_str(&raw).map_err(|e| format!("not a Midheaven chart.json: {e}"))?;
+    // The file is untrusted: enforce the structural/vocabulary invariants the
+    // compute path guarantees but deserialization doesn't, before it can reach
+    // curation, PDF export, or the emitted artifact.
+    chart.validate().map_err(|e| format!("not a valid Midheaven chart.json: {e}"))?;
 
     let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).map(Path::to_path_buf);
     let stem = dir
