@@ -1,6 +1,6 @@
 [package]
 name = "astro-desktop"
-version = "0.1.2"
+version = "0.3.1"
 description = "An offline astrology workspace — desktop app"
 authors = ["Alexander Charette"]
 edition = "2021"
