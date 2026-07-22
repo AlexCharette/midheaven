@@ -32,10 +32,10 @@ impl LexiconRouter {
                 terms.push((tag.clone(), own(loc.planet_terms(slug))));
             } else if let Some(slug) = tag.strip_prefix("sign:") {
                 terms.push((tag.clone(), own(loc.sign_terms(slug))));
-            } else if let Some(n) = tag.strip_prefix("house:") {
-                if let Ok(idx) = n.parse::<usize>() {
-                    terms.push((tag.clone(), own(loc.house_terms(idx))));
-                }
+            } else if let Some(idx) =
+                tag.strip_prefix("house:").and_then(|n| n.parse::<usize>().ok())
+            {
+                terms.push((tag.clone(), own(loc.house_terms(idx))));
             }
         }
         let aspects = aspects
