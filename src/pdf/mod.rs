@@ -8,6 +8,7 @@ mod fonts;
 mod wheel;
 
 use crate::contract::{ChartData, Excerpt};
+use crate::i18n::Locale;
 use base64::Engine;
 use fonts::{Face, Fonts, glyph_face, sym};
 use krilla::Document;
@@ -370,9 +371,10 @@ fn passage<'c>(
 fn build_flow<'c>(chart: &'c ChartData, fonts: &Fonts, frame: &Frame) -> Vec<FlowLine<'c>> {
     let margin = frame.margin;
     let cw = frame.content_w();
+    let loc = Locale::parse(&chart.meta.locale);
     let mut flow: Vec<FlowLine<'c>> = Vec::new();
 
-    flow.push(rubric(frame, "Index of Elements"));
+    flow.push(rubric(frame, loc.pdf().index_of_elements));
     flow.push(spacer(4.0));
     for p in &chart.planets {
         let Some((glyph, gface, _)) = tag_chip(chart, &p.id) else { continue };
@@ -411,7 +413,7 @@ fn build_flow<'c>(chart: &'c ChartData, fonts: &Fonts, frame: &Frame) -> Vec<Flo
 
     if !chart.excerpts.is_empty() {
         flow.push(spacer(20.0));
-        flow.push(rubric(frame, "Commentary"));
+        flow.push(rubric(frame, loc.pdf().commentary));
         flow.push(spacer(4.0));
         for ex in &chart.excerpts {
             flow.extend(passage(chart, ex, fonts, frame));
@@ -465,7 +467,8 @@ fn logo_image(meta_logo: &Option<String>) -> Option<(krilla::image::Image, f32)>
 
 /// Render the reading as PDF bytes.
 pub fn render(chart: &ChartData, size: PageSize) -> Result<Vec<u8>, String> {
-    let fonts = Fonts::new()?;
+    let loc = Locale::parse(&chart.meta.locale);
+    let fonts = Fonts::new(loc)?;
     let (w, h) = size.dims();
     let frame = Frame { w, margin: 64.0 };
     let cw = frame.content_w();
@@ -493,7 +496,7 @@ pub fn render(chart: &ChartData, size: PageSize) -> Result<Vec<u8>, String> {
         }
         y += 46.0;
 
-        center_str(&mut s, &fonts, Face::Italic, 12.0, INK2, cx, y + 12.0, "The Nativity of");
+        center_str(&mut s, &fonts, Face::Italic, 12.0, INK2, cx, y + 12.0, loc.pdf().nativity_of);
         y += 26.0;
 
         let name = chart.meta.name.to_uppercase();
@@ -515,7 +518,7 @@ pub fn render(chart: &ChartData, size: PageSize) -> Result<Vec<u8>, String> {
         y += 20.0;
 
         if let Some(astrologer) = chart.meta.astrologer.as_deref() {
-            let text = format!("PREPARED BY {}", astrologer.to_uppercase());
+            let text = format!("{} {}", loc.pdf().prepared_by.to_uppercase(), astrologer.to_uppercase());
             let tw = fonts.width(Face::Regular, 7.5, 1.1, &text);
             draw_tracked(&mut s, &fonts, Face::Regular, 7.5, INK3, 1.1, cx - tw / 2.0, y + 9.0, &text);
             y += 18.0;
@@ -537,13 +540,12 @@ pub fn render(chart: &ChartData, size: PageSize) -> Result<Vec<u8>, String> {
         wheel::draw(&mut s, &fonts, chart, cx, y + side / 2.0, side / 2.0 - 22.0);
         y += side + 20.0;
 
-        let caption = format!(
-            "Fig. I. \u{2014} The natal figure of {}, calculated for {}{}. {} houses upon the {} zodiac.",
-            chart.meta.name,
-            chart.meta.born,
-            if chart.meta.place.is_empty() { String::new() } else { format!(", {}", chart.meta.place) },
-            chart.meta.system,
-            chart.meta.zodiac.to_lowercase(),
+        let caption = loc.pdf_figure_caption(
+            &chart.meta.name,
+            &chart.meta.born,
+            &chart.meta.place,
+            &chart.meta.system,
+            &chart.meta.zodiac,
         );
         for line in wrap(&fonts, Face::Italic, 9.5, cw * 0.9, &caption) {
             center_str(&mut s, &fonts, Face::Italic, 9.5, INK3, cx, y + 9.5, &line);
@@ -609,6 +611,7 @@ mod tests {
             lon: 13.405,
             tz: chrono_tz::Europe::Berlin,
             place: "Berlin, Germany".into(),
+            locale: crate::i18n::Locale::En,
         };
         let mut chart = crate::chart::compute_chart(&input).unwrap();
         chart.excerpts.push(Excerpt {
@@ -625,7 +628,7 @@ mod tests {
 
     #[test]
     fn symbol_font_covers_the_whole_catalog() {
-        let fonts = Fonts::new().unwrap();
+        let fonts = Fonts::new(Locale::En).unwrap();
         for (_, _, glyph, _) in PLANETS {
             assert!(fonts.covers(Face::Symbols, glyph), "planet glyph {glyph}");
         }
@@ -643,6 +646,16 @@ mod tests {
     }
 
     #[test]
+    fn russian_body_font_covers_cyrillic() {
+        // The Russian body face must render Cyrillic (upper + lower) plus the
+        // localized element names; the Latin font can't, which is why ru swaps.
+        let fonts = Fonts::new(Locale::Ru).unwrap();
+        for face in [Face::Regular, Face::Italic] {
+            assert!(fonts.covers(face, "АБВГ абвгдеёжз Солнце Рак дом"), "cyrillic text face");
+        }
+    }
+
+    #[test]
     fn renders_a_wellformed_pdf_at_both_sizes() {
         let chart = chart_fixture();
         for size in [PageSize::A4, PageSize::Letter] {
@@ -652,6 +665,32 @@ mod tests {
             assert!(tail.contains("%%EOF"), "{size:?} trailer");
             assert!(bytes.len() > 20_000, "{size:?} suspiciously small: {}", bytes.len());
         }
+    }
+
+    #[test]
+    fn renders_a_russian_reading() {
+        // A ru chart must render without error and produce a well-formed PDF.
+        let input = crate::chart::BirthInput {
+            name: "Мира Холт".into(),
+            date: "1990-07-13".parse().unwrap(),
+            time: "14:30:00".parse().unwrap(),
+            lat: 52.52,
+            lon: 13.405,
+            tz: chrono_tz::Europe::Berlin,
+            place: "Берлин, Германия".into(),
+            locale: Locale::Ru,
+        };
+        let mut chart = crate::chart::compute_chart(&input).unwrap();
+        chart.excerpts.push(Excerpt {
+            id: "x1".into(),
+            time: "00:00:12".into(),
+            span: [0, 10],
+            text: "Ваше солнце в раке освещает десятый дом.".into(),
+            tags: vec!["planet:sun".into(), "house:10".into()],
+        });
+        let bytes = render(&chart, PageSize::A4).unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        assert!(bytes.len() > 20_000);
     }
 
     #[test]

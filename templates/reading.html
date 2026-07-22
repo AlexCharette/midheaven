@@ -308,7 +308,7 @@
 
     <section>
       <details class="index-fold" open>
-        <summary class="rubric"><span class="caret" aria-hidden="true">▸</span>Index of Elements</summary>
+        <summary class="rubric"><span class="caret" aria-hidden="true">▸</span><span class="index-label">Index of Elements</span></summary>
         <div class="index">
         <div><h3>planets</h3><div id="band-planets"></div></div>
         <div><h3>signs</h3><div id="band-signs"></div></div>
@@ -388,9 +388,80 @@ const DATA = /*__DATA__*/null;
     return `M${x1} ${y1} A${r2} ${r2} 0 ${large} 0 ${x2} ${y2} L${x3} ${y3} A${r1} ${r1} 0 ${large} 1 ${x4} ${y4} Z`;
   };
 
+  // ---------- localized chrome ----------
+  // Element names/glyphs arrive already localized in DATA; only the viewer's
+  // own chrome (labels, controls, empty states) lives here, keyed by
+  // DATA.meta.locale. Adding a language = adding a block. en must stay
+  // byte-identical to the original strings.
+  const UI = {
+    en: {
+      natalReading: 'Natal Reading',
+      birthChartOf: 'The Birth Chart of',
+      indexOfElements: 'Index of Elements',
+      bands: ['planets', 'signs', 'houses', 'aspects'],
+      passagesTouching: 'passages touching',
+      any: 'any', all: 'all',
+      anyTitle: 'Passages touching any selected element',
+      allTitle: 'Only passages touching every selected element',
+      ofSelection: 'of the selection ·',
+      clear: 'clear',
+      commentary: 'Commentary',
+      preparedBy: 'prepared by',
+      houseSuffix: ' House',
+      wheelAria: 'Natal chart wheel; the index of elements offers the same filters',
+      count: (v, t) => `${v} of ${t} passages`,
+      noPassagesRouted: 'no passages routed',
+      emptyNoneRouted: 'No transcript passages were routed to this chart.',
+      emptyNoMatch: word =>
+        `No passage touches ${word} of the selected elements — clear the selection to see everything.`,
+      fewer: '· fewer',
+      more: n => `· ${n} more`,
+    },
+    ru: {
+      natalReading: 'Натальный разбор',
+      birthChartOf: 'Натальная карта',
+      indexOfElements: 'Указатель элементов',
+      bands: ['планеты', 'знаки', 'дома', 'аспекты'],
+      passagesTouching: 'фрагменты, затрагивающие',
+      any: 'любой', all: 'все',
+      anyTitle: 'Фрагменты, затрагивающие любой выбранный элемент',
+      allTitle: 'Только фрагменты, затрагивающие все выбранные элементы',
+      ofSelection: 'из выбранного ·',
+      clear: 'сбросить',
+      commentary: 'Комментарий',
+      preparedBy: 'подготовил',
+      houseSuffix: ' дом',
+      wheelAria: 'Колесо натальной карты; указатель элементов даёт те же фильтры',
+      count: (v, t) => `${v} из ${t} фрагментов`,
+      noPassagesRouted: 'нет отнесённых фрагментов',
+      emptyNoneRouted: 'Ни один фрагмент транскрипта не отнесён к этой карте.',
+      emptyNoMatch: word =>
+        `Ни один фрагмент не затрагивает ${word} выбранных элементов — сбросьте выбор, чтобы увидеть всё.`,
+      fewer: '· свернуть',
+      more: n => `· ещё ${n}`,
+    },
+  };
+  const T = UI[DATA.meta.locale] || UI.en;
+
   // ---------- title plate & caption ----------
   const m = DATA.meta;
-  document.title = `${m.name} — Natal Reading`;
+  document.documentElement.lang = m.locale || 'en';
+  document.title = `${m.name} — ${T.natalReading}`;
+  const setText = (sel, text) => { const el = document.querySelector(sel); if (el) el.textContent = text; };
+  setText('.overline', T.birthChartOf);
+  setText('.index-label', T.indexOfElements);
+  document.querySelectorAll('.index h3').forEach((h, i) => { if (T.bands[i]) h.textContent = T.bands[i]; });
+  document.querySelectorAll('.apparatus .lbl').forEach((el, i) => {
+    el.textContent = i === 0 ? T.passagesTouching : T.ofSelection;
+  });
+  const modeAnyBtn = document.getElementById('mode-any');
+  const modeAllBtn = document.getElementById('mode-all');
+  modeAnyBtn.textContent = T.any; modeAnyBtn.title = T.anyTitle;
+  modeAllBtn.textContent = T.all; modeAllBtn.title = T.allTitle;
+  setText('#clear', T.clear);
+  setText('h2.rubric', T.commentary);
+  document.getElementById('wheel').setAttribute('aria-label', T.wheelAria);
+
   document.getElementById('h-name').textContent = m.name;
   document.getElementById('h-details').textContent = `${m.born}${m.place ? ' · ' + m.place : ''}`;
   // Practitioner branding (optional meta, stamped by the desktop app): the
@@ -405,7 +476,7 @@ const DATA = /*__DATA__*/null;
   if (m.astrologer) {
     const p = document.createElement('p');
     p.className = 'prepared-by';
-    p.textContent = `prepared by ${m.astrologer}`;
+    p.textContent = `${T.preparedBy} ${m.astrologer}`;
     document.getElementById('h-details').after(p);
   }
   // ---------- wheel ----------
@@ -564,7 +635,7 @@ const DATA = /*__DATA__*/null;
   const bandS = document.getElementById('band-signs');
   DATA.signs.forEach(s => makeEntry(bandS, s.id, 'sign', s.glyph, s.name, '', ''));
   const bandH = document.getElementById('band-houses');
-  DATA.houses.forEach(h => makeEntry(bandH, h.id, 'house', glyphOf(h), h.name.replace(' House', ''), '', h.name));
+  DATA.houses.forEach(h => makeEntry(bandH, h.id, 'house', glyphOf(h), h.name.replace(T.houseSuffix, ''), '', h.name));
   const bandA = document.getElementById('band-aspects');
   DATA.aspects.forEach(a =>
     makeEntry(bandA, a.id, 'aspect', a.glyph, `${shortName(a.a)} – ${shortName(a.b)}`, '', a.name));
@@ -598,10 +669,10 @@ const DATA = /*__DATA__*/null;
     for (const cat of ['sign', 'house']) {
       const b = expanders[cat];
       if (expanded[cat]) {
-        b.textContent = '· fewer';
+        b.textContent = T.fewer;
         b.style.display = '';
       } else if (hidden[cat] > 0) {
-        b.textContent = `· ${hidden[cat]} more`;
+        b.textContent = T.more(hidden[cat]);
         b.style.display = '';
       } else {
         b.style.display = 'none';
@@ -624,12 +695,12 @@ const DATA = /*__DATA__*/null;
   const renderExcerpts = () => {
     const visible = DATA.excerpts.filter(matches);
     document.getElementById('count').textContent =
-      DATA.excerpts.length === 0 ? 'no passages routed'
-        : `${visible.length} of ${DATA.excerpts.length} passages`;
+      DATA.excerpts.length === 0 ? T.noPassagesRouted
+        : T.count(visible.length, DATA.excerpts.length);
     excerptsHost.innerHTML = visible.length === 0
       ? `<p class="empty">${DATA.excerpts.length === 0
-          ? 'No transcript passages were routed to this chart.'
-          : 'No passage touches ' + (mode === 'all' ? 'all' : 'any') + ' of the selected elements — clear the selection to see everything.'}</p>`
+          ? T.emptyNoneRouted
+          : T.emptyNoMatch(mode === 'all' ? T.all : T.any)}</p>`
       : '';
     for (const ex of visible) {
       const art = document.createElement('article');

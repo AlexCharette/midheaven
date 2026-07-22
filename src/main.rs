@@ -1,4 +1,5 @@
 use astro::chart::{BirthInput, compute_chart, parse_time};
+use astro::i18n::Locale;
 use astro::{TranscriptSource, build_reading, emit, geo};
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
@@ -49,6 +50,10 @@ enum Command {
         /// ggml whisper model file (e.g. ggml-small.bin).
         #[arg(long)]
         model: PathBuf,
+        /// Whisper language hint (e.g. ru); omit to auto-detect. Russian needs
+        /// a multilingual model, not an English-only (.en) one.
+        #[arg(long)]
+        lang: Option<String>,
         /// Output JSONL path (stdout when omitted).
         #[arg(long)]
         out: Option<PathBuf>,
@@ -65,6 +70,10 @@ struct BirthArgs {
     /// Name shown on the chart.
     #[arg(long, default_value = astro::chart::DEFAULT_NAME)]
     name: String,
+    /// Reading language: en or ru. Drives element names and the router's
+    /// match terms (and, for --audio, the whisper language hint).
+    #[arg(long, default_value = "en")]
+    lang: String,
     /// Birth date, YYYY-MM-DD.
     #[arg(long)]
     date: chrono::NaiveDate,
@@ -146,6 +155,7 @@ impl BirthArgs {
                 .place_label
                 .or(resolved.map(|p| p.label()))
                 .unwrap_or_default(),
+            locale: Locale::parse(&self.lang),
         })
     }
 }
@@ -213,9 +223,10 @@ fn run() -> Result<(), String> {
             );
             eprintln!("wrote {}", out.display());
         }
-        Command::Transcribe { audio, model, out } => {
+        Command::Transcribe { audio, model, lang, out } => {
             transcription_banner(&audio);
-            let segments = astro::transcribe::transcribe(&audio, &model, cli_progress)?;
+            let segments =
+                astro::transcribe::transcribe(&audio, &model, lang.as_deref(), cli_progress)?;
             eprintln!("\r  done — {} segments", segments.len());
             let jsonl = astro::transcribe::to_jsonl(&segments);
             match out {

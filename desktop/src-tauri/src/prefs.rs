@@ -21,6 +21,9 @@ pub struct Preferences {
     pub logo: Option<String>,
     /// PDF page size, "a4" or "letter" (absent = a4).
     pub page_size: Option<String>,
+    /// Default reading language code ("en", "ru") that prefills the birth
+    /// form's language selector (absent = en).
+    pub default_locale: Option<String>,
 }
 
 fn path(app: &tauri::AppHandle) -> Result<PathBuf, String> {

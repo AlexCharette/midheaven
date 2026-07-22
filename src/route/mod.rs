@@ -27,8 +27,11 @@ pub trait Router {
 }
 
 /// The default router for a chart — the one place its configuration lives.
+/// The router matches in the chart's own language (`meta.locale`), so routing
+/// a reloaded `chart.json` re-tags in the language it was read in.
 pub fn lexicon_for(chart: &crate::contract::ChartData) -> LexiconRouter {
-    LexiconRouter::new(&chart.vocab(), &chart.aspects)
+    let loc = crate::i18n::Locale::parse(&chart.meta.locale);
+    LexiconRouter::new(&chart.vocab(), &chart.aspects, loc)
 }
 
 /// The one gated path from router output to passages: route → Verify gate →

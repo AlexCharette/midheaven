@@ -3,8 +3,8 @@
 //! have matched and a matching aspect word in the same sentence.
 
 use super::{RawExcerpt, Router, Transcript};
-use crate::chart::catalog::HOUSE_NAMES;
 use crate::contract::Aspect;
+use crate::i18n::Locale;
 use std::collections::BTreeSet;
 
 pub struct LexiconRouter {
@@ -20,50 +20,21 @@ struct AspectRule {
     b: String,
 }
 
-fn aspect_words(kind: &str) -> &'static [&'static str] {
-    match kind {
-        "conjunction" => &["conjunct", "conjunction", "conjoined", "conjoins"],
-        "sextile" => &["sextile", "sextiles", "sextiling"],
-        "square" => &["square", "squares", "squaring"],
-        "trine" => &["trine", "trines", "trining"],
-        "opposition" => &["opposition", "opposite", "opposes", "opposing"],
-        _ => &[],
-    }
-}
-
-fn planet_terms(id: &str) -> Vec<String> {
-    let short = id.trim_start_matches("planet:");
-    match short {
-        "ascendant" => vec!["ascendant".into(), "rising".into()],
-        _ => vec![short.to_string()],
-    }
-}
-
 impl LexiconRouter {
-    pub fn new(vocab: &BTreeSet<String>, aspects: &[Aspect]) -> LexiconRouter {
+    /// Build a router whose match terms come from `loc`'s vocabulary. The
+    /// tag-ids (`planet:sun`, …) are language-neutral; only the words we scan
+    /// for change with the locale.
+    pub fn new(vocab: &BTreeSet<String>, aspects: &[Aspect], loc: Locale) -> LexiconRouter {
+        let own = |ts: &[&str]| ts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         let mut terms = Vec::new();
         for tag in vocab {
-            if tag.starts_with("planet:") {
-                terms.push((tag.clone(), planet_terms(tag)));
-            } else if let Some(short) = tag.strip_prefix("sign:") {
-                terms.push((tag.clone(), vec![short.to_string()]));
+            if let Some(slug) = tag.strip_prefix("planet:") {
+                terms.push((tag.clone(), own(loc.planet_terms(slug))));
+            } else if let Some(slug) = tag.strip_prefix("sign:") {
+                terms.push((tag.clone(), own(loc.sign_terms(slug))));
             } else if let Some(n) = tag.strip_prefix("house:") {
-                let idx: usize = n.parse().unwrap_or(0);
-                if let Some(&(_, house_name)) = HOUSE_NAMES.get(idx.saturating_sub(1)) {
-                    let suffix = match idx {
-                        1 => "st",
-                        2 => "nd",
-                        3 => "rd",
-                        _ => "th",
-                    };
-                    terms.push((
-                        tag.clone(),
-                        vec![
-                            house_name.to_lowercase(), // "fifth house"
-                            format!("{n}{suffix} house"),
-                            format!("house {n}"),
-                        ],
-                    ));
+                if let Ok(idx) = n.parse::<usize>() {
+                    terms.push((tag.clone(), own(loc.house_terms(idx))));
                 }
             }
         }
@@ -71,7 +42,7 @@ impl LexiconRouter {
             .iter()
             .map(|a| AspectRule {
                 id: a.id.clone(),
-                words: aspect_words(a.kind),
+                words: loc.aspect_match_words(a.kind),
                 a: a.a.clone(),
                 b: a.b.clone(),
             })
@@ -145,7 +116,7 @@ mod tests {
     #[test]
     fn lexicon_tags_planets_signs_houses() {
         let v = vocab(&["planet:moon", "sign:cancer", "house:5"]);
-        let router = LexiconRouter::new(&v, &[]);
+        let router = LexiconRouter::new(&v, &[], Locale::En);
         let t = Transcript::load("Your moon sits in cancer, in the fifth house.");
         let raw = router.route(&t);
         assert_eq!(raw.len(), 1);
@@ -164,12 +135,41 @@ mod tests {
             nature: "harmonious".into(),
             kind: "trine",
         }];
-        let router = LexiconRouter::new(&v, &aspects);
+        let router = LexiconRouter::new(&v, &aspects, Locale::En);
         let hit = Transcript::load("The sun trines your moon beautifully.");
         let tags = &router.route(&hit)[0].tags;
         assert!(tags.contains(&"aspect:sun-moon".to_string()));
         let miss = Transcript::load("The sun and moon are both bright.");
         let tags = &router.route(&miss)[0].tags;
         assert!(!tags.contains(&"aspect:sun-moon".to_string()));
+    }
+
+    #[test]
+    fn russian_transcript_routes_planets_signs_houses() {
+        let v = vocab(&["planet:sun", "sign:cancer", "house:5"]);
+        let router = LexiconRouter::new(&v, &[], Locale::Ru);
+        let t = Transcript::load("Ваше солнце в раке, в пятом доме.");
+        let raw = router.route(&t);
+        assert_eq!(raw.len(), 1);
+        assert_eq!(raw[0].tags, vec!["house:5", "planet:sun", "sign:cancer"]);
+    }
+
+    #[test]
+    fn russian_aspect_needs_both_planets_and_word() {
+        let v = vocab(&["planet:sun", "planet:moon", "aspect:sun-moon"]);
+        let aspects = vec![Aspect {
+            id: "aspect:sun-moon".into(),
+            glyph: "△".into(),
+            name: "Солнце тригон Луна".into(),
+            a: "planet:sun".into(),
+            b: "planet:moon".into(),
+            nature: "harmonious".into(),
+            kind: "trine",
+        }];
+        let router = LexiconRouter::new(&v, &aspects, Locale::Ru);
+        let hit = Transcript::load("Солнце в тригоне с вашей луной.");
+        assert!(router.route(&hit)[0].tags.contains(&"aspect:sun-moon".to_string()));
+        let miss = Transcript::load("Солнце и луна оба яркие.");
+        assert!(!router.route(&miss)[0].tags.contains(&"aspect:sun-moon".to_string()));
     }
 }

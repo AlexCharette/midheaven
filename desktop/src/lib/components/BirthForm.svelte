@@ -4,7 +4,7 @@
   import { app, notify } from "$lib/state.svelte";
   import Library from "./Library.svelte";
   import Preferences from "./Preferences.svelte";
-  import type { PlaceDto } from "$lib/types";
+  import { LOCALES, type PlaceDto } from "$lib/types";
 
   let name = $state("");
   let date = $state("");
@@ -15,15 +15,17 @@
   let sel = $state(0);
   let transcript = $state("");
   let model = $state("");
+  let lang = $state("");
   let error = $state("");
   let prefsOpen = $state(false);
   let libraryOpen = $state(false);
 
-  // the preferred model prefills an untouched field (again on pane close,
-  // so a freshly chosen default lands without retyping)
+  // the preferred model / default language prefill untouched fields (again on
+  // pane close, so a freshly chosen default lands without retyping)
   async function prefillModel() {
     const p = await getPreferences();
     if (!model.trim() && p.default_model) model = p.default_model;
+    if (!lang) lang = p.default_locale ?? "en";
   }
   $effect(() => {
     if (!prefsOpen) prefillModel();
@@ -93,6 +95,7 @@
         place_id: picked.id,
         transcript: transcript || null,
         model: model || null,
+        lang: lang || null,
       });
       notify(`${app.chart.excerpts.length} passages routed past the verify gate`);
       app.model = model.trim();
@@ -149,6 +152,14 @@
           {/each}
         </ul>
       {/if}
+    </label>
+    <label>
+      <span>language</span>
+      <select class="lang" bind:value={lang}>
+        {#each LOCALES as l (l.code)}
+          <option value={l.code}>{l.label}</option>
+        {/each}
+      </select>
     </label>
     <label>
       <span>transcript</span>
@@ -247,6 +258,19 @@
     font-style: italic;
   }
   .browse:hover {
+    color: var(--ink);
+  }
+  .lang {
+    justify-self: start;
+    background: transparent;
+    color: var(--ink);
+    border: none;
+    border-bottom: 1px solid var(--line);
+    padding: 0.1rem 0.2rem;
+    font: inherit;
+  }
+  .lang option {
+    background: var(--bg-deep);
     color: var(--ink);
   }
   .dropdown {

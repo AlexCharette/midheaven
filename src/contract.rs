@@ -81,6 +81,12 @@ impl Excerpt {
     }
 }
 
+/// The locale a chart falls back to when `meta.locale` is absent (older files)
+/// — English, matching the app's original behavior.
+fn default_locale() -> String {
+    "en".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Meta {
     pub name: String,
@@ -88,6 +94,11 @@ pub struct Meta {
     pub place: String,
     pub system: String,
     pub zodiac: String,
+    /// Reading language as a short code (`en`, `ru`). Drives the router's
+    /// match terms and every renderer's chrome; parsed via `i18n::Locale`.
+    /// Defaulted so charts written before this field still deserialize.
+    #[serde(default = "default_locale")]
+    pub locale: String,
     /// Practitioner branding for the artifact ("prepared by …"); absent
     /// unless a frontend stamps it, keeping unbranded output byte-identical.
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -2,6 +2,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { getPreferences, listModels, setPreferences } from "$lib/api";
   import { notify } from "$lib/state.svelte";
+  import { LOCALES } from "$lib/types";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -11,6 +12,7 @@
   let astrologer = $state("");
   let logo = $state("");
   let pageSize = $state("a4");
+  let defaultLocale = $state("en");
   let models = $state<string[]>([]);
   let error = $state("");
 
@@ -30,6 +32,7 @@
       astrologer = p.astrologer ?? "";
       logo = p.logo ?? "";
       pageSize = p.page_size ?? "a4";
+      defaultLocale = p.default_locale ?? "en";
       refreshModels();
     });
   });
@@ -64,6 +67,7 @@
         astrologer: astrologer || null,
         logo: logo || null,
         page_size: pageSize === "a4" ? null : pageSize,
+        default_locale: defaultLocale === "en" ? null : defaultLocale,
       });
       notify("preferences kept");
       onclose();
@@ -116,6 +120,14 @@
     <select bind:value={pageSize}>
       <option value="a4">A4</option>
       <option value="letter">US Letter</option>
+    </select>
+  </label>
+  <label>
+    <span>default language</span>
+    <select bind:value={defaultLocale}>
+      {#each LOCALES as l (l.code)}
+        <option value={l.code}>{l.label}</option>
+      {/each}
     </select>
   </label>
 
