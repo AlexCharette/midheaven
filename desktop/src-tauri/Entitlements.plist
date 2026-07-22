@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Tauri signs the macOS bundle with the Hardened Runtime enabled. Under
+	     it, the microphone is off-limits — and macOS shows no permission prompt
+	     — unless the app carries this entitlement. It pairs with
+	     NSMicrophoneUsageDescription in Info.plist: the entitlement admits the
+	     app to the mic TCC domain, the description is the prompt's text. Without
+	     it, live-session recording captures pure silence. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>
