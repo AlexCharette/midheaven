@@ -7,6 +7,8 @@ export interface ChartData {
     place: string;
     system: string;
     zodiac: string;
+    /** Reading language code ("en", "ru"); may be absent on older charts. */
+    locale?: string;
     astrologer?: string;
     logo?: string;
   };
@@ -66,6 +68,7 @@ export interface Preferences {
   astrologer: string | null;
   logo: string | null;
   page_size: string | null;
+  default_locale: string | null;
 }
 
 /** Mirrors the backend's ReadingEntry — one row of the saved-readings library. */
@@ -86,7 +89,17 @@ export interface BirthForm {
   place_id: number;
   transcript: string | null;
   model: string | null;
+  /** Reading language code ("en", "ru"); backend falls back to the
+   * default-language preference, then English. */
+  lang: string | null;
 }
+
+/** Reading languages offered in the UI — mirrors i18n::Locale::ALL.
+ * `label` is shown in the language's own script (endonym). */
+export const LOCALES: { code: string; label: string }[] = [
+  { code: "en", label: "English" },
+  { code: "ru", label: "Русский" },
+];
 
 /** Force text presentation — glyphs must engrave, not render as emoji. */
 export const textGlyph = (g: string) => g + "\ufe0e";

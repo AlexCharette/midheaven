@@ -38,6 +38,7 @@ mod tests {
                 place: "p".into(),
                 system: "Whole Sign".into(),
                 zodiac: "Tropical".into(),
+                locale: "en".into(),
                 astrologer: None,
                 logo: None,
             },

@@ -163,6 +163,9 @@ struct BirthForm {
     place_id: u32,
     transcript: Option<String>,
     model: Option<String>,
+    /// Reading language code ("en", "ru"); absent falls back to the
+    /// default-language preference, then English.
+    lang: Option<String>,
 }
 
 #[tauri::command]
@@ -176,14 +179,19 @@ async fn build(
         .date
         .parse()
         .map_err(|_| "a date as YYYY-MM-DD, e.g. 1990-07-13".to_string())?;
-    let input = astro::birth_at_place(&form.name, date, parse_time(&form.time)?, place);
+
+    let p = prefs::load(&app);
+    // Per-reading language: the form's choice, else the default-language
+    // preference, else English.
+    let locale = astro::i18n::Locale::parse(
+        form.lang.as_deref().or(p.default_locale.as_deref()).unwrap_or("en"),
+    );
+    let input = astro::birth_at_place(&form.name, date, parse_time(&form.time)?, place, locale);
     let source = TranscriptSource::classify(
         form.transcript.as_deref().unwrap_or(""),
         form.model.as_deref().unwrap_or(""),
     )
     .map_err(|e| e.to_string())?;
-
-    let p = prefs::load(&app);
 
     // Unlike `build_reading` (the CLI/TUI path), the desktop keeps the
     // transcript at hand so the readings library can persist it verbatim.
@@ -203,9 +211,10 @@ async fn build(
                 }
                 #[cfg(desktop)]
                 TranscriptSource::Audio { wav, model } => {
-                    let segments = astro::transcribe::transcribe(&wav, &model, move |pct| {
-                        let _ = progress_app.emit("transcribe-progress", pct);
-                    })?;
+                    let segments =
+                        astro::transcribe::transcribe(&wav, &model, Some(locale.whisper_lang()), move |pct| {
+                            let _ = progress_app.emit("transcribe-progress", pct);
+                        })?;
                     let jsonl = astro::transcribe::to_jsonl(&segments);
                     (
                         Some(Transcript::from_segments(segments)),
@@ -288,19 +297,26 @@ async fn stop_recording(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ChartData, String> {
-    let (recorder, model, offset) = {
+    let (recorder, model, offset, locale) = {
         let mut inner = state.0.lock().unwrap();
+        // Transcribe the take in the chart's own language.
+        let locale = inner
+            .chart
+            .as_ref()
+            .map(|c| astro::i18n::Locale::parse(&c.meta.locale))
+            .unwrap_or_default();
         (
             inner.recorder.take().ok_or("not recording")?,
             inner.model.clone().ok_or("no model on record")?,
             inner.session_secs,
+            locale,
         )
     };
     let (wav, secs) = recorder.stop()?;
 
     let progress_app = app.clone();
     let mut segments = tauri::async_runtime::spawn_blocking(move || {
-        astro::transcribe::transcribe(&wav, &model, move |pct| {
+        astro::transcribe::transcribe(&wav, &model, Some(locale.whisper_lang()), move |pct| {
             let _ = progress_app.emit("transcribe-progress", pct);
         })
     })
@@ -470,6 +486,7 @@ fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), Stri
         astrologer: norm(prefs.astrologer),
         logo: norm(prefs.logo),
         page_size: norm(prefs.page_size),
+        default_locale: norm(prefs.default_locale),
     };
     if let Some(size) = &prefs.page_size {
         astro::pdf::PageSize::parse(size)?;
@@ -686,6 +703,7 @@ mod tests {
             lon: 13.405,
             tz: chrono_tz::Europe::Berlin,
             place: "Berlin".into(),
+            locale: astro::i18n::Locale::En,
         };
         astro::chart::compute_chart(&input).unwrap()
     }

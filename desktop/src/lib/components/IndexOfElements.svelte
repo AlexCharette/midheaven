@@ -7,6 +7,11 @@
 
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
 
+  // House entries show the ordinal without the trailing "house" word; the
+  // suffix to strip is language-specific (empty locale = strip nothing).
+  const HOUSE_SUFFIX: Record<string, string> = { en: " House", ru: " дом" };
+  const houseSuffix = $derived(HOUSE_SUFFIX[chart.meta.locale ?? "en"] ?? "");
+
   // Relevance rule (canonical prose lives in templates/reading.html beside
   // syncRelevance; keep the two in step): visible = occupied ∪ selected ∪
   // expanded — occupancy means a body stands in the sign/house, and a
@@ -48,7 +53,7 @@
       entries: chart.houses.map((h) => ({
         tag: h.id,
         glyph: h.label,
-        name: h.name.replace(" House", ""),
+        name: h.name.replace(houseSuffix, ""),
         detail: "",
       })),
     },

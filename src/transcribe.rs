@@ -41,9 +41,11 @@ pub fn is_audio(path: &Path) -> bool {
     }
 }
 
-/// (audio path, model path, audio mtime) — identifies one transcription run.
+/// (audio path, model path, audio mtime, language hint) — identifies one
+/// transcription run. The language is part of the key: the same audio decoded
+/// as `ru` vs `auto` can differ, so the cache must not cross them.
 #[cfg(feature = "transcribe")]
-type CacheKey = (PathBuf, PathBuf, Option<SystemTime>);
+type CacheKey = (PathBuf, PathBuf, Option<SystemTime>, String);
 
 /// Single-slot result cache: transcription is by far the most expensive step
 /// (minutes for an hour of audio), and "tweak a birth field, resubmit the
@@ -52,17 +54,21 @@ type CacheKey = (PathBuf, PathBuf, Option<SystemTime>);
 static LAST_RUN: Mutex<Option<(CacheKey, Vec<Segment>)>> = Mutex::new(None);
 
 #[cfg(feature = "transcribe")]
-fn cache_key(audio: &Path, model: &Path) -> CacheKey {
+fn cache_key(audio: &Path, model: &Path, lang: &str) -> CacheKey {
     let mtime = std::fs::metadata(audio).and_then(|m| m.modified()).ok();
-    (audio.to_path_buf(), model.to_path_buf(), mtime)
+    (audio.to_path_buf(), model.to_path_buf(), mtime, lang.to_string())
 }
 
-/// Transcribe a WAV file with a ggml whisper model. `progress` receives
-/// whole percentages from whisper.cpp as inference advances.
+/// Transcribe a WAV file with a ggml whisper model. `lang` is the whisper
+/// language hint (an ISO code like `en`/`ru`, or `None` to auto-detect); a
+/// known reading language beats auto-detection. Note Russian needs a
+/// multilingual model file, not an English-only (`.en`) one. `progress`
+/// receives whole percentages from whisper.cpp as inference advances.
 #[cfg(feature = "transcribe")]
 pub fn transcribe(
     audio: &Path,
     model: &Path,
+    lang: Option<&str>,
     progress: impl FnMut(i32) + Send + 'static,
 ) -> Result<Vec<Segment>, String> {
     if !model.exists() {
@@ -71,7 +77,8 @@ pub fn transcribe(
             model.display()
         ));
     }
-    let key = cache_key(audio, model);
+    let lang = lang.unwrap_or("auto");
+    let key = cache_key(audio, model, lang);
     if let Some((last_key, segments)) = &*LAST_RUN.lock().unwrap()
         && *last_key == key
     {
@@ -87,7 +94,7 @@ pub fn transcribe(
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_translate(false);
-    params.set_language(Some("auto"));
+    params.set_language(Some(lang));
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get() as i32);
     params.set_n_threads(threads);
     params.set_progress_callback_safe(progress);
@@ -279,7 +286,7 @@ mod tests {
     fn whisper_transcribes_silence_without_error() {
         let model = std::env::var("ASTRO_WHISPER_MODEL").expect("set ASTRO_WHISPER_MODEL");
         let path = write_test_wav("silence.wav", 1, 16_000, 0, 16_000);
-        let segments = transcribe(&path, model.as_ref(), |_| {}).unwrap();
+        let segments = transcribe(&path, model.as_ref(), None, |_| {}).unwrap();
         // a second of silence may produce zero or hallucinated segments;
         // the contract here is only "no error"
         let _ = segments;

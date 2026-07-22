@@ -34,7 +34,17 @@ cargo run -- transcribe --audio call.wav --model ggml-small.bin --out transcript
 # or straight through: audio → routed artifact in one command
 cargo run -- build --audio call.wav --model ggml-small.bin \
     --name "Sample Chart" --date 1990-07-13 --time 14:30 --place berlin
+
+# a Russian reading: element names, routing terms, and the PDF font all switch
+cargo run -- build --audio звонок.wav --model ggml-small.bin --lang ru \
+    --name "Мира Холт" --date 1990-07-13 --time 14:30 --place moscow
 ```
+
+**Languages.** `--lang` (`en`, `ru`) sets the reading language: element names,
+the router's match terms, the artifact/PDF chrome, and the whisper language
+hint. Non-English readings need a **multilingual** model file — the plain
+`ggml-small.bin`, not an English-only `.en` variant. Place queries are still
+matched by their Latin name (e.g. `moscow`, not `Москва`).
 
 Models are user-supplied ggml files from
 [whisper.cpp's Hugging Face repo](https://huggingface.co/ggerganov/whisper.cpp)

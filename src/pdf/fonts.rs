@@ -1,14 +1,21 @@
 //! Embedded fonts for the PDF rendition and the advance-width measurer the
 //! layout engine wraps text with. Libre Baskerville (OFL 1.1) carries the
-//! artifact's Baskerville voice onto paper; DejaVu Sans (Bitstream Vera
-//! license) supplies the astrological glyphs. Both live in `assets/fonts/`
-//! and are subset by krilla on write.
+//! artifact's Baskerville voice onto paper for Latin-script readings; PT Serif
+//! (OFL 1.1, ParaType) covers the same register for Cyrillic, since Libre
+//! Baskerville has no Cyrillic glyphs. DejaVu Sans (Bitstream Vera license)
+//! supplies the astrological glyphs for every locale. All live in
+//! `assets/fonts/` and are subset by krilla on write.
 
+use crate::i18n::Locale;
 use krilla::text::Font;
 use std::borrow::Cow;
 
 static REGULAR: &[u8] = include_bytes!("../../assets/fonts/LibreBaskerville-Regular.ttf");
 static ITALIC: &[u8] = include_bytes!("../../assets/fonts/LibreBaskerville-Italic.ttf");
+// Cyrillic-capable serif for Russian (and future Cyrillic locales); Latin
+// output keeps Libre Baskerville, so English PDFs stay byte-identical.
+static REGULAR_CYRILLIC: &[u8] = include_bytes!("../../assets/fonts/PTSerif-Regular.ttf");
+static ITALIC_CYRILLIC: &[u8] = include_bytes!("../../assets/fonts/PTSerif-Italic.ttf");
 // Pre-subset to the astro glyphs (23 KB instead of 757 KB in every binary);
 // regenerate from the full DejaVuSans.ttf with:
 //   pyftsubset DejaVuSans.ttf --output-file=DejaVuSans-astro.ttf \
@@ -53,7 +60,14 @@ pub struct Fonts {
 }
 
 impl Fonts {
-    pub fn new() -> Result<Fonts, String> {
+    /// Load the faces for a reading's locale: the body serif is chosen so its
+    /// script covers the locale (Latin → Libre Baskerville, Cyrillic → PT
+    /// Serif); the astrological symbol font is shared across locales.
+    pub fn new(loc: Locale) -> Result<Fonts, String> {
+        let (regular_bytes, italic_bytes) = match loc {
+            Locale::Ru => (REGULAR_CYRILLIC, ITALIC_CYRILLIC),
+            Locale::En => (REGULAR, ITALIC),
+        };
         let font = |data: &'static [u8], name: &str| {
             Font::new(data.into(), 0).ok_or(format!("cannot load the embedded {name} font"))
         };
@@ -62,11 +76,11 @@ impl Fonts {
                 .map_err(|e| format!("cannot parse the embedded {name} font: {e}"))
         };
         Ok(Fonts {
-            regular: font(REGULAR, "regular")?,
-            italic: font(ITALIC, "italic")?,
+            regular: font(regular_bytes, "regular")?,
+            italic: font(italic_bytes, "italic")?,
             symbols: font(SYMBOLS, "symbol")?,
-            reg_face: face(REGULAR, "regular")?,
-            ital_face: face(ITALIC, "italic")?,
+            reg_face: face(regular_bytes, "regular")?,
+            ital_face: face(italic_bytes, "italic")?,
             sym_face: face(SYMBOLS, "symbol")?,
         })
     }

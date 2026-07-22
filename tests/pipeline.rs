@@ -3,6 +3,7 @@
 
 use astro::chart::{BirthInput, compute_chart};
 use astro::emit::emit;
+use astro::i18n::Locale;
 use astro::route::{LexiconRouter, Transcript, index_transcript};
 use astro::{TranscriptSource, build_reading};
 
@@ -16,6 +17,7 @@ fn transcript_to_artifact() {
         lon: 13.405,
         tz: "Europe/Berlin".parse().unwrap(),
         place: "Berlin, Germany".into(),
+        locale: Locale::En,
     };
     let mut chart = compute_chart(&input).expect("chart computes");
 
@@ -27,7 +29,7 @@ fn transcript_to_artifact() {
     let transcript = Transcript::load(&raw);
 
     let vocab = chart.vocab();
-    let router = LexiconRouter::new(&vocab, &chart.aspects);
+    let router = LexiconRouter::new(&vocab, &chart.aspects, Locale::En);
     index_transcript(&mut chart, &transcript, &router);
 
     // Nine routed sentences coalesce into five passages (consecutive

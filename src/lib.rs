@@ -21,6 +21,7 @@ pub mod chart;
 pub mod contract;
 pub mod emit;
 pub mod geo;
+pub mod i18n;
 pub mod pdf;
 pub mod route;
 pub mod transcribe;
@@ -111,16 +112,18 @@ pub fn birth_at_place(
     date: chrono::NaiveDate,
     time: chrono::NaiveTime,
     place: &geo::Place,
+    locale: i18n::Locale,
 ) -> chart::BirthInput {
     let name = name.trim();
     chart::BirthInput {
-        name: if name.is_empty() { chart::DEFAULT_NAME.into() } else { name.into() },
+        name: if name.is_empty() { locale.anonymous().into() } else { name.into() },
         date,
         time,
         lat: place.lat,
         lon: place.lon,
         tz: place.tz,
         place: place.label(),
+        locale,
     }
 }
 
@@ -147,7 +150,8 @@ pub fn build_reading(
         }
         #[cfg(feature = "transcribe")]
         TranscriptSource::Audio { wav, model } => {
-            let segments = transcribe::transcribe(&wav, &model, progress)?;
+            let lang = input.locale.whisper_lang();
+            let segments = transcribe::transcribe(&wav, &model, Some(lang), progress)?;
             Some(route::Transcript::from_segments(segments))
         }
     };

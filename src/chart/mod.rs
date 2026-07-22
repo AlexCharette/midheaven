@@ -5,6 +5,7 @@
 pub mod catalog;
 
 use crate::contract::{Aspect, Axes, Body, ChartData, HouseRef, Meta, Ref};
+use crate::i18n::Locale;
 use catalog::{ASPECT_TYPES, HOUSE_NAMES, PLANETS, SIGNS_ALL};
 use chrono::{Datelike, NaiveDate, NaiveTime, TimeZone, Timelike};
 use chrono_tz::Tz;
@@ -26,6 +27,9 @@ pub struct BirthInput {
     pub lon: f64,
     pub tz: Tz,
     pub place: String,
+    /// The language the reading is in — drives element names and, downstream,
+    /// the router's match terms (recorded on `meta.locale`).
+    pub locale: Locale,
 }
 
 fn norm360(x: f64) -> f64 {
@@ -48,19 +52,20 @@ pub fn parse_time(s: &str) -> Result<NaiveTime, String> {
 
 /// The spine: each stage is a named step; the data flows top to bottom.
 pub fn compute_chart(input: &BirthInput) -> Result<ChartData, String> {
+    let loc = input.locale;
     let jd_ut1 = birth_moment(input)?;
     let cusps = natal_houses(jd_ut1, input.lat, input.lon)?;
-    let mut planets = planet_positions(jd_ut1, &cusps)?;
-    let aspects = detect_aspects(&planets);
+    let mut planets = planet_positions(jd_ut1, &cusps, loc)?;
+    let aspects = detect_aspects(&planets, loc);
     let asc = norm360(cusps.ascendant.to_degrees());
-    planets.push(ascendant_point(asc));
+    planets.push(ascendant_point(asc, loc));
     Ok(ChartData {
         meta: birth_meta(input),
         axes: Axes { asc, mc: norm360(cusps.mc.to_degrees()) },
         house_cusps: (0..12).map(|i| cusps.cusp_deg(i)).collect(),
         planets,
-        signs: sign_refs(),
-        houses: house_refs(),
+        signs: sign_refs(loc),
+        houses: house_refs(loc),
         aspects,
         excerpts: Vec::new(),
     })
@@ -106,18 +111,18 @@ fn natal_houses(jd_ut1: JdUT1, lat: f64, lon: f64) -> Result<HouseCusps, String>
 
 /// Geocentric ecliptic longitudes for the ten catalog bodies, each placed in
 /// its house.
-fn planet_positions(jd_ut1: JdUT1, cusps: &HouseCusps) -> Result<Vec<Body>, String> {
+fn planet_positions(jd_ut1: JdUT1, cusps: &HouseCusps, loc: Locale) -> Result<Vec<Body>, String> {
     let almanac = Almanac::default_vedic(); // default VSOP87 provider chain
     PLANETS
         .iter()
-        .map(|&(body, id, glyph, name)| {
+        .map(|&(body, id, glyph, _name)| {
             let pos = almanac
                 .geocentric_ecliptic(body, jd_ut1)
-                .map_err(|e| format!("ephemeris error for {name}: {e:?}"))?;
+                .map_err(|e| format!("ephemeris error for planet:{id}: {e:?}"))?;
             Ok(Body {
                 id: format!("planet:{id}"),
                 glyph: glyph.to_string(),
-                name: name.to_string(),
+                name: loc.planet_name(id).to_string(),
                 lon: norm360(pos.longitude.to_degrees()),
                 house: cusps.planet_in_house(pos.longitude) as u8,
             })
@@ -129,7 +134,7 @@ fn planet_positions(jd_ut1: JdUT1, cusps: &HouseCusps) -> Result<Vec<Body>, Stri
 /// catalog's standard orbs — at most one aspect kind per pair. `planets`
 /// must be the [`planet_positions`] output: same order as [`PLANETS`], whose
 /// short names build the aspect ids.
-fn detect_aspects(planets: &[Body]) -> Vec<Aspect> {
+fn detect_aspects(planets: &[Body], loc: Locale) -> Vec<Aspect> {
     debug_assert_eq!(planets.len(), PLANETS.len());
     let mut aspects = Vec::new();
     for i in 0..planets.len() {
@@ -141,7 +146,7 @@ fn detect_aspects(planets: &[Body]) -> Vec<Aspect> {
                     aspects.push(Aspect {
                         id: format!("aspect:{a_short}-{b_short}"),
                         glyph: glyph.to_string(),
-                        name: format!("{} {} {}", planets[i].name, kind, planets[j].name),
+                        name: loc.aspect_name(kind, &planets[i].name, &planets[j].name),
                         a: planets[i].id.clone(),
                         b: planets[j].id.clone(),
                         nature: nature.to_string(),
@@ -156,49 +161,53 @@ fn detect_aspects(planets: &[Body]) -> Vec<Aspect> {
 }
 
 /// The Ascendant rendered as a chart point, per the contract.
-fn ascendant_point(asc_deg: f64) -> Body {
+fn ascendant_point(asc_deg: f64, loc: Locale) -> Body {
     Body {
         id: "planet:ascendant".to_string(),
         glyph: "AC".to_string(),
-        name: "Ascendant".to_string(),
+        name: loc.planet_name("ascendant").to_string(),
         lon: asc_deg,
         house: 1,
     }
 }
 
-fn sign_refs() -> Vec<Ref> {
+fn sign_refs(loc: Locale) -> Vec<Ref> {
     SIGNS_ALL
         .iter()
-        .map(|&(id, glyph, name, element)| Ref {
+        .map(|&(id, glyph, _name, element)| Ref {
             id: format!("sign:{id}"),
             glyph: glyph.to_string(),
-            name: name.to_string(),
+            name: loc.sign_name(id).to_string(),
             element: element.to_string(),
         })
         .collect()
 }
 
-fn house_refs() -> Vec<HouseRef> {
+fn house_refs(loc: Locale) -> Vec<HouseRef> {
+    // The roman-numeral label stays language-neutral (catalog); only the name
+    // is localized.
     HOUSE_NAMES
         .iter()
         .enumerate()
-        .map(|(i, &(label, name))| HouseRef {
+        .map(|(i, &(label, _name))| HouseRef {
             id: format!("house:{}", i + 1),
             label: label.to_string(),
-            name: name.to_string(),
+            name: loc.house_name(i + 1).to_string(),
         })
         .collect()
 }
 
 fn birth_meta(input: &BirthInput) -> Meta {
+    let loc = input.locale;
     Meta {
         name: input.name.clone(),
         // The zone/offset stays out of `born`: it drives the local→UT
         // conversion but is noise to the reader.
         born: format!("{} {}", input.date, input.time.format("%H:%M")),
         place: input.place.clone(),
-        system: "Whole Sign".to_string(),
-        zodiac: "Tropical".to_string(),
+        system: loc.system_label().to_string(),
+        zodiac: loc.zodiac_label().to_string(),
+        locale: loc.code().to_string(),
         astrologer: None, // branding is a frontend concern (desktop prefs)
         logo: None,
     }
@@ -217,6 +226,7 @@ mod tests {
             lon,
             tz: tz.parse().unwrap(),
             place: "Test".into(),
+            locale: Locale::En,
         }
     }
 
