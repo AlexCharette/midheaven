@@ -118,7 +118,7 @@
   .version { margin: .9rem 0 0; font-size: .88rem; font-style: italic; color: var(--ink-3); }
   .version a { color: inherit; }
 
-  .apparatus { max-width: 36rem; margin: 0 auto; text-align: left; font-size: .92rem; color: var(--ink-2); }
+  .apparatus { max-width: 38rem; margin: 0 auto; text-align: left; font-size: .92rem; color: var(--ink-2); }
   .apparatus p { margin: .5rem 0; text-wrap: pretty; }
   .apparatus .lbl { font-variant: small-caps; letter-spacing: .1em; color: var(--ink-3); }
   .apparatus a { color: var(--ink-2); text-decoration-color: var(--hairline); text-underline-offset: 3px; }
@@ -128,7 +128,7 @@
     font-size: .82em; color: var(--ink); word-break: break-all;
   }
 
-  .support { max-width: 36rem; margin: 0 auto; text-align: left; }
+  .support { max-width: 38rem; margin: 0 auto; text-align: left; }
   .support .note { margin: 0 0 1.1rem; text-align: left; max-width: none; }
   .donate {
     display: flex; align-items: center; gap: .8rem;
@@ -184,6 +184,8 @@
     /* downloads heads the right column, so its rule would sit at the very top */
     .downloads-block.sep-top { margin-top: 0; padding-top: 0; }
     .downloads-block.sep-top::before { display: none; }
+    /* half-width column is tight for the BTC address — hold it to one line */
+    .donate code { font-size: .72rem; white-space: nowrap; }
     footer { margin-top: 2.6rem; padding-top: 1.8rem; border-top: 1px solid var(--line); }
   }
 
