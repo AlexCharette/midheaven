@@ -4,7 +4,14 @@
   import { app, notify } from "$lib/state.svelte";
   import Library from "./Library.svelte";
   import Preferences from "./Preferences.svelte";
+  import WheelMark from "./WheelMark.svelte";
   import { LOCALES, type PlaceDto } from "$lib/types";
+  import { fade } from "svelte/transition";
+
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const swap = { duration: reduceMotion ? 0 : 200 };
 
   let name = $state("");
   let date = $state("");
@@ -97,7 +104,12 @@
         model: model || null,
         lang: lang || null,
       });
-      notify(`${app.chart.excerpts.length} passages routed past the verify gate`);
+      // Only worth announcing the routing when a transcript was actually
+      // supplied; a bare chart with no transcript routes nothing.
+      if (transcript.trim()) {
+        const n = app.chart.excerpts.length;
+        notify(`${n} ${n === 1 ? "passage" : "passages"} routed past the verify gate`);
+      }
       app.model = model.trim();
     } catch (e) {
       error = String(e);
@@ -107,17 +119,26 @@
   }
 </script>
 
-<div class="plate">
-  <div class="ornament">✶</div>
-  <h1>MIDHEAVEN</h1>
-  <p class="apparatus-text">your data never leaves this device</p>
+<div class="entry">
+  <div class="plate-frame entry-plate">
+  <header class="masthead">
+    <div class="mark"><WheelMark size={92} /></div>
+    <h1>MIDHEAVEN</h1>
+    <div class="double-rule"></div>
+    <p class="apparatus-text tagline">your offline astrology workbench</p>
+  </header>
 
   {#if prefsOpen}
-    <Preferences onclose={() => (prefsOpen = false)} />
+    <div class="swap" in:fade={swap}>
+      <Preferences onclose={() => (prefsOpen = false)} />
+    </div>
   {:else if libraryOpen}
-    <Library onclose={() => (libraryOpen = false)} />
+    <div class="swap" in:fade={swap}>
+      <Library onclose={() => (libraryOpen = false)} />
+    </div>
   {:else}
   <form
+    in:fade={swap}
     onsubmit={(e) => {
       e.preventDefault();
       compute();
@@ -131,7 +152,7 @@
       <label class="lbl" for="f-date">born on</label>
       <input id="f-date" bind:value={date} placeholder="YYYY-MM-DD" />
       <label class="lbl" for="f-time">at</label>
-      <input id="f-time" bind:value={time} placeholder="HH:MM, local 24-hour time" />
+      <input id="f-time" bind:value={time} placeholder="HH:MM · 24h" />
     </div>
     <label class="place">
       <span>in</span>
@@ -163,12 +184,12 @@
     </label>
     <label>
       <span>transcript</span>
-      <input bind:value={transcript} placeholder="path to .txt, .jsonl — or a .wav to transcribe (optional)" />
+      <input bind:value={transcript} placeholder=".txt / .jsonl — or a .wav to transcribe (optional)" />
       <button type="button" class="browse" onclick={() => pickFile("transcript")}>browse…</button>
     </label>
     <label>
       <span>model</span>
-      <input bind:value={model} placeholder="ggml whisper model, needed for audio (optional)" />
+      <input bind:value={model} placeholder="ggml whisper model — for audio (optional)" />
       <button type="button" class="browse" onclick={() => pickFile("model")}>browse…</button>
     </label>
 
@@ -198,29 +219,47 @@
     </p>
   </form>
   {/if}
+  </div>
 </div>
 
 <style>
-  .plate {
-    max-width: 46rem;
+  /* fill the viewport and centre the plate, so the form never scrolls when it
+     fits (and still grows past 100vh, staying reachable, on a short window) */
+  .entry {
+    max-width: 43rem;
+    min-height: 100vh;
     margin: 0 auto;
-    padding: 3.5rem 1.5rem;
-    text-align: center;
+    padding: clamp(0.75rem, 2vh, 1.5rem) 1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
-  .ornament {
-    color: var(--ink-2);
-    opacity: 0.75;
-    font-size: 1.4rem;
+  /* the entry plate compresses its block padding so the whole form clears the
+     viewport without a scroll */
+  .entry-plate {
+    text-align: center;
+    padding-block: clamp(0.9rem, 2vh, 1.5rem);
+  }
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .mark {
+    margin-bottom: 0.2rem;
   }
   h1 {
-    font-weight: 500;
+    font-weight: 400;
     letter-spacing: 0.34em;
     text-indent: 0.34em;
-    font-size: 2.2rem;
-    margin: 0.2rem 0 0.4rem;
+    font-size: clamp(1.8rem, 4.5vw, 2.2rem);
+    margin: 0.2rem 0 0;
+  }
+  .tagline {
+    margin: 0.45rem 0 0;
   }
   form {
-    margin-top: 2rem;
+    margin-top: 1.3rem;
     text-align: left;
   }
   label {
@@ -228,7 +267,7 @@
     grid-template-columns: 7.5rem 1fr auto;
     gap: 0 1rem;
     align-items: baseline;
-    margin-bottom: 1.1rem;
+    margin-bottom: 0.7rem;
     position: relative;
   }
   label span:first-child,
@@ -239,14 +278,17 @@
   }
   .duo {
     display: grid;
-    /* date is content-sized; explicit margins instead of a uniform grid
-       gap, so "at" hugs the date while label→field gaps stay 1rem */
-    grid-template-columns: 7.5rem 9rem auto 1fr;
+    /* content-width fields packed to the left: date and time both size to
+       their own inputs so the time field never stretches to the plate edge,
+       and "at" sits snug between them. The trailing space stays empty. */
+    grid-template-columns: 7.5rem auto auto auto;
+    justify-content: start;
     gap: 0;
     align-items: baseline;
-    margin-bottom: 1.1rem;
+    margin-bottom: 0.7rem;
   }
   .duo input {
+    width: 8.5rem;
     margin-left: 1rem; /* same gap after "born on" and after "at" */
   }
   .duo label[for="f-time"] {
@@ -278,12 +320,13 @@
     top: 100%;
     left: 8.5rem;
     right: 0;
-    z-index: 10;
-    margin: 0.2rem 0 0;
+    z-index: var(--z-dropdown);
+    margin: 0.3rem 0 0;
     padding: 0.3rem 0;
     list-style: none;
     background: var(--bg-deep);
     border: 1px solid var(--hairline);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
   }
   .dropdown button {
     display: block;
@@ -309,11 +352,22 @@
   }
   .actions {
     text-align: center;
-    margin-top: 1.6rem;
+    margin-top: 1rem;
   }
+  /* the primary act on the page: a brass-framed plate that fills on hover,
+     clearly ahead of the quiet library/preferences links below it. */
   .compute {
-    padding: 0.4rem 1.6rem;
+    padding: 0.5rem 2rem;
     letter-spacing: 0.18em;
+    border-color: var(--brass);
+    color: var(--ink);
+    transition:
+      background var(--dur-base) var(--ease-out-quint),
+      box-shadow var(--dur-base) var(--ease-out-quint);
+  }
+  .compute:hover:not(:disabled) {
+    background: var(--brass-wash);
+    box-shadow: 0 0 0 1px var(--brass-halo);
   }
   .bar {
     margin: 1rem auto 0;
@@ -328,11 +382,41 @@
   }
   .prefs-line {
     text-align: center;
-    margin-top: 2rem;
+    margin-top: 1.2rem;
     font-size: 0.85rem;
   }
   .prefs-line .sep {
     color: var(--ink-3);
     margin: 0 0.6rem;
+  }
+
+  /* The title page settles into place: wordmark, rule, tagline, then the
+     form — a gentle upward arrival over the wheel mark's self-draw. */
+  @media (prefers-reduced-motion: no-preference) {
+    h1,
+    .double-rule,
+    .tagline {
+      opacity: 0;
+      animation: settle 0.7s var(--ease-out-quint) forwards;
+    }
+    h1 {
+      animation-delay: 0.18s;
+    }
+    .double-rule {
+      animation-delay: 0.3s;
+    }
+    .tagline {
+      animation-delay: 0.42s;
+    }
+  }
+  @keyframes settle {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
 </style>

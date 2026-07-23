@@ -89,11 +89,23 @@
   {#if loading}
     <p class="apparatus-text note">reading the library…</p>
   {:else if err}
-    <p class="error">✗ {err}</p>
+    <div class="empty-plate">
+      <span class="mark err-mark" aria-hidden="true">✗</span>
+      <p class="caption">The library could not be read.</p>
+      <p class="sub">{err}</p>
+    </div>
   {:else if !readingsDir}
-    <p class="apparatus-text note">choose a readings folder in preferences to keep a library</p>
+    <div class="empty-plate">
+      <span class="mark" aria-hidden="true">✶</span>
+      <p class="caption">No readings folder is set.</p>
+      <p class="sub">Choose one in preferences to keep a library of saved readings.</p>
+    </div>
   {:else if entries.length === 0}
-    <p class="apparatus-text note">no readings saved here yet</p>
+    <div class="empty-plate">
+      <span class="mark" aria-hidden="true">✶</span>
+      <p class="caption">No readings saved here yet.</p>
+      <p class="sub">Computed and transcribed readings you save will appear here.</p>
+    </div>
   {:else}
     <ul class="list">
       {#each entries as e (e.dir)}
@@ -149,11 +161,8 @@
     text-align: center;
     margin: 2.4rem 0;
   }
-  .error {
+  .err-mark {
     color: var(--oxblood);
-    font-style: italic;
-    text-align: center;
-    margin: 2.4rem 0;
   }
   .list {
     list-style: none;
@@ -167,24 +176,45 @@
     border-bottom: 1px solid var(--line);
   }
   .row {
+    position: relative;
     flex: 1;
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 1rem;
     min-width: 0;
-    padding: 0.65rem 0.3rem;
+    padding: 0.7rem 0.4rem 0.7rem 1.5em;
     text-align: left;
     color: var(--ink-2);
+    transition: background var(--dur-fast) var(--ease-out-quint);
+  }
+  /* a manicule slides in on hover, the same pointing hand the index uses */
+  .row::before {
+    content: "☞\FE0E";
+    position: absolute;
+    left: 0.3em;
+    color: var(--brass);
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease-out-quint);
   }
   .row:disabled {
     cursor: wait;
   }
   .row:hover:not(:disabled) {
     color: var(--ink);
+    background: var(--ink-a04);
+  }
+  .row:hover:not(:disabled)::before {
+    opacity: 1;
   }
   .row:hover:not(:disabled) .name {
     text-decoration: underline;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .row,
+    .row::before {
+      transition: none;
+    }
   }
   .who {
     display: flex;

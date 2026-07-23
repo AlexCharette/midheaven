@@ -2,6 +2,50 @@
    That template remains the artifact's source of truth; this file mirrors
    its tokens for the live app. */
 
+/* Self-hosted faces so the engraved voice survives every OS (system
+   Baskerville is absent on Windows — it silently fell back to Georgia).
+   Libre Baskerville carries Latin; PT Serif covers Cyrillic (the app ships
+   `ru`) and is fetched only when a Cyrillic glyph is needed; the DejaVu
+   astro subset draws the celestial glyphs identically everywhere. These are
+   the same faces the PDF embeds (src/pdf/fonts.rs), so screen and print rhyme. */
+@font-face {
+  font-family: "Libre Baskerville";
+  src: url("/fonts/LibreBaskerville-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Libre Baskerville";
+  src: url("/fonts/LibreBaskerville-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PT Serif";
+  src: url("/fonts/PTSerif-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0400-04FF, U+0500-052F, U+2DE0-2DFF, U+A640-A69F;
+}
+@font-face {
+  font-family: "PT Serif";
+  src: url("/fonts/PTSerif-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0400-04FF, U+0500-052F, U+2DE0-2DFF, U+A640-A69F;
+}
+@font-face {
+  font-family: "Astro";
+  src: url("/fonts/DejaVuSans-astro.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #131735;
   --bg-deep: #0d1026;
@@ -15,6 +59,57 @@
   --verdigris: #35ab7c;
   --steel: #7ba0e0;
   --oxblood: #c05468;
+
+  /* Type stacks. Hosted face first, then the old system stack as the tail so
+     a missing file degrades gracefully rather than to a sans default. */
+  --font-serif: "Libre Baskerville", "PT Serif", Baskerville, "Iowan Old Style",
+    "Palatino Linotype", Palatino, Georgia, serif;
+  /* Astro subset lacks the sextile (U+26B9); a system symbol font backs it up. */
+  --font-astro: "Astro", "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols2",
+    var(--font-serif);
+
+  /* One source of truth for category colour-with-alpha (washes fill area,
+     halos ring a selection). Previously scattered as raw rgba() literals
+     across Wheel.svelte and +page.svelte. */
+  --brass-wash: rgba(196, 154, 48, 0.16);
+  --brass-halo: rgba(196, 154, 48, 0.34);
+  --verdigris-wash: rgba(53, 171, 124, 0.16);
+  --verdigris-halo: rgba(53, 171, 124, 0.32);
+  --steel-wash: rgba(123, 160, 224, 0.16);
+  --steel-halo: rgba(123, 160, 224, 0.32);
+  --oxblood-wash: rgba(192, 84, 104, 0.16);
+  --oxblood-halo: rgba(192, 84, 104, 0.32);
+
+  /* Elemental washes for the sign band — "whisper, never shout". */
+  --wash-fire: rgba(196, 87, 58, 0.12);
+  --wash-earth: rgba(164, 130, 61, 0.16);
+  --wash-air: rgba(196, 183, 121, 0.14);
+  --wash-water: rgba(95, 143, 201, 0.12);
+
+  /* Ink at alpha, for hover fills and faint fields. */
+  --ink-a04: rgba(233, 228, 211, 0.04);
+  --ink-a08: rgba(233, 228, 211, 0.08);
+  --ink-a12: rgba(233, 228, 211, 0.12);
+  --plate-glow: rgba(27, 32, 73, 0.6);
+  /* The orrery's hub read-out sits over the aspect web; a veil (not the opaque
+     --bg) keeps the dossier legible while the chords still read through it. */
+  --core-veil: rgba(19, 23, 53, 0.6);
+
+  /* Semantic z-index scale (replaces ad-hoc 40/60). */
+  --z-dropdown: 20;
+  --z-sticky: 30;
+  --z-footer: 40;
+  --z-toast: 60;
+  --z-tooltip: 70;
+
+  /* Motion: exponential ease-outs, no bounce. */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 140ms;
+  --dur-base: 240ms;
+  --dur-slow: 620ms;
+  /* the orrery's decorative drift ring — one slow revolution */
+  --dur-orrery: 120s;
 }
 * {
   box-sizing: border-box;
@@ -28,7 +123,7 @@ body {
   min-height: 100vh;
   background-color: var(--bg);
   color: var(--ink);
-  font-family: Baskerville, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-family: var(--font-serif);
   line-height: 1.6;
   user-select: none;
   cursor: default;
@@ -132,7 +227,7 @@ input::placeholder {
   color: var(--ink);
 }
 .frame-btn:hover:not(:disabled) {
-  background: rgba(233, 228, 211, 0.08);
+  background: var(--ink-a08);
 }
 .frame-btn:disabled {
   color: var(--ink-3);
@@ -144,4 +239,63 @@ input::placeholder {
 }
 .ghost:hover {
   color: var(--ink);
+}
+
+/* Astro glyphs: the celestial hand. Kept a class so any glyph — wheel,
+   index, inline refs, ornaments — engraves as line-art via the subset. */
+.astro {
+  font-family: var(--font-astro);
+  font-feature-settings: normal;
+}
+
+/* Shared plate primitives, lifted from templates/reading.html so every
+   surface frames the same way: a hairline border with an offset outline
+   (frame-within-a-frame) over a soft vignette. */
+.plate-frame {
+  border: 1px solid var(--hairline);
+  outline: 1px solid var(--line);
+  outline-offset: 5px;
+  margin: 6px;
+  padding: clamp(1.1rem, 3.5vw, 2.4rem);
+  background: radial-gradient(ellipse at 50% 38%, var(--plate-glow) 0%, transparent 72%);
+}
+
+/* The engraved double rule: two weights stacked, a title's underline. */
+.double-rule {
+  height: 8px;
+  width: min(100%, 26rem);
+  margin: 0.7rem auto 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--line);
+}
+
+/* An engraved empty plate: a small ornament over an italic caption inside a
+   faint frame. Shared by the library and commentary in place of a bare line. */
+.empty-plate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  max-width: 30rem;
+  margin: clamp(1.5rem, 5vw, 3rem) auto;
+  padding: clamp(1.4rem, 4vw, 2.4rem) 1.4rem;
+  border: 1px solid var(--line);
+  background: radial-gradient(ellipse at 50% 30%, var(--ink-a04) 0%, transparent 70%);
+  text-align: center;
+}
+.empty-plate .mark {
+  font-family: var(--font-astro);
+  font-size: 1.5rem;
+  color: var(--ink-3);
+  opacity: 0.8;
+}
+.empty-plate .caption {
+  font-style: italic;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.empty-plate .sub {
+  font-size: 0.86rem;
+  font-style: italic;
+  color: var(--ink-3);
 }

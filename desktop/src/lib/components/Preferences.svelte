@@ -77,12 +77,14 @@
   }
 </script>
 
+<p class="rubric">preferences</p>
 <form
   onsubmit={(e) => {
     e.preventDefault();
     keep();
   }}
 >
+  <p class="section">library</p>
   <label>
     <span>readings folder</span>
     <input bind:value={readingsDir} placeholder="charts save themselves here (optional)" />
@@ -106,6 +108,8 @@
       {/each}
     </select>
   </label>
+
+  <p class="section">identity</p>
   <label>
     <span>your name</span>
     <input bind:value={astrologer} placeholder="artifacts read “prepared by …” (optional)" />
@@ -115,6 +119,8 @@
     <input bind:value={logo} placeholder="engraved on the title plate (optional)" />
     <button type="button" class="browse" onclick={pickLogo}>browse…</button>
   </label>
+
+  <p class="section">output</p>
   <label>
     <span>paper size</span>
     <select bind:value={pageSize}>
@@ -143,8 +149,20 @@
   /* form grammar mirrors BirthForm: italic right-aligned labels on a
      7.5rem gutter, quiet browse buttons */
   form {
-    margin-top: 2rem;
+    margin-top: 1.6rem;
     text-align: left;
+  }
+  /* group headings: small-caps section labels, each opening a run of fields */
+  .section {
+    font-variant: small-caps;
+    letter-spacing: 0.16em;
+    color: var(--ink-3);
+    margin: 0 0 0.9rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .section:not(:first-of-type) {
+    margin-top: 1.8rem;
   }
   label {
     display: grid;
