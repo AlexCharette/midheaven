@@ -122,7 +122,7 @@
 <div class="entry">
   <div class="plate-frame entry-plate">
   <header class="masthead">
-    <div class="mark"><WheelMark size={124} /></div>
+    <div class="mark"><WheelMark size={92} /></div>
     <h1>MIDHEAVEN</h1>
     <div class="double-rule"></div>
     <p class="apparatus-text tagline">your offline astrology workbench</p>
@@ -223,13 +223,22 @@
 </div>
 
 <style>
+  /* fill the viewport and centre the plate, so the form never scrolls when it
+     fits (and still grows past 100vh, staying reachable, on a short window) */
   .entry {
     max-width: 43rem;
-    margin: clamp(1.5rem, 6vh, 4rem) auto;
-    padding: 0 1rem;
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: clamp(0.75rem, 2vh, 1.5rem) 1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
+  /* the entry plate compresses its block padding so the whole form clears the
+     viewport without a scroll */
   .entry-plate {
     text-align: center;
+    padding-block: clamp(0.9rem, 2vh, 1.5rem);
   }
   .masthead {
     display: flex;
@@ -237,20 +246,20 @@
     align-items: center;
   }
   .mark {
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.2rem;
   }
   h1 {
     font-weight: 400;
     letter-spacing: 0.34em;
     text-indent: 0.34em;
-    font-size: clamp(1.9rem, 5vw, 2.4rem);
-    margin: 0.3rem 0 0;
+    font-size: clamp(1.8rem, 4.5vw, 2.2rem);
+    margin: 0.2rem 0 0;
   }
   .tagline {
-    margin: 0.7rem 0 0;
+    margin: 0.45rem 0 0;
   }
   form {
-    margin-top: 2.2rem;
+    margin-top: 1.3rem;
     text-align: left;
   }
   label {
@@ -258,7 +267,7 @@
     grid-template-columns: 7.5rem 1fr auto;
     gap: 0 1rem;
     align-items: baseline;
-    margin-bottom: 1.1rem;
+    margin-bottom: 0.7rem;
     position: relative;
   }
   label span:first-child,
@@ -276,7 +285,7 @@
     justify-content: start;
     gap: 0;
     align-items: baseline;
-    margin-bottom: 1.1rem;
+    margin-bottom: 0.7rem;
   }
   .duo input {
     width: 8.5rem;
@@ -343,7 +352,7 @@
   }
   .actions {
     text-align: center;
-    margin-top: 1.6rem;
+    margin-top: 1rem;
   }
   /* the primary act on the page: a brass-framed plate that fills on hover,
      clearly ahead of the quiet library/preferences links below it. */
@@ -373,7 +382,7 @@
   }
   .prefs-line {
     text-align: center;
-    margin-top: 2rem;
+    margin-top: 1.2rem;
     font-size: 0.85rem;
   }
   .prefs-line .sep {

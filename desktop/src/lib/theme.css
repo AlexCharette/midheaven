@@ -91,6 +91,9 @@
   --ink-a08: rgba(233, 228, 211, 0.08);
   --ink-a12: rgba(233, 228, 211, 0.12);
   --plate-glow: rgba(27, 32, 73, 0.6);
+  /* The orrery's hub read-out sits over the aspect web; a veil (not the opaque
+     --bg) keeps the dossier legible while the chords still read through it. */
+  --core-veil: rgba(19, 23, 53, 0.6);
 
   /* Semantic z-index scale (replaces ad-hoc 40/60). */
   --z-dropdown: 20;
@@ -105,6 +108,8 @@
   --dur-fast: 140ms;
   --dur-base: 240ms;
   --dur-slow: 620ms;
+  /* the orrery's decorative drift ring — one slow revolution */
+  --dur-orrery: 120s;
 }
 * {
   box-sizing: border-box;

@@ -2,6 +2,7 @@
   import { save } from "@tauri-apps/plugin-dialog";
   import {
     artifactFilename,
+    getPreferences,
     onTranscribeProgress,
     saveArtifact,
     savePdf,
@@ -9,24 +10,17 @@
     stopRecording,
   } from "$lib/api";
   import { app, excerptsMatching, notify, selected, visibleExcerpts } from "$lib/state.svelte";
-  import { catOf, elementsOf, textGlyph } from "$lib/types";
   import BirthForm from "$lib/components/BirthForm.svelte";
+  import ChartCore from "$lib/components/ChartCore.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
   import IndexOfElements from "$lib/components/IndexOfElements.svelte";
   import Wheel from "$lib/components/Wheel.svelte";
   import { onMount } from "svelte";
-  import { fade } from "svelte/transition";
 
-  // Svelte transitions don't honour prefers-reduced-motion on their own;
-  // collapse the duration to 0 when the user asks for less motion.
-  const reduceMotion =
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const swap = { duration: reduceMotion ? 0 : 200 };
-
-  // In chart view a hovered/focused element previews just its passages;
-  // otherwise the panel tracks the pinned selection (empty = everything).
-  const previewing = $derived(app.view === "chart" && app.hovered !== null);
+  // With nothing pinned, hovering an element previews just its passages;
+  // once anything is pinned the hover preview stops and the commentary tracks
+  // the pinned selection (empty selection = the whole reading).
+  const previewing = $derived(selected.size === 0 && app.hovered !== null);
   const visible = $derived(
     app.chart
       ? previewing
@@ -35,22 +29,18 @@
       : [],
   );
 
-  // The element named in the chart-view panel header: the hovered tag, or a
-  // lone pinned selection.
-  const elemMap = $derived(
-    app.chart ? new Map(elementsOf(app.chart).map((e) => [e.tag, e])) : new Map(),
-  );
-  const focusTag = $derived(
-    app.view === "chart" ? (app.hovered ?? (selected.size === 1 ? [...selected][0] : null)) : null,
-  );
-
-  function setView(v: "reading" | "chart") {
-    app.view = v;
-    if (v === "reading") app.hovered = null; // a stale hover must not linger
-  }
-
   // transcription progress can arrive during a form build or a live take
   onMount(() => {
+    // A configured default model enables live transcription on ANY open chart,
+    // not only ones just built through the form (which sets app.model itself) —
+    // so a reading opened from the library can still be transcribed onto.
+    if (!app.model) {
+      getPreferences()
+        .then((p) => {
+          if (!app.model && p.default_model) app.model = p.default_model;
+        })
+        .catch(() => {});
+    }
     const unlisten = onTranscribeProgress((pct) => {
       if (app.busy !== false) app.busy = pct;
     });
@@ -131,55 +121,34 @@
 </script>
 
 {#if app.chart}
-  <div class="reading" class:chart={app.view === "chart"}>
+  <div class="reading">
     <figure class="plate">
       <div class="plate-frame">
         <Wheel chart={app.chart} />
+        <ChartCore chart={app.chart} />
       </div>
     </figure>
 
     <section>
-      {#if app.view === "reading"}
-        <div class="view-pane" in:fade={swap}>
-          <IndexOfElements chart={app.chart} />
+      <div class="toolbar">
+        <span class="apparatus-text">passages touching</span>
+        <span class="segmented">
+          <button aria-pressed={app.mode === "any"} onclick={() => (app.mode = "any")}>any</button>
+          <button aria-pressed={app.mode === "all"} onclick={() => (app.mode = "all")}>all</button>
+        </span>
+        <span class="apparatus-text">of the selection ·</span>
+        <button class="ghost" onclick={() => selected.clear()}>clear</button>
+        <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
+      </div>
 
-          <div class="toolbar">
-            <span class="apparatus-text">passages touching</span>
-            <span class="segmented">
-              <button aria-pressed={app.mode === "any"} onclick={() => (app.mode = "any")}>any</button>
-              <button aria-pressed={app.mode === "all"} onclick={() => (app.mode = "all")}>all</button>
-            </span>
-            <span class="apparatus-text">of the selection ·</span>
-            <button class="ghost" onclick={() => selected.clear()}>clear</button>
-            <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
-          </div>
-        </div>
-      {:else}
-        {@const el = focusTag ? elemMap.get(focusTag) : undefined}
-        <div class="view-pane" in:fade={swap}>
-          <div class="panel-head">
-            {#if el}
-              <span class="g g-{catOf(focusTag!)}">{textGlyph(el.glyph)}</span>
-              <span class="ph-name">{el.name}</span>
-              <span class="count apparatus-text">{visible.length} {visible.length === 1 ? "passage" : "passages"}</span>
-            {:else}
-              <span class="apparatus-text ph-hint">hover or select an element</span>
-              <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
-            {/if}
-          </div>
-        </div>
-      {/if}
+      <IndexOfElements chart={app.chart} />
 
       <Commentary chart={app.chart} {visible} />
     </section>
   </div>
   <footer>
-    <span class="segmented view-toggle">
-      <button aria-pressed={app.view === "reading"} onclick={() => setView("reading")}>≡ reading</button>
-      <button aria-pressed={app.view === "chart"} onclick={() => setView("chart")}>⊙ chart</button>
-    </span>
+    <button class="ghost" onclick={back}>← new reading</button>
     <span class="foot-actions">
-      <button class="ghost" onclick={back}>← new reading</button>
       {#if app.model}
         <button
           class="frame-btn rec"
@@ -218,60 +187,44 @@
 {/if}
 
 <style>
+  /* the wheel is the hero plate; the apparatus and commentary are its caption */
   .reading {
     display: grid;
-    grid-template-columns: minmax(360px, 44%) 1fr;
-    gap: 2.2rem;
-    padding: 1.6rem 1.8rem 4.4rem;
-    max-width: 1400px;
+    grid-template-columns: minmax(520px, 60%) 1fr;
+    gap: 2rem;
+    padding: 1rem 1.6rem 4.4rem 1.1rem;
+    max-width: 1580px;
     margin: 0 auto;
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .reading {
-      transition: grid-template-columns var(--dur-slow) var(--ease-out-quint);
-    }
-  }
-  /* chart-centric: the wheel becomes the hero plate, the passages a caption */
-  .reading.chart {
-    grid-template-columns: minmax(420px, 56%) minmax(300px, 1fr);
-  }
-  .panel-head {
-    display: flex;
-    align-items: baseline;
-    gap: 0.6rem;
-    padding: 0.7rem 0;
-    margin-bottom: 1.4rem;
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-    font-size: 0.95rem;
-  }
-  .panel-head .g {
-    flex: none;
-    width: 1.25em;
-    text-align: center;
-    font-size: 1.15rem;
-  }
-  .panel-head .ph-name {
-    color: var(--ink);
-    font-size: 1.05rem;
-  }
-  .panel-head .ph-hint {
-    font-style: italic;
   }
   .plate {
     margin: 0;
     position: sticky;
-    top: 1.2rem;
+    top: 0.9rem;
     align-self: start;
   }
-  /* the wheel's plate uses a tighter padding than the shared primitive */
+  /* the wheel's plate uses a tighter padding than the shared primitive; it also
+     anchors the hub read-out core, which is absolutely centred over the wheel */
   .plate-frame {
+    position: relative;
     border: 1px solid var(--hairline);
     outline: 1px solid var(--line);
     outline-offset: 5px;
     padding: 0.8rem;
     margin: 6px;
     background: radial-gradient(ellipse at 50% 42%, var(--plate-glow) 0%, transparent 70%);
+  }
+  /* below the split point the plate leads, stacked above the reading column */
+  @media (max-width: 900px) {
+    .reading {
+      grid-template-columns: 1fr;
+      gap: 1.6rem;
+    }
+    .plate {
+      position: static;
+      max-width: 560px;
+      width: 100%;
+      margin: 0 auto;
+    }
   }
   .toolbar {
     display: flex;

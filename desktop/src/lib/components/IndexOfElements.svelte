@@ -1,9 +1,15 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
-  import { catOf, degInSign, planetById, signAt, textGlyph } from "$lib/types";
-  import { app, selected, toggle } from "$lib/state.svelte";
+  import { catOf, degInSign, planetById, relatedTo, signAt, textGlyph } from "$lib/types";
+  import { app, focusedTag, peek, selected, toggle, unpeek } from "$lib/state.svelte";
 
   let { chart }: { chart: ChartData } = $props();
+
+  // The legend cross-lights with the wheel: the focused element (a pin locks
+  // it, else the hovered one) and everything it relates to are marked here too,
+  // and hovering a row lights the orrery back.
+  const focusTag = $derived(focusedTag());
+  const related = $derived(focusTag ? relatedTo(chart, focusTag) : new Set<string>());
 
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
 
@@ -88,7 +94,17 @@
     <div>
       <h3>{col.head}</h3>
       {#each shown as e (e.tag)}
-        <button class="entry" aria-pressed={selected.has(e.tag)} onclick={() => toggle(e.tag)}>
+        <button
+          class="entry"
+          class:focus={focusTag === e.tag}
+          class:rel={related.has(e.tag)}
+          aria-pressed={selected.has(e.tag)}
+          onclick={() => toggle(e.tag)}
+          onmouseenter={() => peek(e.tag)}
+          onmouseleave={unpeek}
+          onfocus={() => peek(e.tag)}
+          onblur={unpeek}
+        >
           <span class="g g-{catOf(e.tag)}">{textGlyph(e.glyph)}</span>
           <span class="nm">{e.name}</span>
           {#if e.detail}<span class="lead"></span><span class="dt">{e.detail}</span>{/if}
@@ -203,12 +219,25 @@
   }
   .entry .nm {
     border-bottom: 1px solid transparent;
+    transition: border-color var(--dur-fast) var(--ease-out-quint);
   }
-  .entry:hover .nm {
+  .entry:hover .nm,
+  .entry.rel .nm {
     border-bottom-color: var(--hairline);
   }
   .entry[aria-pressed="true"] .nm {
     border-bottom-color: var(--ink-2);
+  }
+  /* cross-lit from the wheel: the focused row brightens, its relations mark */
+  .entry {
+    transition: background var(--dur-fast) var(--ease-out-quint);
+  }
+  .entry.focus {
+    background: var(--ink-a04);
+    color: var(--ink);
+  }
+  .entry.focus .nm {
+    border-bottom-color: var(--ink);
   }
   .entry .lead {
     flex: 1;

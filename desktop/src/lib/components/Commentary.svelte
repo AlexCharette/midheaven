@@ -12,11 +12,11 @@
   const lookup = $derived(new Map(elements.map((e) => [e.tag, e])));
 
   // merge ↑ joins into the previous *visible* passage, so it's only
-  // unambiguous when nothing filters the list — no selection and no chart-view
-  // hover preview. amend/remove/add are id-based and safe under any filter, so
-  // in chart view they stay available while an element is focused.
+  // unambiguous when nothing filters the list — no selection and no hover
+  // preview. amend/remove/add are id-based and safe under any filter, so they
+  // stay available whenever the app isn't busy.
   const mergeable = $derived(selected.size === 0 && app.hovered === null && app.busy === false);
-  const editable = $derived(app.busy === false && (app.view === "chart" || selected.size === 0));
+  const editable = $derived(app.busy === false);
 
   let editing = $state<string | null>(null);
   let draft = $state("");

@@ -10,16 +10,27 @@ export const app = $state({
   busy: false as false | "compute" | number,
   /** The form's whisper-model path; a non-empty value enables live recording. */
   model: "",
-  /** Layout: the document reading vs the chart-centric hover view. */
-  view: "reading" as "reading" | "chart",
-  /** Whether the Index of Elements is expanded (persists across view toggles). */
-  indexOpen: true,
-  /** The tag under the pointer/focus in chart view — a transient preview,
-   * distinct from the pinned `selected` set. Null outside chart view. */
+  /** Whether the Index of Elements legend is expanded. Folded by default so the
+   * orrery leads; opening it reveals the full keyboard-accessible mirror. */
+  indexOpen: false,
+  /** The tag under the pointer/keyboard focus anywhere in the reading — a
+   * transient preview that lights the orrery and previews the commentary,
+   * distinct from the pinned `selected` set. Null when nothing is focused. */
   hovered: null as string | null,
 });
 
 export const selected = new SvelteSet<string>();
+
+/** Transient focus, shared by the wheel, the index legend, and any sector: set
+ * it on pointer-enter / keyboard-focus, clear it on leave / blur. Drives the
+ * orrery's relational illumination, the hub read-out, and the commentary
+ * preview — one path, so every surface lights the others. */
+export function peek(tag: string) {
+  app.hovered = tag;
+}
+export function unpeek() {
+  app.hovered = null;
+}
 
 /** Transient status notifications — each auto-dismisses (errors linger
  * longer) and any can be dismissed by a click. Replaces the old persistent
@@ -60,4 +71,16 @@ export function visibleExcerpts(chart: ChartData): Excerpt[] {
 
 export function toggle(tag: string) {
   if (!selected.delete(tag)) selected.add(tag);
+}
+
+/** The single element the read-out, wheel illumination, and commentary preview
+ * all follow. A pinned selection LOCKS the focus: hovering no longer flips it,
+ * until the pin is cleared or another element is pinned (the most recent pin
+ * wins). With nothing pinned, the hovered element drives the live preview. */
+export function focusedTag(): string | null {
+  if (selected.size > 0) {
+    const arr = [...selected];
+    return arr[arr.length - 1];
+  }
+  return app.hovered;
 }

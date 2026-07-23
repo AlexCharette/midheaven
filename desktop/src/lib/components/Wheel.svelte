@@ -1,20 +1,18 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
-  import { degInSign, norm360, planetById, textGlyph } from "$lib/types";
-  import { app, selected, toggle } from "$lib/state.svelte";
+  import {
+    catOf, degInSign, norm360, planetById, relatedTo, signDensity, textGlyph,
+  } from "$lib/types";
+  import { focusedTag, peek, selected, toggle, unpeek } from "$lib/state.svelte";
 
   let { chart }: { chart: ChartData } = $props();
 
-  // Chart view turns the wheel into a live index: hover or keyboard-focus an
-  // element to preview its passages, click/Enter to pin it. Reading view keeps
-  // the wheel a plain click-to-filter plate (tabindex -1, no hover preview).
-  const chartView = $derived(app.view === "chart");
-  const peek = (tag: string) => {
-    if (chartView) app.hovered = tag;
-  };
-  const unpeek = () => {
-    app.hovered = null;
-  };
+  // Every element on the plate is a live index: hover or keyboard-focus to
+  // preview and light up its relations, click/Enter to pin it. A pin locks the
+  // focus (hover stops flipping it); otherwise the hovered tag drives the
+  // illumination and the selector pointer.
+  const focusTag = $derived(focusedTag());
+  const related = $derived(focusTag ? relatedTo(chart, focusTag) : new Set<string>());
   const pinKey = (tag: string) => (e: KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
       toggle(tag);
@@ -23,10 +21,15 @@
   };
 
   // Geometry ports templates/reading.html: ASC on the left, ecliptic
-  // longitude increasing counterclockwise.
+  // longitude increasing counterclockwise. Radii grow outward from the hub;
+  // the outer two tracks (density, drift) and the enlarged hub are new to the
+  // orrery.
   const CX = 360;
   const CY = 360;
   const R = {
+    drift: 398, // decorative idle-drift ring (outermost)
+    passOut: 382, // passage-density bars grow toward here
+    passIn: 356, // density baseline ring
     outer: 348,
     bandOut: 344,
     signIn: 306,
@@ -34,8 +37,9 @@
     planet: 260,
     wedgeOut: 230,
     chord: 222,
-    hub: 92,
-    houseLbl: 112,
+    houseLbl: 170, // sits in the house band, outside the focus-only core medallion
+    hub: 92, // inner edge of the house-wedge band + the hub ring
+    hubInner: 8, // cusp spokes and axes converge here, at the compass centre
   };
 
   const asc = $derived(chart.axes.asc);
@@ -53,9 +57,11 @@
     return `M${x1} ${y1} A${r2} ${r2} 0 ${large} 0 ${x2} ${y2} L${x3} ${y3} A${r1} ${r1} 0 ${large} 1 ${x4} ${y4} Z`;
   }
 
+  // Degree graduations: 1°/5°/10° tick hierarchy, decade ticks a touch longer
+  // so the ring reads as a proper scale.
   const grads = $derived(
     Array.from({ length: 360 }, (_, d) => {
-      const len = d % 10 === 0 ? 12 : d % 5 === 0 ? 8 : 4.5;
+      const len = d % 10 === 0 ? 14 : d % 5 === 0 ? 8 : 4.5;
       const w = d % 10 === 0 ? 0.9 : d % 5 === 0 ? 0.7 : 0.45;
       const [x1, y1] = pt(d, R.signIn);
       const [x2, y2] = pt(d, R.signIn - len);
@@ -63,13 +69,18 @@
     }),
   );
 
-  const hubRays = $derived(
-    Array.from({ length: 8 }, (_, k) => {
-      const [x1, y1] = pt(k * 45, 5);
-      const [x2, y2] = pt(k * 45, k % 2 === 0 ? 22 : 13);
-      return { x1, y1, x2, y2 };
+  // A ring of faint star marks that drifts slowly — the only moving,
+  // non-data ring. Positions are arbitrary (the whole ring rotates).
+  const driftStars = $derived(
+    Array.from({ length: 12 }, (_, k) => {
+      const [x, y] = pt(k * 30, R.drift);
+      return { x, y };
     }),
   );
+
+  // Passage-density track — how much the reading dwelt on each sign.
+  const density = $derived(signDensity(chart));
+  const maxDensity = $derived(Math.max(1, ...density));
 
   // element washes (canonical treatment lives in templates/reading.html);
   // the element itself comes from the contract (sign Ref.element)
@@ -77,7 +88,10 @@
     chart.signs.map((s, i) => {
       const lon = i * 30;
       const [gx, gy] = pt(lon + 15, 325);
-      return { s, d: sector(lon, lon + 30, R.signIn, R.bandOut), gx, gy };
+      const w = density[i];
+      const len = w > 0 ? Math.sqrt(w / maxDensity) * (R.passOut - R.passIn) : 0;
+      const bar = w > 0 ? sector(lon + 5, lon + 25, R.passIn, R.passIn + len) : "";
+      return { s, d: sector(lon, lon + 30, R.signIn, R.bandOut), gx, gy, bar, w };
     }),
   );
 
@@ -85,7 +99,7 @@
     chart.houseCusps.map((c, i) => {
       const next = chart.houseCusps[(i + 1) % 12];
       const sweep = norm360(next - c) || 30; // equal cusps mean a full sign
-      const [sx1, sy1] = pt(c, R.hub);
+      const [sx1, sy1] = pt(c, R.hubInner); // spokes converge at the centre
       const [sx2, sy2] = pt(c, R.gradIn);
       const [lx, ly] = pt(c + sweep / 2, R.houseLbl);
       return {
@@ -105,7 +119,7 @@
       { lon: chart.axes.asc + 180, label: "DC" },
       { lon: chart.axes.mc + 180, label: "IC" },
     ].map(({ lon, label }) => {
-      const [x1, y1] = pt(lon, R.hub);
+      const [x1, y1] = pt(lon, R.hubInner); // the AC–DC / MC–IC cross meets at centre
       const [x2, y2] = pt(lon, R.outer);
       const [tx, ty] = pt(lon, R.outer + 13);
       return { label, x1, y1, x2, y2, tx, ty };
@@ -137,29 +151,73 @@
       return { p, gx, gy, dx, dy, tick: { x1: t1x, y1: t1y, x2: t2x, y2: t2y }, deg: degInSign(p.lon) };
     });
   });
+
+  // The longitude the selector pointer aims at — the focused element's own
+  // position, a sign/house midpoint, or an aspect's angular bisector.
+  const focusLon = $derived.by(() => {
+    if (!focusTag) return null;
+    const c = catOf(focusTag);
+    if (c === "planet") return planetById(chart, focusTag)?.lon ?? null;
+    if (c === "sign") {
+      const i = chart.signs.findIndex((s) => s.id === focusTag);
+      return i < 0 ? null : i * 30 + 15;
+    }
+    if (c === "house") {
+      const n = Number(focusTag.split(":")[1]);
+      const cusp = chart.houseCusps[n - 1];
+      if (cusp === undefined) return null;
+      const sweep = norm360(chart.houseCusps[n % 12] - cusp) || 30;
+      return cusp + sweep / 2;
+    }
+    if (c === "aspect") {
+      const a = chart.aspects.find((x) => x.id === focusTag);
+      if (!a) return null;
+      const la = lonOf(a.a);
+      const diff = (((lonOf(a.b) - la + 540) % 360) - 180) / 2;
+      return la + diff;
+    }
+    return null;
+  });
+  // Rotate a north-pointing index clockwise onto the focused longitude.
+  const pointerDeg = $derived.by(() => {
+    if (focusLon === null) return 0;
+    const [x, y] = pt(focusLon, 1);
+    return (Math.atan2(x - CX, -(y - CY)) * 180) / Math.PI;
+  });
 </script>
 
-<svg viewBox="-28 -28 776 776" role="img" aria-label="Natal chart wheel; the index of elements offers the same filters">
-  {#each [R.outer, R.bandOut, R.signIn, R.gradIn, R.wedgeOut, R.hub, R.hub - 4] as r, i (r)}
+<svg
+  viewBox="-52 -52 824 824"
+  role="img"
+  class:focusing={focusTag !== null}
+  aria-label="Natal chart wheel; the index of elements offers the same filters"
+>
+  <!-- decorative drift ring — the one moving, non-data track -->
+  <g class="drift" aria-hidden="true">
+    {#each driftStars as s, i (i)}
+      <text x={s.x} y={s.y} class="drift-star" text-anchor="middle" dominant-baseline="central">✶</text>
+    {/each}
+  </g>
+  <circle cx={CX} cy={CY} r={R.passIn} class="dens-ring" pathLength="1" style="--d: 0ms" />
+
+  {#each [R.outer, R.bandOut, R.signIn, R.gradIn, R.wedgeOut, R.hub] as r, i (r)}
     <circle cx={CX} cy={CY} {r} pathLength="1" style="--d: {i * 70}ms" class={i < 2 ? "engrave-strong ring" : "engrave ring"} />
   {/each}
   {#each grads as g, i (i)}
     <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} class="grad" stroke-width={g.w} />
   {/each}
-  {#each hubRays as ray, i (i)}
-    <line x1={ray.x1} y1={ray.y1} x2={ray.x2} y2={ray.y2} class="hub-ray" />
-  {/each}
-  <circle cx={CX} cy={CY} r="3" class="engrave-strong" />
+  <!-- the compass centre where the cusp spokes and axes converge -->
+  <circle cx={CX} cy={CY} r="2.6" class="engrave-strong hub-dot" />
 
   {#each signBands as band (band.s.id)}
-    <path d={band.d} class="wash wash-{band.s.element}" />
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <path
-      d={band.d}
-      class="sign-band"
+    <g
+      class="sign"
       class:sel={selected.has(band.s.id)}
+      class:focus={focusTag === band.s.id}
+      class:rel={related.has(band.s.id)}
       role="button"
-      tabindex={chartView ? 0 : -1}
+      tabindex="0"
       aria-label="{band.s.name} — {band.s.element}"
       onclick={() => toggle(band.s.id)}
       onmouseenter={() => peek(band.s.id)}
@@ -167,20 +225,27 @@
       onfocus={() => peek(band.s.id)}
       onblur={unpeek}
       onkeydown={pinKey(band.s.id)}
-    ><title>{band.s.name} — {band.s.element}</title></path>
-    <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
-      >{textGlyph(band.s.glyph)}</text
     >
+      <path d={band.d} class="wash wash-{band.s.element}" />
+      <path d={band.d} class="sign-band"><title>{band.s.name} — {band.s.element}</title></path>
+      {#if band.bar}
+        <path d={band.bar} class="dens-bar"><title>{band.w} {band.w === 1 ? "passage" : "passages"} · {band.s.name}</title></path>
+      {/if}
+      <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
+        >{textGlyph(band.s.glyph)}</text
+      >
+    </g>
   {/each}
 
   {#each houseWedges as w (w.h.id)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <path
-      d={w.d}
-      class="house-wedge"
+    <g
+      class="house"
       class:sel={selected.has(w.h.id)}
+      class:focus={focusTag === w.h.id}
+      class:rel={related.has(w.h.id)}
       role="button"
-      tabindex={chartView ? 0 : -1}
+      tabindex="0"
       aria-label={w.h.name}
       onclick={() => toggle(w.h.id)}
       onmouseenter={() => peek(w.h.id)}
@@ -188,9 +253,11 @@
       onfocus={() => peek(w.h.id)}
       onblur={unpeek}
       onkeydown={pinKey(w.h.id)}
-    ><title>{w.h.name}</title></path>
-    <line x1={w.spoke.x1} y1={w.spoke.y1} x2={w.spoke.x2} y2={w.spoke.y2} class="cusp-spoke" />
-    <text x={w.lx} y={w.ly} class="house-label" text-anchor="middle" dominant-baseline="central">{w.h.label}</text>
+    >
+      <path d={w.d} class="house-wedge"><title>{w.h.name}</title></path>
+      <line x1={w.spoke.x1} y1={w.spoke.y1} x2={w.spoke.x2} y2={w.spoke.y2} class="cusp-spoke" />
+      <text x={w.lx} y={w.ly} class="house-label" text-anchor="middle" dominant-baseline="central">{w.h.label}</text>
+    </g>
   {/each}
 
   {#each axes as ax (ax.label)}
@@ -198,13 +265,21 @@
     <text x={ax.tx} y={ax.ty} class="axis-label" text-anchor="middle" dominant-baseline="central">{ax.label}</text>
   {/each}
 
+  <!-- selector pointer — an armillary index that eases onto the focus -->
+  <g class="pointer" class:on={focusLon !== null} style="transform: rotate({pointerDeg}deg); transform-origin: {CX}px {CY}px;" aria-hidden="true">
+    <line x1={CX} y1={CY - R.hub - 6} x2={CX} y2={CY - R.gradIn + 10} class="pointer-line" />
+    <path d="M{CX} {CY - R.gradIn + 2} l-4 8 l8 0 z" class="pointer-head" />
+  </g>
+
   {#each chords as c (c.a.id)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <g
       class="aspect"
       class:sel={selected.has(c.a.id)}
+      class:focus={focusTag === c.a.id}
+      class:rel={related.has(c.a.id)}
       role="button"
-      tabindex={chartView ? 0 : -1}
+      tabindex="0"
       onclick={() => toggle(c.a.id)}
       onmouseenter={() => peek(c.a.id)}
       onmouseleave={unpeek}
@@ -224,8 +299,10 @@
       class="planet"
       style="--d: {520 + i * 55}ms"
       class:sel={selected.has(pl.p.id)}
+      class:focus={focusTag === pl.p.id}
+      class:rel={related.has(pl.p.id)}
       role="button"
-      tabindex={chartView ? 0 : -1}
+      tabindex="0"
       onclick={() => toggle(pl.p.id)}
       onmouseenter={() => peek(pl.p.id)}
       onmouseleave={unpeek}
@@ -265,6 +342,32 @@
   .grad {
     stroke: var(--line);
   }
+  /* --- passage-density track --- */
+  .dens-ring {
+    stroke: var(--line);
+    fill: none;
+  }
+  .dens-bar {
+    fill: var(--ink-a12);
+    stroke: var(--hairline);
+    stroke-width: 0.5;
+    pointer-events: auto;
+    cursor: pointer;
+    transition: fill var(--dur-base) var(--ease-out-quint);
+  }
+  .sign:hover .dens-bar,
+  .sign:focus-visible .dens-bar,
+  .sign.focus .dens-bar,
+  .sign.sel .dens-bar {
+    fill: var(--verdigris-wash);
+    stroke: var(--verdigris);
+  }
+  /* --- drift ring (decorative) --- */
+  .drift-star {
+    fill: var(--ink-3);
+    font-size: 8px;
+    opacity: 0.5;
+  }
   /* element washes — hand-tinted plates; whisper, never shout */
   .wash {
     pointer-events: none;
@@ -281,8 +384,17 @@
   .wash-water {
     fill: var(--wash-water);
   }
-  .hub-ray {
-    stroke: var(--line);
+  /* --- signs --- */
+  /* keyboard focus is shown by each element's own engraved indicator (wash,
+     halo, chord) plus the .focus spotlight — never a stray UA box */
+  .sign,
+  .house,
+  .aspect,
+  .planet {
+    outline: none;
+  }
+  .sign {
+    cursor: pointer;
   }
   .sign-band {
     fill: transparent;
@@ -292,13 +404,14 @@
       fill var(--dur-base) var(--ease-out-quint),
       stroke var(--dur-base) var(--ease-out-quint);
   }
-  .sign-band:hover,
-  .sign-band:focus-visible {
+  .sign:hover .sign-band,
+  .sign:focus-visible .sign-band,
+  .sign.focus .sign-band,
+  .sign.rel .sign-band {
     fill: var(--verdigris-wash);
-    outline: none;
   }
-  .sign-band.sel {
-    fill: var(--verdigris-wash);
+  .sign.focus .sign-band,
+  .sign.sel .sign-band {
     stroke: var(--verdigris);
   }
   .sign-glyph {
@@ -307,17 +420,19 @@
     font-size: 21px;
     pointer-events: none;
   }
+  /* --- houses --- */
+  .house {
+    cursor: pointer;
+  }
   .house-wedge {
     fill: transparent;
-    cursor: pointer;
     transition: fill var(--dur-base) var(--ease-out-quint);
   }
-  .house-wedge:hover,
-  .house-wedge:focus-visible {
-    fill: var(--steel-wash);
-    outline: none;
-  }
-  .house-wedge.sel {
+  .house:hover .house-wedge,
+  .house:focus-visible .house-wedge,
+  .house.focus .house-wedge,
+  .house.rel .house-wedge,
+  .house.sel .house-wedge {
     fill: var(--steel-wash);
   }
   .house-label {
@@ -325,9 +440,14 @@
     font-size: 13px;
     letter-spacing: 0.08em;
     pointer-events: none;
+    transition: fill var(--dur-base) var(--ease-out-quint);
+  }
+  .house.focus .house-label {
+    fill: var(--ink);
   }
   .cusp-spoke {
     stroke: var(--line);
+    pointer-events: none;
   }
   .axis {
     stroke: var(--hairline);
@@ -338,6 +458,31 @@
     font-size: 12px;
     letter-spacing: 0.1em;
   }
+  /* --- selector pointer --- */
+  .pointer {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .pointer.on {
+    opacity: 1;
+  }
+  .pointer-line {
+    stroke: var(--brass);
+    stroke-width: 1;
+    opacity: 0.55;
+  }
+  .pointer-head {
+    fill: var(--brass);
+    opacity: 0.7;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .pointer {
+      transition:
+        transform var(--dur-slow) var(--ease-out-quint),
+        opacity var(--dur-base) var(--ease-out-quint);
+    }
+  }
+  /* --- planets --- */
   .planet {
     cursor: pointer;
   }
@@ -362,17 +507,18 @@
       stroke var(--dur-base) var(--ease-out-quint);
   }
   .planet:hover .halo,
-  .planet:focus-visible .halo {
+  .planet:focus-visible .halo,
+  .planet.focus .halo,
+  .planet.rel .halo {
     stroke: var(--brass-halo);
   }
-  .planet:focus-visible {
-    outline: none;
-  }
+  .planet.focus .halo,
   .planet.sel .halo {
     fill: var(--brass-wash);
     stroke: var(--brass);
   }
-  /* the pinned body glows: a faint brass bloom, engraved not neon */
+  /* the pinned/focused body glows: a faint brass bloom, engraved not neon */
+  .planet.focus .glyph,
   .planet.sel .glyph {
     filter: drop-shadow(0 0 3px var(--brass-halo));
   }
@@ -400,41 +546,65 @@
     cursor: pointer;
   }
   .aspect:hover .chord,
-  .aspect:focus-visible .chord {
-    opacity: 1;
-    stroke-width: 2.2;
+  .aspect:focus-visible .chord,
+  .aspect.rel .chord {
+    opacity: 0.95;
+    stroke-width: 2;
   }
-  .aspect:focus-visible {
-    outline: none;
+  .aspect.focus .chord {
+    opacity: 1;
+    stroke-width: 2.6;
   }
   .aspect.sel .chord {
     opacity: 1;
     stroke-width: 3;
   }
 
+  /* Spotlight: while one element is focused, everything unrelated (and not
+     pinned) recedes so the relations read at a glance. Kept gentle — labels
+     stay legible, and keyboard focus still lands on a clear target. */
+  .sign,
+  .house,
+  .aspect,
+  .planet {
+    transition: opacity var(--dur-base) var(--ease-out-quint);
+  }
+  svg.focusing .sign:not(.focus):not(.rel):not(.sel),
+  svg.focusing .house:not(.focus):not(.rel):not(.sel),
+  svg.focusing .aspect:not(.focus):not(.rel):not(.sel),
+  svg.focusing .planet:not(.focus):not(.rel):not(.sel) {
+    opacity: 0.42;
+  }
+
   /* Entrance choreography — the plate draws itself, then settles inward:
      rings ink in from the hub, the apparatus fades up, planets arrive one by
      one, aspect chords last. Mirrors templates/reading.html. Runs once on the
-     wheel's mount (the component persists across the reading/chart toggle). */
+     wheel's mount (the component persists across view changes). */
   @media (prefers-reduced-motion: no-preference) {
-    .ring {
+    .ring,
+    .dens-ring {
       stroke-dasharray: 1;
       stroke-dashoffset: 1;
       animation: ring-draw 0.9s var(--ease-out-quint) forwards;
       animation-delay: var(--d);
     }
     .grad,
-    .hub-ray,
     .wash,
     .sign-band,
     .sign-glyph,
+    .dens-bar,
     .house-wedge,
     .house-label,
     .cusp-spoke,
     .axis,
-    .axis-label {
+    .axis-label,
+    .hub-dot,
+    .drift-star {
       opacity: 0;
       animation: fade-in var(--dur-slow) var(--ease-out-quint) 0.45s forwards;
+    }
+    .drift-star {
+      animation-delay: 1.1s;
     }
     .planet {
       opacity: 0;
@@ -445,6 +615,19 @@
       opacity: 0;
       animation: fade-in var(--dur-slow) var(--ease-out-quint) 1.05s forwards;
     }
+    /* the drift ring turns slowly, forever — a living orrery */
+    .drift {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: drift-spin var(--dur-orrery) linear infinite;
+    }
+  }
+  /* fade-in must not clobber the spotlight opacity once settled */
+  svg.focusing .sign:not(.focus):not(.rel):not(.sel),
+  svg.focusing .house:not(.focus):not(.rel):not(.sel),
+  svg.focusing .aspect:not(.focus):not(.rel):not(.sel),
+  svg.focusing .planet:not(.focus):not(.rel):not(.sel) {
+    animation: none;
   }
   @keyframes ring-draw {
     to {
@@ -464,6 +647,11 @@
     to {
       opacity: 1;
       transform: translateY(0);
+    }
+  }
+  @keyframes drift-spin {
+    to {
+      transform: rotate(360deg);
     }
   }
 </style>
