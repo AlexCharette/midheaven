@@ -55,7 +55,8 @@ fn transcript_to_artifact() {
     let source = TranscriptSource::File(
         concat!(env!("CARGO_MANIFEST_DIR"), "/examples/transcript.jsonl").into(),
     );
-    let (via_lib, n_routed) = build_reading(&input, source, |_| {}).expect("build_reading");
+    let (via_lib, report) = build_reading(&input, source, |_| {}).expect("build_reading");
     assert_eq!(via_lib.excerpts.len(), chart.excerpts.len());
-    assert_eq!(n_routed, 9, "router emits sentence-level spans before coalescing");
+    assert_eq!(report.n_routed, 9, "router emits sentence-level spans before coalescing");
+    assert!(report.warnings.is_empty(), "clean chart routes without warnings: {:?}", report.warnings);
 }

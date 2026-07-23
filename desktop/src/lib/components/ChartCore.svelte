@@ -2,14 +2,12 @@
   import type { ChartData } from "$lib/types";
   import { catOf, degInSign, planetById, signAt, textGlyph } from "$lib/types";
   import { excerptsMatching, focusedTag } from "$lib/state.svelte";
+  import { swapDuration } from "$lib/motion";
   import { fade } from "svelte/transition";
 
   let { chart }: { chart: ChartData } = $props();
 
-  const reduceMotion =
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const coreSwap = { duration: reduceMotion ? 0 : 200 };
+  const coreSwap = { duration: swapDuration() };
 
   // The hub reads out the focused element (a pin locks it, else the hovered
   // one); with nothing focused the centre stays clear and only the corner

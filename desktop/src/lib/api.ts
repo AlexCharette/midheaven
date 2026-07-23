@@ -25,6 +25,11 @@ export const savePdf = (path: string) => invoke<string>("save_pdf", { path });
 export const onTranscribeProgress = (handler: (pct: number) => void) =>
   listen<number>("transcribe-progress", (e) => handler(e.payload));
 
+/** Non-fatal build/routing warnings the backend used to write to stderr
+ * (DST-ambiguous birth time, Verify-gate rejections). */
+export const onBuildWarnings = (handler: (warnings: string[]) => void) =>
+  listen<string[]>("build-warnings", (e) => handler(e.payload));
+
 export const startRecording = (model: string) =>
   invoke<void>("start_recording", { model });
 

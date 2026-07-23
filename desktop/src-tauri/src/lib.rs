@@ -235,8 +235,8 @@ async fn build(
     #[cfg(desktop)]
     let progress_app = app.clone();
     type Persisted = Option<(String, String)>; // (filename, contents) for the library
-    let (mut chart, transcript_file) = tauri::async_runtime::spawn_blocking(
-        move || -> Result<(ChartData, Persisted), String> {
+    let (mut chart, transcript_file, warnings) = tauri::async_runtime::spawn_blocking(
+        move || -> Result<(ChartData, Persisted, Vec<String>), String> {
             let (transcript, persisted): (Option<Transcript>, Persisted) = match source {
                 TranscriptSource::None => (None, None),
                 TranscriptSource::File(path) => {
@@ -258,16 +258,22 @@ async fn build(
                     )
                 }
             };
-            let mut chart = astro::chart::compute_chart(&input)?;
+            let (mut chart, mut warnings) = astro::chart::compute_chart_reporting(&input)?;
             if let Some(t) = &transcript {
                 let router = lexicon_for(&chart);
-                index_transcript(&mut chart, t, &router);
+                warnings.extend(index_transcript(&mut chart, t, &router).warnings);
             }
-            Ok((chart, persisted))
+            Ok((chart, persisted, warnings))
         },
     )
     .await
     .map_err(|e| format!("build task failed: {e}"))??;
+
+    // Surface non-fatal warnings (DST-ambiguous birth time, Verify-gate
+    // rejections) the pipeline used to write to stderr; the webview toasts them.
+    if !warnings.is_empty() {
+        let _ = app.emit("build-warnings", &warnings);
+    }
 
     // Practitioner branding rides on the chart's meta (and thus into both
     // chart.json and the engraved artifact). Both best-effort.
@@ -371,7 +377,7 @@ async fn stop_recording(
     // corrections) survives every stop.
     let jsonl = astro::transcribe::to_jsonl(&segments);
     let take = Transcript::from_segments(segments);
-    append_transcript(chart, &take, &lexicon_for(chart));
+    let warnings = append_transcript(chart, &take, &lexicon_for(chart)).warnings;
 
     // library auto-save: the take's transcription (session-offset anchors,
     // matching the folio) and the refreshed chart
@@ -380,6 +386,9 @@ async fn stop_recording(
         let path = dir.join(format!("take-{}.jsonl", inner.takes));
         std::fs::write(&path, jsonl).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
         save_chart_json(dir, chart)?;
+    }
+    if !warnings.is_empty() {
+        let _ = app.emit("build-warnings", &warnings);
     }
     Ok(chart.clone())
 }

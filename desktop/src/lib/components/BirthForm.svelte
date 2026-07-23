@@ -1,17 +1,15 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { build, getPreferences, searchPlaces } from "$lib/api";
-  import { app, locales, notify } from "$lib/state.svelte";
+  import { app, isBusy, locales, notify } from "$lib/state.svelte";
   import Library from "./Library.svelte";
   import Preferences from "./Preferences.svelte";
   import WheelMark from "./WheelMark.svelte";
   import type { PlaceDto } from "$lib/types";
+  import { swapDuration } from "$lib/motion";
   import { fade } from "svelte/transition";
 
-  const reduceMotion =
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const swap = { duration: reduceMotion ? 0 : 200 };
+  const swap = { duration: swapDuration() };
 
   let name = $state("");
   let date = $state("");
@@ -93,7 +91,7 @@
       error = "pick a place from the suggestions";
       return;
     }
-    app.busy = "compute";
+    app.busy = { kind: "compute" };
     try {
       app.chart = await build({
         name,
@@ -114,7 +112,7 @@
     } catch (e) {
       error = String(e);
     } finally {
-      app.busy = false;
+      app.busy = { kind: "idle" };
     }
   }
 </script>
@@ -196,18 +194,18 @@
     {#if error}<p class="error">✗ {error}</p>{/if}
 
     <div class="actions">
-      <button type="submit" class="frame-btn compute" disabled={app.busy !== false}>
-        {#if typeof app.busy === "number"}
-          transcribing… {app.busy}%
-        {:else if app.busy === "compute"}
+      <button type="submit" class="frame-btn compute" disabled={isBusy()}>
+        {#if app.busy.kind === "transcribe"}
+          transcribing… {app.busy.pct}%
+        {:else if app.busy.kind === "compute"}
           computing the chart…
         {:else}
           compute the chart
         {/if}
       </button>
     </div>
-    {#if typeof app.busy === "number"}
-      <div class="bar"><div class="fill" style="width: {app.busy}%"></div></div>
+    {#if app.busy.kind === "transcribe"}
+      <div class="bar"><div class="fill" style="width: {app.busy.pct}%"></div></div>
     {/if}
 
     <p class="prefs-line">

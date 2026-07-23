@@ -4,11 +4,18 @@ import { SvelteSet } from "svelte/reactivity";
 import { listLocales } from "./api";
 import type { ChartData, Excerpt, LocaleDto } from "./types";
 
+/** What the app is doing: idle, a synchronous chart build, or transcription at
+ * a whole-percent progress. One discriminated shape so consumers ask `isBusy()`
+ * and read `.pct` only in the transcribe case — no `typeof`/`!== false` probing. */
+export type Busy =
+  | { kind: "idle" }
+  | { kind: "compute" }
+  | { kind: "transcribe"; pct: number };
+
 export const app = $state({
   chart: null as ChartData | null,
   mode: "any" as "any" | "all",
-  /** false = idle · "compute" = fast build · number = transcription percent. */
-  busy: false as false | "compute" | number,
+  busy: { kind: "idle" } as Busy,
   /** The form's whisper-model path; a non-empty value enables live recording. */
   model: "",
   /** Whether the Index of Elements legend is expanded. Folded by default so the
@@ -21,6 +28,11 @@ export const app = $state({
 });
 
 export const selected = new SvelteSet<string>();
+
+/** Whether any operation is in flight (a build or a transcription). */
+export function isBusy(): boolean {
+  return app.busy.kind !== "idle";
+}
 
 /** Reading languages offered in the UI, fetched once from the backend
  * (`list_locales`, sourced from `i18n::Locale`): endonym labels for the

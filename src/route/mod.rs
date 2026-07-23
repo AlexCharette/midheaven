@@ -26,6 +26,15 @@ pub trait Router {
     fn route(&self, transcript: &Transcript) -> Vec<RawExcerpt>;
 }
 
+/// What routing a transcript produced, apart from the passages themselves:
+/// how many spans the router emitted before gating, and any provenance
+/// warnings (spans/tags the Verify gate rejected) for a frontend to surface.
+#[derive(Debug, Default)]
+pub struct RouteReport {
+    pub n_routed: usize,
+    pub warnings: Vec<String>,
+}
+
 /// The default router for a chart — the one place its configuration lives.
 /// The router matches in the chart's own language (`meta.locale`), so routing
 /// a reloaded `chart.json` re-tags in the language it was read in.
@@ -35,28 +44,30 @@ pub fn lexicon_for(chart: &crate::contract::ChartData) -> LexiconRouter {
 }
 
 /// The one gated path from router output to passages: route → Verify gate →
-/// coalesce. Returns the passages and the raw span count (before gating).
+/// coalesce. Returns the passages and a [`RouteReport`] (raw span count +
+/// rejection warnings).
 pub fn route_excerpts(
     chart: &crate::contract::ChartData,
     transcript: &Transcript,
     router: &dyn Router,
-) -> (Vec<crate::contract::Excerpt>, usize) {
+) -> (Vec<crate::contract::Excerpt>, RouteReport) {
     let vocab = chart.vocab();
     let raw = router.route(transcript);
     let n_routed = raw.len();
-    (coalesce(verify_gate(transcript, raw, &vocab), transcript), n_routed)
+    let (accepted, warnings) = verify_gate(transcript, raw, &vocab);
+    (coalesce(accepted, transcript), RouteReport { n_routed, warnings })
 }
 
 /// Route a transcript into `chart.excerpts`, replacing them. Returns the
-/// number of spans the router emitted (before gating).
+/// [`RouteReport`] (span count + any Verify-gate warnings).
 pub fn index_transcript(
     chart: &mut crate::contract::ChartData,
     transcript: &Transcript,
     router: &dyn Router,
-) -> usize {
-    let (excerpts, n_routed) = route_excerpts(chart, transcript, router);
+) -> RouteReport {
+    let (excerpts, report) = route_excerpts(chart, transcript, router);
     chart.excerpts = excerpts;
-    n_routed
+    report
 }
 
 /// Route an additional transcript (e.g. a live take) and append its passages
@@ -65,11 +76,11 @@ pub fn append_transcript(
     chart: &mut crate::contract::ChartData,
     transcript: &Transcript,
     router: &dyn Router,
-) -> usize {
-    let (mut excerpts, n_routed) = route_excerpts(chart, transcript, router);
+) -> RouteReport {
+    let (mut excerpts, report) = route_excerpts(chart, transcript, router);
     renumber(&mut excerpts, next_ordinal(&chart.excerpts));
     chart.excerpts.extend(excerpts);
-    n_routed
+    report
 }
 
 /// The next free `x{n}` ordinal — gap-aware (curation merges and deletions
@@ -87,7 +98,7 @@ pub fn next_ordinal(excerpts: &[crate::contract::Excerpt]) -> usize {
 /// through the same gated path as everything else.
 pub fn retag(chart: &crate::contract::ChartData, text: &str) -> Vec<String> {
     let transcript = Transcript::load(text);
-    let (excerpts, _) = route_excerpts(chart, &transcript, &lexicon_for(chart));
+    let (excerpts, _report) = route_excerpts(chart, &transcript, &lexicon_for(chart));
     let mut tags: Vec<String> = excerpts.into_iter().flat_map(|e| e.tags).collect();
     tags.sort();
     tags.dedup();

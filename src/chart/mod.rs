@@ -16,9 +16,6 @@ use xalen_time::{
     CalendarSystem, DAYS_PER_JULIAN_CENTURY, DeltaTModel, J2000_JD, JdUT1, calendar_to_jd,
 };
 
-/// The persona used when no name is given.
-pub const DEFAULT_NAME: &str = "Anonymous";
-
 pub struct BirthInput {
     pub name: String,
     pub date: NaiveDate,
@@ -51,15 +48,18 @@ pub fn parse_time(s: &str) -> Result<NaiveTime, String> {
 }
 
 /// The spine: each stage is a named step; the data flows top to bottom.
-pub fn compute_chart(input: &BirthInput) -> Result<ChartData, String> {
+/// Returns the chart plus any non-fatal warnings (e.g. a DST-ambiguous birth
+/// time) for the caller to surface. [`compute_chart`] is the common form that
+/// drops them.
+pub fn compute_chart_reporting(input: &BirthInput) -> Result<(ChartData, Vec<String>), String> {
     let loc = input.locale;
-    let jd_ut1 = birth_moment(input)?;
+    let (jd_ut1, warning) = birth_moment(input)?;
     let cusps = natal_houses(jd_ut1, input.lat, input.lon)?;
     let mut planets = planet_positions(jd_ut1, &cusps, loc)?;
     let aspects = detect_aspects(&planets, loc);
     let asc = norm360(cusps.ascendant.to_degrees());
     planets.push(ascendant_point(asc, loc));
-    Ok(ChartData {
+    let chart = ChartData {
         meta: birth_meta(input),
         axes: Axes { asc, mc: norm360(cusps.mc.to_degrees()) },
         house_cusps: (0..12).map(|i| cusps.cusp_deg(i)).collect(),
@@ -68,17 +68,28 @@ pub fn compute_chart(input: &BirthInput) -> Result<ChartData, String> {
         houses: house_refs(loc),
         aspects,
         excerpts: Vec::new(),
-    })
+    };
+    Ok((chart, warning.into_iter().collect()))
+}
+
+/// Compute the chart, dropping any non-fatal warnings — the common form used
+/// by `astro chart` and tests. Pipeline entry points that surface warnings use
+/// [`compute_chart_reporting`].
+pub fn compute_chart(input: &BirthInput) -> Result<ChartData, String> {
+    compute_chart_reporting(input).map(|(chart, _)| chart)
 }
 
 /// The birth instant, resolved: local civil time → UTC (via the historical
-/// IANA tz database) → the UT1 Julian Day the astronomy runs on.
-fn birth_moment(input: &BirthInput) -> Result<JdUT1, String> {
+/// IANA tz database) → the UT1 Julian Day the astronomy runs on. Returns a
+/// warning (not stderr) when the civil time is DST-ambiguous.
+fn birth_moment(input: &BirthInput) -> Result<(JdUT1, Option<String>), String> {
     let naive = input.date.and_time(input.time);
+    let mut warning = None;
     let local = match input.tz.from_local_datetime(&naive) {
         chrono::LocalResult::Single(dt) => dt,
         chrono::LocalResult::Ambiguous(early, _) => {
-            eprintln!("warning: {naive} is ambiguous in {} (DST fold); using earlier offset", input.tz);
+            warning =
+                Some(format!("{naive} is ambiguous in {} (DST fold); using the earlier offset", input.tz));
             early
         }
         chrono::LocalResult::None => {
@@ -95,7 +106,7 @@ fn birth_moment(input: &BirthInput) -> Result<JdUT1, String> {
         frac_hour,
         CalendarSystem::ProlepticGregorian,
     );
-    Ok(jd_ut1)
+    Ok((jd_ut1, warning))
 }
 
 /// Whole Sign cusps and angles for the birth place, using the mean obliquity

@@ -1,6 +1,6 @@
-use astro::chart::{BirthInput, compute_chart, parse_time};
+use astro::chart::{BirthInput, compute_chart_reporting, parse_time};
 use astro::i18n::Locale;
-use astro::{TranscriptSource, build_reading, emit, geo};
+use astro::{ClassifyError, TranscriptSource, build_reading, emit, geo};
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -67,8 +67,9 @@ enum Command {
 
 #[derive(Args)]
 struct BirthArgs {
-    /// Name shown on the chart.
-    #[arg(long, default_value = astro::chart::DEFAULT_NAME)]
+    /// Name shown on the chart. Blank falls back to the locale's anonymous
+    /// persona (the same default every frontend uses).
+    #[arg(long, default_value = "")]
     name: String,
     /// Reading language: en or ru. Drives element names and the router's
     /// match terms (and, for --audio, the whisper language hint).
@@ -102,28 +103,32 @@ struct BirthArgs {
 }
 
 impl BirthArgs {
-    fn into_input(self) -> Result<BirthInput, String> {
+    /// Build the birth input. Returns the input plus an optional place-resolution
+    /// notice for the caller to print — resolution stays a pure conversion, the
+    /// CLI presentation lives in `run`.
+    fn into_input(self) -> Result<(BirthInput, Option<String>), String> {
         let time = parse_time(&self.time)?;
 
+        let mut notice = None;
         let resolved: Option<&'static geo::Place> = if let Some(id) = self.place_id {
             Some(geo::by_id(id).ok_or(format!("no place with geonames id {id}"))?)
         } else if let Some(query) = &self.place {
             match geo::resolve(query) {
                 geo::Resolution::Match(p) => {
-                    eprintln!(
+                    notice = Some(format!(
                         "place: {} → {:.4}{} {:.4}{} · {}",
                         p.label(),
                         p.lat.abs(), if p.lat >= 0.0 { "N" } else { "S" },
                         p.lon.abs(), if p.lon >= 0.0 { "E" } else { "W" },
                         p.tz
-                    );
+                    ));
                     Some(p)
                 }
                 geo::Resolution::Ambiguous(candidates) => {
-                    eprintln!("--place {query:?} is ambiguous; candidates:");
-                    print_places(&candidates);
                     return Err(format!(
-                        "narrow it with a qualifier (e.g. --place \"{query}, {}\") or use --place-id",
+                        "--place {query:?} is ambiguous; candidates:\n{}narrow it with a \
+                         qualifier (e.g. --place \"{query}, {}\") or use --place-id",
+                        format_places(&candidates),
                         candidates[0].cc.to_lowercase()
                     ));
                 }
@@ -138,11 +143,15 @@ impl BirthArgs {
             None
         };
 
+        let locale = Locale::parse(&self.lang);
+        let name = self.name.trim();
+        let name = if name.is_empty() { locale.anonymous().to_string() } else { name.to_string() };
+
         let field = |manual: Option<f64>, from_place: Option<f64>, flag: &str| {
             manual.or(from_place).ok_or(format!("--{flag} is required unless --place/--place-id is given"))
         };
-        Ok(BirthInput {
-            name: self.name,
+        let input = BirthInput {
+            name,
             date: self.date,
             time,
             lat: field(self.lat, resolved.map(|p| p.lat), "lat")?,
@@ -155,8 +164,9 @@ impl BirthArgs {
                 .place_label
                 .or(resolved.map(|p| p.label()))
                 .unwrap_or_default(),
-            locale: Locale::parse(&self.lang),
-        })
+            locale,
+        };
+        Ok((input, notice))
     }
 }
 
@@ -173,52 +183,71 @@ fn cli_progress(pct: i32) {
     }
 }
 
-fn print_places(places: &[&geo::Place]) {
+fn format_places(places: &[&geo::Place]) -> String {
+    let mut out = String::new();
     for (i, p) in places.iter().enumerate() {
-        eprintln!(
-            "  {:>2}. {:<40} {:>9.4} {:>9.4}  {:<22} id {}",
+        out.push_str(&format!(
+            "  {:>2}. {:<40} {:>9.4} {:>9.4}  {:<22} id {}\n",
             i + 1,
             p.label(),
             p.lat,
             p.lon,
             p.tz.to_string(),
             p.id
-        );
+        ));
     }
+    out
+}
+
+fn print_places(places: &[&geo::Place]) {
+    eprint!("{}", format_places(places));
 }
 
 fn run() -> Result<(), String> {
     match Cli::parse().command {
         Command::Chart(birth) => {
-            let input = birth.into_input()?;
-            let chart = compute_chart(&input)?;
+            let (input, notice) = birth.into_input()?;
+            if let Some(notice) = notice {
+                eprintln!("{notice}");
+            }
+            let (chart, warnings) = compute_chart_reporting(&input)?;
+            for w in &warnings {
+                eprintln!("warning: {w}");
+            }
             println!("{}", serde_json::to_string_pretty(&chart).map_err(|e| e.to_string())?);
         }
         Command::Build { birth, transcript, audio, model, out, pdf, page_size } => {
             let page_size = astro::pdf::PageSize::parse(&page_size)?;
-            let input = birth.into_input()?;
-            let source = match (transcript, audio) {
-                (Some(path), _) => TranscriptSource::File(path),
-                (None, Some(wav)) => {
-                    let Some(model) = model else {
-                        return Err("--audio requires --model".into());
-                    };
-                    transcription_banner(&wav);
-                    TranscriptSource::Audio { wav, model }
-                }
-                (None, None) => TranscriptSource::None, // clap prevents this
+            let (input, notice) = birth.into_input()?;
+            if let Some(notice) = notice {
+                eprintln!("{notice}");
+            }
+            // clap guarantees exactly one of --transcript / --audio is present
+            // (required_unless_present + conflicts_with), and --audio requires
+            // --model, so the model-missing arm mirrors ClassifyError.
+            let source = if let Some(path) = transcript {
+                TranscriptSource::File(path)
+            } else if let Some(wav) = audio {
+                let model = model.ok_or_else(|| ClassifyError::ModelRequired.to_string())?;
+                transcription_banner(&wav);
+                TranscriptSource::Audio { wav, model }
+            } else {
+                unreachable!("clap requires --transcript or --audio")
             };
-            let (chart, n_routed) = build_reading(&input, source, cli_progress)?;
+            let (chart, report) = build_reading(&input, source, cli_progress)?;
             emit::write_artifact(&chart, &out)?;
             if let Some(pdf_out) = pdf {
                 astro::pdf::write_pdf(&chart, page_size, &pdf_out)?;
                 eprintln!("wrote {}", pdf_out.display());
             }
+            for w in &report.warnings {
+                eprintln!("warning: {w}");
+            }
             eprintln!(
                 "chart: {} planets, {} aspects · router: {} spans → {} excerpts past verify gate",
                 chart.planets.len(),
                 chart.aspects.len(),
-                n_routed,
+                report.n_routed,
                 chart.excerpts.len()
             );
             eprintln!("wrote {}", out.display());

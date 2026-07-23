@@ -3,13 +3,14 @@
   import {
     artifactFilename,
     getPreferences,
+    onBuildWarnings,
     onTranscribeProgress,
     saveArtifact,
     savePdf,
     startRecording,
     stopRecording,
   } from "$lib/api";
-  import { app, excerptsMatching, loadLocales, notify, selected, visibleExcerpts } from "$lib/state.svelte";
+  import { app, excerptsMatching, isBusy, loadLocales, notify, selected, visibleExcerpts } from "$lib/state.svelte";
   import BirthForm from "$lib/components/BirthForm.svelte";
   import ChartCore from "$lib/components/ChartCore.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
@@ -45,10 +46,13 @@
         .catch(() => {});
     }
     const unlisten = onTranscribeProgress((pct) => {
-      if (app.busy !== false) app.busy = pct;
+      if (isBusy()) app.busy = { kind: "transcribe", pct };
     });
+    // Warnings the pipeline used to write to stderr now surface as toasts.
+    const unlistenWarn = onBuildWarnings((ws) => ws.forEach((w) => notify(w)));
     return () => {
       unlisten.then((f) => f());
+      unlistenWarn.then((f) => f());
     };
   });
 
@@ -74,7 +78,7 @@
     }
     clearInterval(recTimer);
     recording = false;
-    app.busy = "compute";
+    app.busy = { kind: "compute" };
     notify("routing the recording…");
     try {
       app.chart = await stopRecording();
@@ -82,7 +86,7 @@
     } catch (e) {
       notify(`${e}`, "error");
     } finally {
-      app.busy = false;
+      app.busy = { kind: "idle" };
     }
   }
 
@@ -157,12 +161,12 @@
           class="frame-btn rec"
           class:on={recording}
           onclick={toggleRecording}
-          disabled={!recording && app.busy !== false}
+          disabled={!recording && isBusy()}
         >
           {#if recording}
             <span class="dot" aria-hidden="true"></span> stop transcribing · {mmss(recSecs)}
-          {:else if typeof app.busy === "number"}
-            transcribing… {app.busy}%
+          {:else if app.busy.kind === "transcribe"}
+            transcribing… {app.busy.pct}%
           {:else}
             ◉ begin transcribing
           {/if}
