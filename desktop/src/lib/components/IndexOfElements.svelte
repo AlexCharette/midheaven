@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
   import { catOf, degInSign, planetById, signAt, textGlyph } from "$lib/types";
-  import { selected, toggle } from "$lib/state.svelte";
+  import { app, selected, toggle } from "$lib/state.svelte";
 
   let { chart }: { chart: ChartData } = $props();
 
@@ -69,8 +69,16 @@
   ]);
 </script>
 
-<h2 class="rubric">Index of Elements</h2>
-<div class="index">
+<details class="index-fold" bind:open={app.indexOpen}>
+  <summary class="rubric index-summary">
+    <span class="head-group">
+      <span class="lbl">Index of Elements</span>
+      <span class="caret" aria-hidden="true">
+        <svg width="11" height="7" viewBox="0 0 11 7"><path d="M1 1.2 L5.5 5.5 L10 1.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </span>
+  </summary>
+  <div class="index">
   {#each columns as col (col.head)}
     {@const filtering = col.filterable && !expanded[col.head]}
     {@const shown = filtering
@@ -93,9 +101,42 @@
       {/if}
     </div>
   {/each}
-</div>
+  </div>
+</details>
 
 <style>
+  /* the whole index folds away to hand the commentary the full panel */
+  .index-summary {
+    cursor: pointer;
+    list-style: none;
+  }
+  .index-summary::-webkit-details-marker {
+    display: none;
+  }
+  .index-summary:focus-visible {
+    outline: 1px dashed var(--hairline);
+    outline-offset: 3px;
+  }
+  .head-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+  .index-summary .caret {
+    display: inline-flex;
+    color: var(--ink-3);
+  }
+  .index-fold:not([open]) .index-summary {
+    margin-bottom: 0.4rem;
+  }
+  .index-fold:not([open]) .index-summary .caret {
+    transform: rotate(-90deg);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .index-summary .caret {
+      transition: transform var(--dur-fast) var(--ease-out-quint);
+    }
+  }
   .index {
     display: grid;
     grid-template-columns: 1.05fr 0.95fr 0.9fr 1.45fr;

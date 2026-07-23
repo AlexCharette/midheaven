@@ -12,6 +12,8 @@ export const app = $state({
   model: "",
   /** Layout: the document reading vs the chart-centric hover view. */
   view: "reading" as "reading" | "chart",
+  /** Whether the Index of Elements is expanded (persists across view toggles). */
+  indexOpen: true,
   /** The tag under the pointer/focus in chart view — a transient preview,
    * distinct from the pinned `selected` set. Null outside chart view. */
   hovered: null as string | null,
