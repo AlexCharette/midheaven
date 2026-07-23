@@ -22,14 +22,14 @@
 </div>
 
 <style>
-  /* Above the fixed tools footer (z-index 40); a document-scale stack that
-     never intercepts clicks except on a toast itself. */
+  /* Above the fixed tools footer; a document-scale stack that never
+     intercepts clicks except on a toast itself. */
   .toaster {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 2.6rem;
-    z-index: 60;
+    z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -52,7 +52,7 @@
     font-size: 0.88rem;
     text-align: left;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
-    animation: toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    animation: toast-in 220ms var(--ease-out-expo);
   }
   .toast:hover {
     border-color: var(--ink-3);

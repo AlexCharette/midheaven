@@ -4,9 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Midheaven — download</title>
-<meta name="description" content="Midheaven — an offline astrology workspace.">
+<meta name="description" content="Midheaven — your offline astrology workbench.">
 <style>
-  /* Engraved design system, mirrored from the app's artifact (templates/reading.html). */
+  /* Engraved design system, mirrored from the app's artifact (templates/reading.html)
+     and the live app (desktop/src/lib/theme.css). Self-hosted Libre Baskerville
+     carries the engraved voice on every OS — system Baskerville is absent on
+     Windows, which silently fell back to Georgia. */
+  @font-face {
+    font-family: 'Libre Baskerville';
+    src: url('fonts/LibreBaskerville-Regular.ttf') format('truetype');
+    font-weight: 400; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: 'Libre Baskerville';
+    src: url('fonts/LibreBaskerville-Italic.ttf') format('truetype');
+    font-weight: 400; font-style: italic; font-display: swap;
+  }
+  @font-face {
+    font-family: 'Astro';
+    src: url('fonts/DejaVuSans-astro.ttf') format('truetype');
+    font-weight: 400; font-style: normal; font-display: swap;
+  }
   :root {
     --bg: #131735;
     --bg-deep: #0d1026;
@@ -17,6 +35,11 @@
     --hairline: rgba(233, 228, 211, 0.30);
     --brass: #c49a30;
     --verdigris: #35ab7c;
+    --brass-wash: rgba(196, 154, 48, 0.16);
+    --brass-halo: rgba(196, 154, 48, 0.34);
+    --plate-glow: rgba(27, 32, 73, 0.6);
+    --font-serif: 'Libre Baskerville', Baskerville, 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+    --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -24,9 +47,21 @@
     min-height: 100vh;
     background-color: var(--bg);
     color: var(--ink);
-    font-family: Baskerville, 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+    font-family: var(--font-serif);
     line-height: 1.6;
   }
+  /* the engraved plate edge, echoing the app's persistent frame */
+  .app-frame {
+    position: fixed; inset: 9px; z-index: 1;
+    border: 1px solid var(--line); pointer-events: none;
+  }
+  .app-frame span {
+    position: absolute; width: 13px; height: 13px; border: 1px solid var(--hairline);
+  }
+  .app-frame .tl { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+  .app-frame .tr { top: -1px; right: -1px; border-left: none; border-bottom: none; }
+  .app-frame .bl { bottom: -1px; left: -1px; border-right: none; border-top: none; }
+  .app-frame .br { bottom: -1px; right: -1px; border-left: none; border-top: none; }
   body::before {
     content: "";
     position: fixed; inset: 0; z-index: -1;
@@ -40,12 +75,21 @@
   }
   .sheet { max-width: 44rem; margin: 0 auto; padding: clamp(2.5rem, 7vw, 5rem) 1.4rem 4rem; text-align: center; }
 
-  .ornament { display: block; margin: 0 auto .9rem; opacity: .75; }
+  .hero-mark { display: block; margin: 0 auto .3rem; overflow: visible; }
+  .hero-mark circle { fill: none; stroke: var(--line); }
+  .hero-mark .r-strong { stroke: var(--hairline); }
+  .hero-mark .grad line, .hero-mark .spoke line { stroke: var(--line); }
+  .hero-mark .ray line { stroke: var(--hairline); stroke-width: .5; }
+  .hero-mark .hub { fill: var(--brass); }
   h1 {
     font-weight: 400; font-size: clamp(1.9rem, 5vw, 2.6rem);
-    letter-spacing: .34em; text-indent: .34em; margin: .2rem 0 .4rem;
+    letter-spacing: .34em; text-indent: .34em; margin: .3rem 0 0;
   }
-  .tagline { font-style: italic; color: var(--ink-2); margin: 0; }
+  .double-rule {
+    height: 8px; width: min(100%, 22rem); margin: .7rem auto .1rem;
+    border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--line);
+  }
+  .tagline { font-style: italic; color: var(--ink-2); margin: .6rem 0 0; }
   .note {
     max-width: 52ch; margin: 1rem auto 0; font-style: italic;
     font-size: .92rem; color: var(--ink-3); text-wrap: pretty;
@@ -148,23 +192,143 @@
   }
   footer a { color: inherit; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
   footer a:hover { color: var(--ink-2); }
+
+  /* Page-load choreography: the plate mark rises, the wordmark and rule
+     settle, the download rows arrive in sequence. Fully reduced-motion aware —
+     every element's resting state is the visible one. */
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-mark { opacity: 0; animation: fade-up .9s var(--ease-out-quint) .1s forwards; }
+    h1, .double-rule, .tagline {
+      opacity: 0; animation: settle .7s var(--ease-out-quint) forwards;
+    }
+    h1 { animation-delay: .2s; }
+    .double-rule { animation-delay: .32s; }
+    .tagline { animation-delay: .44s; }
+    .downloads li { opacity: 0; animation: settle .6s var(--ease-out-quint) forwards; }
+    .downloads li:nth-child(1) { animation-delay: .5s; }
+    .downloads li:nth-child(2) { animation-delay: .58s; }
+    .downloads li:nth-child(3) { animation-delay: .66s; }
+  }
+  @keyframes settle { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  @media print { .app-frame { display: none; } }
 </style>
 </head>
 <body>
+<div class="app-frame" aria-hidden="true"><span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span></div>
 <div class="sheet">
   <div class="layout">
     <div class="col col-left">
       <section class="hero">
-        <svg class="ornament" width="52" height="52" viewBox="0 0 44 44" aria-hidden="true">
-          <g stroke="#c49a30" stroke-width="0.9" fill="none">
-            <path d="M22 2 L22 42 M2 22 L42 22"/>
-            <path d="M9 9 L35 35 M35 9 L9 35" opacity="0.55"/>
-            <circle cx="22" cy="22" r="3.2"/>
-            <circle cx="22" cy="22" r="7" opacity="0.4"/>
+        <svg class="hero-mark" width="128" height="128" viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="48" class="r-strong"/>
+          <circle cx="50" cy="50" r="44"/>
+          <circle cx="50" cy="50" r="30"/>
+          <circle cx="50" cy="50" r="12"/>
+          <g class="grad">
+      <line x1="50.00" y1="6.00" x2="50.00" y2="11.50" stroke-width="0.7"/>
+      <line x1="53.83" y1="6.17" x2="53.62" y2="8.66" stroke-width="0.4"/>
+      <line x1="57.64" y1="6.67" x2="57.21" y2="9.13" stroke-width="0.4"/>
+      <line x1="61.39" y1="7.50" x2="60.74" y2="9.91" stroke-width="0.4"/>
+      <line x1="65.05" y1="8.65" x2="64.19" y2="11.00" stroke-width="0.4"/>
+      <line x1="68.60" y1="10.12" x2="67.54" y2="12.39" stroke-width="0.4"/>
+      <line x1="72.00" y1="11.89" x2="69.25" y2="16.66" stroke-width="0.7"/>
+      <line x1="75.24" y1="13.96" x2="73.80" y2="16.01" stroke-width="0.4"/>
+      <line x1="78.28" y1="16.29" x2="76.68" y2="18.21" stroke-width="0.4"/>
+      <line x1="81.11" y1="18.89" x2="79.34" y2="20.66" stroke-width="0.4"/>
+      <line x1="83.71" y1="21.72" x2="81.79" y2="23.32" stroke-width="0.4"/>
+      <line x1="86.04" y1="24.76" x2="83.99" y2="26.20" stroke-width="0.4"/>
+      <line x1="88.11" y1="28.00" x2="83.34" y2="30.75" stroke-width="0.7"/>
+      <line x1="89.88" y1="31.40" x2="87.61" y2="32.46" stroke-width="0.4"/>
+      <line x1="91.35" y1="34.95" x2="89.00" y2="35.81" stroke-width="0.4"/>
+      <line x1="92.50" y1="38.61" x2="90.09" y2="39.26" stroke-width="0.4"/>
+      <line x1="93.33" y1="42.36" x2="90.87" y2="42.79" stroke-width="0.4"/>
+      <line x1="93.83" y1="46.17" x2="91.34" y2="46.38" stroke-width="0.4"/>
+      <line x1="94.00" y1="50.00" x2="88.50" y2="50.00" stroke-width="0.7"/>
+      <line x1="93.83" y1="53.83" x2="91.34" y2="53.62" stroke-width="0.4"/>
+      <line x1="93.33" y1="57.64" x2="90.87" y2="57.21" stroke-width="0.4"/>
+      <line x1="92.50" y1="61.39" x2="90.09" y2="60.74" stroke-width="0.4"/>
+      <line x1="91.35" y1="65.05" x2="89.00" y2="64.19" stroke-width="0.4"/>
+      <line x1="89.88" y1="68.60" x2="87.61" y2="67.54" stroke-width="0.4"/>
+      <line x1="88.11" y1="72.00" x2="83.34" y2="69.25" stroke-width="0.7"/>
+      <line x1="86.04" y1="75.24" x2="83.99" y2="73.80" stroke-width="0.4"/>
+      <line x1="83.71" y1="78.28" x2="81.79" y2="76.68" stroke-width="0.4"/>
+      <line x1="81.11" y1="81.11" x2="79.34" y2="79.34" stroke-width="0.4"/>
+      <line x1="78.28" y1="83.71" x2="76.68" y2="81.79" stroke-width="0.4"/>
+      <line x1="75.24" y1="86.04" x2="73.80" y2="83.99" stroke-width="0.4"/>
+      <line x1="72.00" y1="88.11" x2="69.25" y2="83.34" stroke-width="0.7"/>
+      <line x1="68.60" y1="89.88" x2="67.54" y2="87.61" stroke-width="0.4"/>
+      <line x1="65.05" y1="91.35" x2="64.19" y2="89.00" stroke-width="0.4"/>
+      <line x1="61.39" y1="92.50" x2="60.74" y2="90.09" stroke-width="0.4"/>
+      <line x1="57.64" y1="93.33" x2="57.21" y2="90.87" stroke-width="0.4"/>
+      <line x1="53.83" y1="93.83" x2="53.62" y2="91.34" stroke-width="0.4"/>
+      <line x1="50.00" y1="94.00" x2="50.00" y2="88.50" stroke-width="0.7"/>
+      <line x1="46.17" y1="93.83" x2="46.38" y2="91.34" stroke-width="0.4"/>
+      <line x1="42.36" y1="93.33" x2="42.79" y2="90.87" stroke-width="0.4"/>
+      <line x1="38.61" y1="92.50" x2="39.26" y2="90.09" stroke-width="0.4"/>
+      <line x1="34.95" y1="91.35" x2="35.81" y2="89.00" stroke-width="0.4"/>
+      <line x1="31.40" y1="89.88" x2="32.46" y2="87.61" stroke-width="0.4"/>
+      <line x1="28.00" y1="88.11" x2="30.75" y2="83.34" stroke-width="0.7"/>
+      <line x1="24.76" y1="86.04" x2="26.20" y2="83.99" stroke-width="0.4"/>
+      <line x1="21.72" y1="83.71" x2="23.32" y2="81.79" stroke-width="0.4"/>
+      <line x1="18.89" y1="81.11" x2="20.66" y2="79.34" stroke-width="0.4"/>
+      <line x1="16.29" y1="78.28" x2="18.21" y2="76.68" stroke-width="0.4"/>
+      <line x1="13.96" y1="75.24" x2="16.01" y2="73.80" stroke-width="0.4"/>
+      <line x1="11.89" y1="72.00" x2="16.66" y2="69.25" stroke-width="0.7"/>
+      <line x1="10.12" y1="68.60" x2="12.39" y2="67.54" stroke-width="0.4"/>
+      <line x1="8.65" y1="65.05" x2="11.00" y2="64.19" stroke-width="0.4"/>
+      <line x1="7.50" y1="61.39" x2="9.91" y2="60.74" stroke-width="0.4"/>
+      <line x1="6.67" y1="57.64" x2="9.13" y2="57.21" stroke-width="0.4"/>
+      <line x1="6.17" y1="53.83" x2="8.66" y2="53.62" stroke-width="0.4"/>
+      <line x1="6.00" y1="50.00" x2="11.50" y2="50.00" stroke-width="0.7"/>
+      <line x1="6.17" y1="46.17" x2="8.66" y2="46.38" stroke-width="0.4"/>
+      <line x1="6.67" y1="42.36" x2="9.13" y2="42.79" stroke-width="0.4"/>
+      <line x1="7.50" y1="38.61" x2="9.91" y2="39.26" stroke-width="0.4"/>
+      <line x1="8.65" y1="34.95" x2="11.00" y2="35.81" stroke-width="0.4"/>
+      <line x1="10.12" y1="31.40" x2="12.39" y2="32.46" stroke-width="0.4"/>
+      <line x1="11.89" y1="28.00" x2="16.66" y2="30.75" stroke-width="0.7"/>
+      <line x1="13.96" y1="24.76" x2="16.01" y2="26.20" stroke-width="0.4"/>
+      <line x1="16.29" y1="21.72" x2="18.21" y2="23.32" stroke-width="0.4"/>
+      <line x1="18.89" y1="18.89" x2="20.66" y2="20.66" stroke-width="0.4"/>
+      <line x1="21.72" y1="16.29" x2="23.32" y2="18.21" stroke-width="0.4"/>
+      <line x1="24.76" y1="13.96" x2="26.20" y2="16.01" stroke-width="0.4"/>
+      <line x1="28.00" y1="11.89" x2="30.75" y2="16.66" stroke-width="0.7"/>
+      <line x1="31.40" y1="10.12" x2="32.46" y2="12.39" stroke-width="0.4"/>
+      <line x1="34.95" y1="8.65" x2="35.81" y2="11.00" stroke-width="0.4"/>
+      <line x1="38.61" y1="7.50" x2="39.26" y2="9.91" stroke-width="0.4"/>
+      <line x1="42.36" y1="6.67" x2="42.79" y2="9.13" stroke-width="0.4"/>
+      <line x1="46.17" y1="6.17" x2="46.38" y2="8.66" stroke-width="0.4"/>
           </g>
+          <g class="spoke">
+      <line x1="50.00" y1="38.00" x2="50.00" y2="20.00"/>
+      <line x1="56.00" y1="39.61" x2="65.00" y2="24.02"/>
+      <line x1="60.39" y1="44.00" x2="75.98" y2="35.00"/>
+      <line x1="62.00" y1="50.00" x2="80.00" y2="50.00"/>
+      <line x1="60.39" y1="56.00" x2="75.98" y2="65.00"/>
+      <line x1="56.00" y1="60.39" x2="65.00" y2="75.98"/>
+      <line x1="50.00" y1="62.00" x2="50.00" y2="80.00"/>
+      <line x1="44.00" y1="60.39" x2="35.00" y2="75.98"/>
+      <line x1="39.61" y1="56.00" x2="24.02" y2="65.00"/>
+      <line x1="38.00" y1="50.00" x2="20.00" y2="50.00"/>
+      <line x1="39.61" y1="44.00" x2="24.02" y2="35.00"/>
+      <line x1="44.00" y1="39.61" x2="35.00" y2="24.02"/>
+          </g>
+          <g class="ray">
+      <line x1="50.00" y1="48.40" x2="50.00" y2="41.00"/>
+      <line x1="51.13" y1="48.87" x2="53.89" y2="46.11"/>
+      <line x1="51.60" y1="50.00" x2="59.00" y2="50.00"/>
+      <line x1="51.13" y1="51.13" x2="53.89" y2="53.89"/>
+      <line x1="50.00" y1="51.60" x2="50.00" y2="59.00"/>
+      <line x1="48.87" y1="51.13" x2="46.11" y2="53.89"/>
+      <line x1="48.40" y1="50.00" x2="41.00" y2="50.00"/>
+      <line x1="48.87" y1="48.87" x2="46.11" y2="46.11"/>
+          </g>
+          <circle cx="50" cy="50" r="1.3" class="hub"/>
         </svg>
         <h1>MIDHEAVEN</h1>
-        <p class="tagline">an offline astrology workspace</p>
+        <div class="double-rule"></div>
+        <p class="tagline">your offline astrology workbench</p>
         <p class="note">
           Annotate a birth chart with astrologer's comments, either manually or from a
           transcription. If you connect a whisper model, you can transcribe in the app itself.

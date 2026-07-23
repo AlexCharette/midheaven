@@ -15,6 +15,14 @@
   import IndexOfElements from "$lib/components/IndexOfElements.svelte";
   import Wheel from "$lib/components/Wheel.svelte";
   import { onMount } from "svelte";
+  import { fade } from "svelte/transition";
+
+  // Svelte transitions don't honour prefers-reduced-motion on their own;
+  // collapse the duration to 0 when the user asks for less motion.
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const swap = { duration: reduceMotion ? 0 : 200 };
 
   // In chart view a hovered/focused element previews just its passages;
   // otherwise the panel tracks the pinned selection (empty = everything).
@@ -132,29 +140,33 @@
 
     <section>
       {#if app.view === "reading"}
-        <IndexOfElements chart={app.chart} />
+        <div class="view-pane" in:fade={swap}>
+          <IndexOfElements chart={app.chart} />
 
-        <div class="toolbar">
-          <span class="apparatus-text">passages touching</span>
-          <span class="segmented">
-            <button aria-pressed={app.mode === "any"} onclick={() => (app.mode = "any")}>any</button>
-            <button aria-pressed={app.mode === "all"} onclick={() => (app.mode = "all")}>all</button>
-          </span>
-          <span class="apparatus-text">of the selection ·</span>
-          <button class="ghost" onclick={() => selected.clear()}>clear</button>
-          <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
+          <div class="toolbar">
+            <span class="apparatus-text">passages touching</span>
+            <span class="segmented">
+              <button aria-pressed={app.mode === "any"} onclick={() => (app.mode = "any")}>any</button>
+              <button aria-pressed={app.mode === "all"} onclick={() => (app.mode = "all")}>all</button>
+            </span>
+            <span class="apparatus-text">of the selection ·</span>
+            <button class="ghost" onclick={() => selected.clear()}>clear</button>
+            <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
+          </div>
         </div>
       {:else}
         {@const el = focusTag ? elemMap.get(focusTag) : undefined}
-        <div class="panel-head">
-          {#if el}
-            <span class="g g-{catOf(focusTag!)}">{textGlyph(el.glyph)}</span>
-            <span class="ph-name">{el.name}</span>
-            <span class="count apparatus-text">{visible.length} {visible.length === 1 ? "passage" : "passages"}</span>
-          {:else}
-            <span class="apparatus-text ph-hint">hover or select an element</span>
-            <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
-          {/if}
+        <div class="view-pane" in:fade={swap}>
+          <div class="panel-head">
+            {#if el}
+              <span class="g g-{catOf(focusTag!)}">{textGlyph(el.glyph)}</span>
+              <span class="ph-name">{el.name}</span>
+              <span class="count apparatus-text">{visible.length} {visible.length === 1 ? "passage" : "passages"}</span>
+            {:else}
+              <span class="apparatus-text ph-hint">hover or select an element</span>
+              <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
+            {/if}
+          </div>
         </div>
       {/if}
 
@@ -184,8 +196,21 @@
           {/if}
         </button>
       {/if}
-      <button class="frame-btn" onclick={engrave} disabled={recording}>export birth chart</button>
-      <button class="frame-btn" onclick={engravePdf} disabled={recording}>export PDF</button>
+      <span class="export-group">
+        <span class="apparatus-text export-lbl">export</span>
+        <button
+          class="frame-btn primary"
+          onclick={engrave}
+          disabled={recording}
+          title="the self-contained HTML reading — opens in any browser"
+        >HTML</button>
+        <button
+          class="frame-btn"
+          onclick={engravePdf}
+          disabled={recording}
+          title="a printer-friendly PDF"
+        >PDF</button>
+      </span>
     </span>
   </footer>
 {:else}
@@ -197,9 +222,14 @@
     display: grid;
     grid-template-columns: minmax(360px, 44%) 1fr;
     gap: 2.2rem;
-    padding: 1.6rem 1.8rem 3.4rem;
+    padding: 1.6rem 1.8rem 4.4rem;
     max-width: 1400px;
     margin: 0 auto;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .reading {
+      transition: grid-template-columns var(--dur-slow) var(--ease-out-quint);
+    }
   }
   /* chart-centric: the wheel becomes the hero plate, the passages a caption */
   .reading.chart {
@@ -234,13 +264,14 @@
     top: 1.2rem;
     align-self: start;
   }
+  /* the wheel's plate uses a tighter padding than the shared primitive */
   .plate-frame {
     border: 1px solid var(--hairline);
     outline: 1px solid var(--line);
     outline-offset: 5px;
     padding: 0.8rem;
     margin: 6px;
-    background: radial-gradient(ellipse at 50% 42%, rgba(27, 32, 73, 0.6) 0%, transparent 70%);
+    background: radial-gradient(ellipse at 50% 42%, var(--plate-glow) 0%, transparent 70%);
   }
   .toolbar {
     display: flex;
@@ -279,19 +310,40 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 40;
+    z-index: var(--z-footer);
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 0.35rem 1.2rem;
+    padding: 0.45rem 1.4rem;
     background: var(--bg-deep);
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--hairline);
     font-size: 0.88rem;
   }
   .foot-actions {
     margin-left: auto;
     display: inline-flex;
-    gap: 1.4rem;
+    align-items: center;
+    gap: 1.2rem;
+  }
+  /* the export pair reads as one grouped act, set off from the recessive
+     "new reading" / record buttons by a hairline; HTML is the primary. */
+  .export-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding-left: 1.2rem;
+    border-left: 1px solid var(--line);
+  }
+  .export-lbl {
+    font-variant: small-caps;
+    letter-spacing: 0.12em;
+  }
+  .frame-btn.primary {
+    border-color: var(--brass);
+    transition: background var(--dur-base) var(--ease-out-quint);
+  }
+  .frame-btn.primary:hover:not(:disabled) {
+    background: var(--brass-wash);
   }
   .rec.on {
     border-color: var(--brass);

@@ -104,15 +104,22 @@
 
 <h2 class="rubric">Commentary</h2>
 {#if visible.length === 0}
-  <p class="empty apparatus-text">
-    {chart.excerpts.length === 0
-      ? "no transcript passages were routed to this chart"
-      : "no passage touches the selection — clear it to see everything"}
-  </p>
+  <div class="empty-plate">
+    <span class="mark" aria-hidden="true">✶</span>
+    {#if chart.excerpts.length === 0}
+      <p class="caption">No passages are filed under this chart yet.</p>
+      <p class="sub">Transcribe a session or add one by hand to begin the commentary.</p>
+    {:else}
+      <p class="caption">No passage touches the selection.</p>
+      <p class="sub">Clear the selection to see the whole reading again.</p>
+    {/if}
+  </div>
 {/if}
 {#each visible as ex, i (ex.id)}
-  <article class="passage">
+  {@const pinned = selected.size > 0 && ex.tags.some((t) => selected.has(t))}
+  <article class="passage" class:pinned>
     <div class="folio">
+      {#if pinned}<span class="pin-mark astro" title="tied to the pinned selection">☞</span>{/if}
       {ex.time || "—"}
       {#if mergeable && i > 0}
         <button class="curate" title="join this passage to the previous one" onclick={() => join(ex.id)}
@@ -211,6 +218,17 @@
   .passage + .passage {
     border-top: 1px solid var(--line);
   }
+  /* a pinned passage is lit like the wheel element it answers to: a faint
+     brass wash bleeding from the margin and a manicule in the folio, the same
+     ☞ the index uses for a selected element. */
+  .passage.pinned {
+    background: linear-gradient(90deg, var(--brass-wash) 0%, transparent 42%);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .passage {
+      transition: background var(--dur-base) var(--ease-out-quint);
+    }
+  }
   .folio {
     color: var(--ink-3);
     font-size: 0.8rem;
@@ -218,6 +236,15 @@
     letter-spacing: 0.06em;
     padding-top: 0.35rem;
     text-align: right;
+  }
+  .passage.pinned .folio {
+    color: var(--ink-2);
+  }
+  .pin-mark {
+    display: block;
+    color: var(--brass);
+    font-size: 0.82rem;
+    margin-bottom: 0.1rem;
   }
   .curate {
     display: block;
@@ -334,9 +361,5 @@
   }
   .sep {
     color: var(--ink-3);
-  }
-  .empty {
-    text-align: center;
-    padding: 2rem 0;
   }
 </style>

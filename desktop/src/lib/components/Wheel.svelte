@@ -141,7 +141,7 @@
 
 <svg viewBox="-28 -28 776 776" role="img" aria-label="Natal chart wheel; the index of elements offers the same filters">
   {#each [R.outer, R.bandOut, R.signIn, R.gradIn, R.wedgeOut, R.hub, R.hub - 4] as r, i (r)}
-    <circle cx={CX} cy={CY} {r} class={i < 2 ? "engrave-strong" : "engrave"} />
+    <circle cx={CX} cy={CY} {r} pathLength="1" style="--d: {i * 70}ms" class={i < 2 ? "engrave-strong ring" : "engrave ring"} />
   {/each}
   {#each grads as g, i (i)}
     <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} class="grad" stroke-width={g.w} />
@@ -218,10 +218,11 @@
     </g>
   {/each}
 
-  {#each planets as pl (pl.p.id)}
+  {#each planets as pl, i (pl.p.id)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <g
       class="planet"
+      style="--d: {520 + i * 55}ms"
       class:sel={selected.has(pl.p.id)}
       role="button"
       tabindex={chartView ? 0 : -1}
@@ -269,16 +270,16 @@
     pointer-events: none;
   }
   .wash-fire {
-    fill: rgba(196, 87, 58, 0.1);
+    fill: var(--wash-fire);
   }
   .wash-earth {
-    fill: rgba(164, 130, 61, 0.14);
+    fill: var(--wash-earth);
   }
   .wash-air {
-    fill: rgba(196, 183, 121, 0.12);
+    fill: var(--wash-air);
   }
   .wash-water {
-    fill: rgba(95, 143, 201, 0.1);
+    fill: var(--wash-water);
   }
   .hub-ray {
     stroke: var(--line);
@@ -287,32 +288,37 @@
     fill: transparent;
     stroke: var(--line);
     cursor: pointer;
+    transition:
+      fill var(--dur-base) var(--ease-out-quint),
+      stroke var(--dur-base) var(--ease-out-quint);
   }
   .sign-band:hover,
   .sign-band:focus-visible {
-    fill: rgba(53, 171, 124, 0.1);
+    fill: var(--verdigris-wash);
     outline: none;
   }
   .sign-band.sel {
-    fill: rgba(53, 171, 124, 0.22);
+    fill: var(--verdigris-wash);
     stroke: var(--verdigris);
   }
   .sign-glyph {
     fill: var(--verdigris);
+    font-family: var(--font-astro);
     font-size: 21px;
     pointer-events: none;
   }
   .house-wedge {
     fill: transparent;
     cursor: pointer;
+    transition: fill var(--dur-base) var(--ease-out-quint);
   }
   .house-wedge:hover,
   .house-wedge:focus-visible {
-    fill: rgba(123, 160, 224, 0.08);
+    fill: var(--steel-wash);
     outline: none;
   }
   .house-wedge.sel {
-    fill: rgba(123, 160, 224, 0.18);
+    fill: var(--steel-wash);
   }
   .house-label {
     fill: var(--steel);
@@ -337,6 +343,8 @@
   }
   .planet .glyph {
     fill: var(--brass);
+    font-family: var(--font-astro);
+    transition: filter var(--dur-base) var(--ease-out-quint);
   }
   .planet .deg {
     fill: var(--ink-3);
@@ -349,23 +357,33 @@
   .planet .halo {
     fill: transparent;
     stroke: transparent;
+    transition:
+      fill var(--dur-base) var(--ease-out-quint),
+      stroke var(--dur-base) var(--ease-out-quint);
   }
   .planet:hover .halo,
   .planet:focus-visible .halo {
-    stroke: rgba(196, 154, 48, 0.5);
+    stroke: var(--brass-halo);
   }
   .planet:focus-visible {
     outline: none;
   }
   .planet.sel .halo {
-    fill: rgba(196, 154, 48, 0.16);
+    fill: var(--brass-wash);
     stroke: var(--brass);
+  }
+  /* the pinned body glows: a faint brass bloom, engraved not neon */
+  .planet.sel .glyph {
+    filter: drop-shadow(0 0 3px var(--brass-halo));
   }
   /* chords carry the aspect's NATURE (classic blue/red), not the category
      color — mirrors templates/reading.html */
   .chord {
     stroke-width: 1.4;
     opacity: 0.6;
+    transition:
+      opacity var(--dur-base) var(--ease-out-quint),
+      stroke-width var(--dur-base) var(--ease-out-quint);
   }
   .chord.nature-harmonious {
     stroke: var(--steel);
@@ -392,5 +410,60 @@
   .aspect.sel .chord {
     opacity: 1;
     stroke-width: 3;
+  }
+
+  /* Entrance choreography — the plate draws itself, then settles inward:
+     rings ink in from the hub, the apparatus fades up, planets arrive one by
+     one, aspect chords last. Mirrors templates/reading.html. Runs once on the
+     wheel's mount (the component persists across the reading/chart toggle). */
+  @media (prefers-reduced-motion: no-preference) {
+    .ring {
+      stroke-dasharray: 1;
+      stroke-dashoffset: 1;
+      animation: ring-draw 0.9s var(--ease-out-quint) forwards;
+      animation-delay: var(--d);
+    }
+    .grad,
+    .hub-ray,
+    .wash,
+    .sign-band,
+    .sign-glyph,
+    .house-wedge,
+    .house-label,
+    .cusp-spoke,
+    .axis,
+    .axis-label {
+      opacity: 0;
+      animation: fade-in var(--dur-slow) var(--ease-out-quint) 0.45s forwards;
+    }
+    .planet {
+      opacity: 0;
+      animation: rise-in 0.55s var(--ease-out-quint) forwards;
+      animation-delay: var(--d);
+    }
+    .aspect {
+      opacity: 0;
+      animation: fade-in var(--dur-slow) var(--ease-out-quint) 1.05s forwards;
+    }
+  }
+  @keyframes ring-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  @keyframes fade-in {
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 </style>

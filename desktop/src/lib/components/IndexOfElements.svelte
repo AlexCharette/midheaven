@@ -102,6 +102,19 @@
     gap: 0.4rem 1.6rem;
     margin-bottom: 1.4rem;
   }
+  /* the four columns cramp on a narrow panel; fold to a 2×2 plate, then a
+     single column, keeping every entry legible. */
+  @media (max-width: 1080px) {
+    .index {
+      grid-template-columns: 1fr 1fr;
+      gap: 0.4rem 2rem;
+    }
+  }
+  @media (max-width: 620px) {
+    .index {
+      grid-template-columns: 1fr;
+    }
+  }
   h3 {
     font-weight: 400;
     font-style: italic;
@@ -138,8 +151,10 @@
     flex: none;
     width: 1.25em;
     text-align: center;
+    font-family: var(--font-astro);
   }
   .entry .g.g-house {
+    font-family: var(--font-serif);
     font-size: 0.8em;
     letter-spacing: 0.06em;
     width: 2.6em;
