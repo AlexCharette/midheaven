@@ -295,6 +295,7 @@
     <p class="overline">The Birth Chart of</p>
     <h1 id="h-name"></h1>
     <p class="details" id="h-details"></p>
+    <p class="details system" id="h-system"></p>
     <div class="double-rule"></div>
   </header>
 
@@ -464,6 +465,9 @@ const DATA = /*__DATA__*/null;
 
   document.getElementById('h-name').textContent = m.name;
   document.getElementById('h-details').textContent = `${m.born}${m.place ? ' · ' + m.place : ''}`;
+  // The calculation basis, mirroring the live desktop plate caption
+  // (ChartCore.svelte): the localized house-system and zodiac labels.
+  setText('#h-system', `${m.system} · ${m.zodiac}`);
   // Practitioner branding (optional meta, stamped by the desktop app): the
   // brand mark takes the ornament slot; a prepared-by line joins the details.
   if (m.logo) {

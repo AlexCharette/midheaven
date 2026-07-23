@@ -1,0 +1,31 @@
+# Config for `cargo about generate` — produces THIRD-PARTY-LICENSES.html, the
+# attribution bundle shipped with the app (see desktop Acknowledgements pane).
+# Regenerate after changing dependencies:
+#   cargo about generate --manifest-path desktop/src-tauri/Cargo.toml \
+#     --config about.toml about.hbs -o THIRD-PARTY-LICENSES.html
+#
+# `accepted` lists the SPDX licenses we permit in the tree; a dependency under
+# anything not listed makes the command fail, so a copyleft/unknown license is
+# caught here rather than shipped unnoticed.
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Unlicense",
+    "OpenSSL",
+    "BSL-1.0",
+    "bzip2-1.0.6",
+    "Apache-2.0 WITH LLVM-exception",
+    "CDLA-Permissive-2.0",
+]
+
+# The workspace both builds; scan both so nothing is missed.
+workarounds = ["ring"]

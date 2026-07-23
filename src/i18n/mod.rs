@@ -102,14 +102,33 @@ impl Locale {
             .map_or("", |a| a.word)
     }
 
-    /// House-system label for `meta.system` ("Whole Sign" / "Целые знаки").
+    /// Default house-system label ("Whole Sign" / "Целые знаки"). Kept for the
+    /// Whole-Sign default; per-system labels come from [`house_system_label`].
     pub fn system_label(self) -> &'static str {
         self.table().system
     }
 
-    /// Zodiac label for `meta.zodiac` ("Tropical" / "Тропический").
+    /// Display label for a house-system code (`placidus` → "Placidus"), falling
+    /// back to the English table, then to the default label, so an unlisted
+    /// code still renders something sensible rather than blank.
+    pub fn house_system_label(self, code: &str) -> &'static str {
+        lookup_label(self.table().house_systems, code)
+            .or_else(|| lookup_label(en::TABLE.house_systems, code))
+            .unwrap_or(self.table().system)
+    }
+
+    /// Default zodiac label ("Tropical" / "Тропический").
     pub fn zodiac_label(self) -> &'static str {
         self.table().zodiac
+    }
+
+    /// Zodiac label for `meta.zodiac`: the tropical word, or the sidereal word
+    /// joined to the ayanamsa's own name (a proper noun, so not translated).
+    pub fn zodiac_label_for(self, ayanamsa: Option<xalen_ayanamsa::Ayanamsa>) -> String {
+        match ayanamsa {
+            None => self.zodiac_label().to_string(),
+            Some(a) => format!("{} · {a}", self.table().sidereal),
+        }
     }
 
     /// The persona used when no name is given.
@@ -188,6 +207,11 @@ pub struct LocaleTable {
     pub aspects: &'static [AspectEntry],
     pub system: &'static str,
     pub zodiac: &'static str,
+    /// House-system display labels keyed by wire code (`chart::systems`).
+    pub house_systems: &'static [(&'static str, &'static str)],
+    /// The word for the sidereal zodiac ("Sidereal" / "Сидерический"), joined
+    /// to the ayanamsa's own name in [`Locale::zodiac_label_for`].
+    pub sidereal: &'static str,
     pub anonymous: &'static str,
     /// The language's own name (endonym), for UI language selectors.
     pub endonym: &'static str,
@@ -232,6 +256,10 @@ fn entry(table: &'static [Entry], slug: &str) -> Option<&'static Entry> {
     table.iter().find(|e| e.slug == slug)
 }
 
+fn lookup_label(table: &'static [(&'static str, &'static str)], code: &str) -> Option<&'static str> {
+    table.iter().find(|(c, _)| *c == code).map(|(_, label)| *label)
+}
+
 fn aspect(table: &'static [AspectEntry], kind: &str) -> Option<&'static AspectEntry> {
     table.iter().find(|a| a.kind == kind)
 }
@@ -260,6 +288,10 @@ mod tests {
         assert_eq!(en.house_name(5), "Fifth House");
         assert_eq!(en.system_label(), "Whole Sign");
         assert_eq!(en.zodiac_label(), "Tropical");
+        assert_eq!(en.house_system_label("placidus"), "Placidus");
+        assert_eq!(en.house_system_label("whole-sign"), "Whole Sign");
+        assert_eq!(en.zodiac_label_for(None), "Tropical");
+        assert!(en.zodiac_label_for(Some(xalen_ayanamsa::Ayanamsa::Lahiri)).starts_with("Sidereal"));
         assert_eq!(en.aspect_name("trine", "Sun", "Moon"), "Sun trine Moon");
         assert_eq!(en.anonymous(), "Anonymous");
     }
@@ -270,6 +302,8 @@ mod tests {
         assert_eq!(ru.planet_name("sun"), "Солнце");
         assert_eq!(ru.sign_name("cancer"), "Рак");
         assert!(ru.house_name(5).contains("дом"));
+        assert_eq!(ru.house_system_label("whole-sign"), "Целые знаки");
+        assert_eq!(ru.house_system_label("placidus"), "Плацидус");
         assert!(ru.planet_terms("sun").contains(&"солнце"));
         assert!(ru.sign_terms("cancer").contains(&"рак"));
         assert!(ru.house_terms(5).iter().any(|t| t.contains("дом")));

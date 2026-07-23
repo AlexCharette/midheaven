@@ -338,6 +338,8 @@ mod tests {
             tz: chrono_tz::Europe::Berlin,
             place: "Berlin, Germany".into(),
             locale: crate::i18n::Locale::En,
+            house_system: xalen_houses::HouseSystem::WholeSign,
+            ayanamsa: None,
         };
         let mut chart = crate::chart::compute_chart(&input).unwrap();
         chart.excerpts.push(Excerpt {
@@ -405,6 +407,8 @@ mod tests {
             tz: chrono_tz::Europe::Berlin,
             place: "Берлин, Германия".into(),
             locale: Locale::Ru,
+            house_system: xalen_houses::HouseSystem::WholeSign,
+            ayanamsa: None,
         };
         let mut chart = crate::chart::compute_chart(&input).unwrap();
         chart.excerpts.push(Excerpt {

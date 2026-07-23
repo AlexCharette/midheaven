@@ -18,6 +18,7 @@ export type { Preferences } from "./generated/Preferences";
 export type { ReadingEntry } from "./generated/ReadingEntry";
 export type { BirthForm } from "./generated/BirthForm";
 export type { LocaleDto } from "./generated/LocaleDto";
+export type { OptionDto } from "./generated/OptionDto";
 
 import type { ChartData } from "./generated/ChartData";
 import type { Excerpt } from "./generated/Excerpt";

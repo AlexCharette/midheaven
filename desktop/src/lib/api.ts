@@ -2,12 +2,24 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { BirthForm, ChartData, LocaleDto, PlaceDto, Preferences, ReadingEntry } from "./types";
+import type {
+  BirthForm,
+  ChartData,
+  LocaleDto,
+  OptionDto,
+  PlaceDto,
+  Preferences,
+  ReadingEntry,
+} from "./types";
 
 export const searchPlaces = (query: string) =>
   invoke<PlaceDto[]>("search_places", { query });
 
 export const listLocales = () => invoke<LocaleDto[]>("list_locales");
+
+export const listHouseSystems = () => invoke<OptionDto[]>("list_house_systems");
+
+export const listAyanamsas = () => invoke<OptionDto[]>("list_ayanamsas");
 
 export const build = (form: BirthForm) => invoke<ChartData>("build", { form });
 
@@ -52,5 +64,8 @@ export const setPreferences = (prefs: Preferences) =>
   invoke<void>("set_preferences", { prefs });
 
 export const listModels = (dir: string) => invoke<string[]>("list_models", { dir });
+
+/** Open the bundled third-party license notices in the OS browser. */
+export const openLicenses = () => invoke<void>("open_licenses");
 
 export const artifactFilename = () => invoke<string>("artifact_filename");

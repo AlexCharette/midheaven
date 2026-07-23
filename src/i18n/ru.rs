@@ -12,6 +12,8 @@ pub static TABLE: LocaleTable = LocaleTable {
     aspects: ASPECTS,
     system: "Целые знаки",
     zodiac: "Тропический",
+    house_systems: HOUSE_SYSTEMS,
+    sidereal: "Сидерический",
     anonymous: "Без имени",
     endonym: "Русский",
     house_suffix: " дом",
@@ -22,6 +24,18 @@ pub static TABLE: LocaleTable = LocaleTable {
         commentary: "Комментарий",
     },
 };
+
+// Transliterated house-system names; the eponymous systems keep their proper
+// nouns (Placidus/Koch/…), the descriptive ones are translated.
+static HOUSE_SYSTEMS: &[(&str, &str)] = &[
+    ("whole-sign", "Целые знаки"),
+    ("placidus", "Плацидус"),
+    ("koch", "Кох"),
+    ("equal", "Равнодомная"),
+    ("regiomontanus", "Региомонтан"),
+    ("campanus", "Кампанус"),
+    ("porphyry", "Порфирий"),
+];
 
 static PLANETS: &[Entry] = &[
     Entry { slug: "sun", name: "Солнце", terms: &["солнце", "солнца", "солнцу", "солнцем"] },

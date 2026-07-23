@@ -125,7 +125,7 @@ The crate is a library (pipeline stages) plus a thin CLI binary (`src/main.rs`).
 | Stage | Module | Notes |
 |---|---|---|
 | 1 Transcribe | `src/transcribe.rs` | whisper.cpp via `whisper-rs`; WAV in, timestamped segments out — external transcripts (txt/JSONL) remain first-class |
-| 2 Compute | `src/chart/` | Tropical, Whole Sign; symbol tables in `chart/catalog.rs`; place lookup in `src/geo.rs` |
+| 2 Compute | `src/chart/` | Tropical or sidereal; selectable house systems (`chart/systems.rs`); symbol tables in `chart/catalog.rs`; place lookup in `src/geo.rs` |
 | 3 Route | `src/route/` | `Router` trait (`mod.rs`); `transcript.rs` parsing/segmentation, `lexicon.rs` matcher, `verify.rs` gate — the LLM router later lands as `route/llm.rs` |
 | 4 Emit | `src/emit.rs` + `templates/reading.html` | injects `ChartData` at `/*__DATA__*/null` |
 | 4b PDF | `src/pdf/` | krilla; the wheel as vector paths, embedded subset fonts, lighter palette |
@@ -141,5 +141,21 @@ through the public library API.
 ## Verify
 
 `cargo test` — includes a golden test (Sun ≈ 0° Aries at the 2000 equinox instant),
-Whole Sign cusp invariants, historical-DST conversion, Verify-gate rejection cases,
-and a self-containment check on the emitted HTML.
+Whole Sign cusp invariants, a Placidus quadrant-cusp check, a Lahiri sidereal-shift
+check, historical-DST conversion, Verify-gate rejection cases, and a self-containment
+check on the emitted HTML.
+
+## Licenses / attribution
+
+The app is MIT. Ephemeris, house, and ayanamsa calculations come from the
+Apache-2.0 `xalen-*` crates ([vedika-io/xalen-ephemeris](https://github.com/vedika-io/xalen-ephemeris)).
+Third-party attribution for every dependency is generated with
+[`cargo-about`](https://github.com/EmbarkStudios/cargo-about) into
+`THIRD-PARTY-LICENSES.html` (committed, and bundled with the desktop app — the
+Preferences → *about* pane opens it). Regenerate after changing dependencies:
+
+```sh
+cargo install cargo-about --features cli   # once
+cargo about generate --manifest-path desktop/src-tauri/Cargo.toml \
+  --config about.toml about.hbs -o THIRD-PARTY-LICENSES.html
+```

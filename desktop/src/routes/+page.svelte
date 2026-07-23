@@ -10,7 +10,7 @@
     startRecording,
     stopRecording,
   } from "$lib/api";
-  import { app, excerptsMatching, isBusy, loadLocales, notify, selected, visibleExcerpts } from "$lib/state.svelte";
+  import { app, excerptsMatching, isBusy, loadCalcOptions, loadLocales, notify, selected, visibleExcerpts } from "$lib/state.svelte";
   import BirthForm from "$lib/components/BirthForm.svelte";
   import ChartCore from "$lib/components/ChartCore.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
@@ -35,6 +35,7 @@
     // The reading-language list (endonyms + house suffixes) comes from the
     // backend once; the form and preferences selectors read it from state.
     loadLocales();
+    loadCalcOptions();
     // A configured default model enables live transcription on ANY open chart,
     // not only ones just built through the form (which sets app.model itself) —
     // so a reading opened from the library can still be transcribed onto.

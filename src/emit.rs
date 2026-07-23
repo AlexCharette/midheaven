@@ -38,6 +38,8 @@ mod tests {
                 place: "p".into(),
                 system: "Whole Sign".into(),
                 zodiac: "Tropical".into(),
+                house_system: "whole-sign".into(),
+                ayanamsa: None,
                 locale: "en".into(),
                 astrologer: None,
                 logo: None,
