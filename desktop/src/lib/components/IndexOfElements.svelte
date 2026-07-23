@@ -1,7 +1,10 @@
 <script lang="ts">
+  import { fade, fly, slide } from "svelte/transition";
+  import { expoOut } from "svelte/easing";
   import type { ChartData } from "$lib/types";
   import { catOf, degInSign, planetById, relatedTo, signAt, textGlyph } from "$lib/types";
   import { app, focusedTag, houseSuffix, peek, selected, toggle, unpeek } from "$lib/state.svelte";
+  import { swapDuration } from "$lib/motion";
 
   let { chart }: { chart: ChartData } = $props();
 
@@ -75,59 +78,75 @@
   ]);
 </script>
 
-<details class="index-fold" bind:open={app.indexOpen}>
-  <summary class="rubric index-summary">
+<div class="index-fold">
+  <button
+    type="button"
+    class="rubric index-summary"
+    class:open={app.indexOpen}
+    aria-expanded={app.indexOpen}
+    aria-controls="index-body"
+    onclick={() => (app.indexOpen = !app.indexOpen)}
+  >
     <span class="head-group">
       <span class="lbl">Index of Elements</span>
       <span class="caret" aria-hidden="true">
         <svg width="11" height="7" viewBox="0 0 11 7"><path d="M1 1.2 L5.5 5.5 L10 1.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
     </span>
-  </summary>
-  <div class="index">
-  {#each columns as col (col.head)}
-    {@const filtering = col.filterable && !expanded[col.head]}
-    {@const shown = filtering
-      ? col.entries.filter((e) => occupied.has(e.tag) || selected.has(e.tag))
-      : col.entries}
-    {@const hidden = col.entries.length - shown.length}
-    <div>
-      <h3>{col.head}</h3>
-      {#each shown as e (e.tag)}
-        <button
-          class="entry"
-          class:focus={focusTag === e.tag}
-          class:rel={related.has(e.tag)}
-          aria-pressed={selected.has(e.tag)}
-          onclick={() => toggle(e.tag)}
-          onmouseenter={() => peek(e.tag)}
-          onmouseleave={unpeek}
-          onfocus={() => peek(e.tag)}
-          onblur={unpeek}
-        >
-          <span class="g g-{catOf(e.tag)}">{textGlyph(e.glyph)}</span>
-          <span class="nm">{e.name}</span>
-          {#if e.detail}<span class="lead"></span><span class="dt">{e.detail}</span>{/if}
-        </button>
-      {/each}
-      {#if filtering && hidden > 0}
-        <button class="more" onclick={() => (expanded[col.head] = true)}>· {hidden} more</button>
-      {:else if col.filterable && expanded[col.head]}
-        <button class="more" onclick={() => (expanded[col.head] = false)}>· fewer</button>
-      {/if}
+  </button>
+  {#if app.indexOpen}
+    <div class="index" id="index-body" transition:slide={{ duration: swapDuration(), easing: expoOut }}>
+    {#each columns as col (col.head)}
+      {@const filtering = col.filterable && !expanded[col.head]}
+      {@const shown = filtering
+        ? col.entries.filter((e) => occupied.has(e.tag) || selected.has(e.tag))
+        : col.entries}
+      {@const hidden = col.entries.length - shown.length}
+      <div class="band">
+        <h3>{col.head}</h3>
+        <div class="entries">
+          {#each shown as e (e.tag)}
+            <button
+              class="entry"
+              class:focus={focusTag === e.tag}
+              class:rel={related.has(e.tag)}
+              aria-pressed={selected.has(e.tag)}
+              onclick={() => toggle(e.tag)}
+              onmouseenter={() => peek(e.tag)}
+              onmouseleave={unpeek}
+              onfocus={() => peek(e.tag)}
+              onblur={unpeek}
+              in:fly|local={{ y: 4, duration: swapDuration(), easing: expoOut }}
+              out:fade|local={{ duration: swapDuration() }}
+            >
+              <span class="g g-{catOf(e.tag)}">{textGlyph(e.glyph)}</span>
+              <span class="nm">{e.name}</span>
+              {#if e.detail}<span class="dt">{e.detail}</span>{/if}
+            </button>
+          {/each}
+          {#if filtering && hidden > 0}
+            <button class="more" onclick={() => (expanded[col.head] = true)}>· {hidden} more</button>
+          {:else if col.filterable && expanded[col.head]}
+            <button class="more" onclick={() => (expanded[col.head] = false)}>· fewer</button>
+          {/if}
+        </div>
+      </div>
+    {/each}
     </div>
-  {/each}
-  </div>
-</details>
+  {/if}
+</div>
 
 <style>
-  /* the whole index folds away to hand the commentary the full panel */
+  /* the whole index folds away to hand the commentary the full panel.
+     minimal button reset — the .rubric class still supplies the flanking
+     rules, small-caps, letter-spacing, size, colour and bottom margin. */
   .index-summary {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: inherit;
     cursor: pointer;
-    list-style: none;
-  }
-  .index-summary::-webkit-details-marker {
-    display: none;
   }
   .index-summary:focus-visible {
     outline: 1px dashed var(--hairline);
@@ -142,10 +161,10 @@
     display: inline-flex;
     color: var(--ink-3);
   }
-  .index-fold:not([open]) .index-summary {
+  .index-summary:not(.open) {
     margin-bottom: 0.4rem;
   }
-  .index-fold:not([open]) .index-summary .caret {
+  .index-summary:not(.open) .caret {
     transform: rotate(-90deg);
   }
   @media (prefers-reduced-motion: no-preference) {
@@ -153,56 +172,43 @@
       transition: transform var(--dur-fast) var(--ease-out-quint);
     }
   }
+  /* stacked, full-width category bands — entries flow horizontally and wrap,
+     so the panel keeps a fixed width instead of a tall right-hand column */
   .index {
-    display: grid;
-    grid-template-columns: 1.05fr 0.95fr 0.9fr 1.45fr;
-    gap: 0.4rem 1.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
     margin-bottom: 1.4rem;
   }
-  /* the four columns cramp on a narrow panel; fold to a 2×2 plate, then a
-     single column, keeping every entry legible. */
-  @media (max-width: 1080px) {
-    .index {
-      grid-template-columns: 1fr 1fr;
-      gap: 0.4rem 2rem;
-    }
+  .band {
+    min-width: 0;
   }
-  @media (max-width: 620px) {
-    .index {
-      grid-template-columns: 1fr;
-    }
+  .entries {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.1rem 0.9rem;
+    min-width: 0;
   }
   h3 {
     font-weight: 400;
     font-style: italic;
     font-size: 0.98rem;
     color: var(--ink-3);
-    margin: 0 0 0.35rem;
+    margin: 0 0 0.4rem;
     padding-bottom: 0.25rem;
     border-bottom: 1px solid var(--line);
   }
   .entry {
-    position: relative;
-    display: flex;
+    display: inline-flex;
     align-items: baseline;
-    gap: 0.45em;
-    width: 100%;
+    gap: 0.4em;
     text-align: left;
-    padding: 0.12rem 0 0.12rem 1.15em;
+    padding: 0.12rem 0.35rem;
+    border-radius: 3px;
     font-size: 0.92rem;
     color: var(--ink);
-  }
-  .entry::before {
-    content: "☞\FE0E";
-    position: absolute;
-    left: 0;
-    top: 0.12rem;
-    color: var(--ink-2);
-    opacity: 0;
-    font-size: 0.9em;
-  }
-  .entry[aria-pressed="true"]::before {
-    opacity: 1;
+    transition: background var(--dur-fast) var(--ease-out-quint);
   }
   .entry .g {
     flex: none;
@@ -214,10 +220,11 @@
     font-family: var(--font-serif);
     font-size: 0.8em;
     letter-spacing: 0.06em;
-    width: 2.6em;
-    text-align: right;
+    width: auto;
+    text-align: left;
   }
   .entry .nm {
+    white-space: nowrap;
     border-bottom: 1px solid transparent;
     transition: border-color var(--dur-fast) var(--ease-out-quint);
   }
@@ -225,25 +232,19 @@
   .entry.rel .nm {
     border-bottom-color: var(--hairline);
   }
+  .entry[aria-pressed="true"] {
+    background: var(--ink-a04);
+  }
   .entry[aria-pressed="true"] .nm {
     border-bottom-color: var(--ink-2);
   }
   /* cross-lit from the wheel: the focused row brightens, its relations mark */
-  .entry {
-    transition: background var(--dur-fast) var(--ease-out-quint);
-  }
   .entry.focus {
     background: var(--ink-a04);
     color: var(--ink);
   }
   .entry.focus .nm {
     border-bottom-color: var(--ink);
-  }
-  .entry .lead {
-    flex: 1;
-    border-bottom: 1px dotted var(--line);
-    transform: translateY(-0.28em);
-    min-width: 0.6em;
   }
   .entry .dt {
     flex: none;
@@ -252,8 +253,7 @@
     font-variant-numeric: tabular-nums;
   }
   .more {
-    display: block;
-    padding: 0.12rem 0 0.12rem 2.85em;
+    padding: 0.12rem 0.35rem;
     font-size: 0.82rem;
     font-style: italic;
     color: var(--ink-3);

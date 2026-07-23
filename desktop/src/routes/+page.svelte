@@ -197,7 +197,7 @@
   /* the wheel is the hero plate; the apparatus and commentary are its caption */
   .reading {
     display: grid;
-    grid-template-columns: minmax(520px, 60%) 1fr;
+    grid-template-columns: minmax(520px, 60%) minmax(0, 1fr);
     gap: 2rem;
     padding: 1rem 1.6rem 4.4rem 1.1rem;
     max-width: 1580px;
