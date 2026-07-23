@@ -86,14 +86,31 @@ struct AppState(Mutex<Inner>);
 /// Just enough for the typeahead: the id round-trips to `geo::by_id` at
 /// build time — coordinates and zone stay backend-side.
 #[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 struct PlaceDto {
     id: u32,
     label: String,
 }
 
+/// A reading language for the UI selectors, sourced from `i18n` so the
+/// frontend never re-encodes the language list, endonyms, or the house-name
+/// suffix (`list_locales`).
+#[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+struct LocaleDto {
+    /// Short code persisted on `meta.locale` (`en`, `ru`).
+    code: String,
+    /// The language's own name (endonym), shown in the selector.
+    label: String,
+    /// Word to strip from a house name to show the bare ordinal ("First").
+    house_suffix: String,
+}
+
 /// One row of the readings library: enough to list and reopen a saved
 /// reading without the frontend touching the filesystem.
 #[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 #[serde(rename_all = "camelCase")]
 struct ReadingEntry {
     /// `{dir}/chart.json` — fed straight to `load_chart`.
@@ -105,6 +122,9 @@ struct ReadingEntry {
     place: String,
     excerpts: usize,
     /// `chart.json`'s mtime, ms since the epoch — sort key and "saved" date.
+    /// Serialized as a JSON number; ms-since-epoch stays within JS's safe
+    /// integer range for millennia, so the binding is `number`, not `bigint`.
+    #[cfg_attr(feature = "ts", ts(type = "number | null"))]
     modified_ms: Option<u64>,
 }
 
@@ -155,7 +175,23 @@ async fn search_places(query: String) -> Vec<PlaceDto> {
         .collect()
 }
 
+/// The reading languages offered in the UI, each with its endonym and the
+/// house-name suffix to strip — the single source the frontend builds its
+/// language selector and house labels from (see `i18n::Locale`).
+#[tauri::command]
+fn list_locales() -> Vec<LocaleDto> {
+    astro::i18n::Locale::ALL
+        .iter()
+        .map(|&l| LocaleDto {
+            code: l.code().to_string(),
+            label: l.endonym().to_string(),
+            house_suffix: l.house_suffix().to_string(),
+        })
+        .collect()
+}
+
 #[derive(Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 struct BirthForm {
     name: String,
     date: String,
@@ -199,8 +235,8 @@ async fn build(
     #[cfg(desktop)]
     let progress_app = app.clone();
     type Persisted = Option<(String, String)>; // (filename, contents) for the library
-    let (mut chart, transcript_file) = tauri::async_runtime::spawn_blocking(
-        move || -> Result<(ChartData, Persisted), String> {
+    let (mut chart, transcript_file, warnings) = tauri::async_runtime::spawn_blocking(
+        move || -> Result<(ChartData, Persisted, Vec<String>), String> {
             let (transcript, persisted): (Option<Transcript>, Persisted) = match source {
                 TranscriptSource::None => (None, None),
                 TranscriptSource::File(path) => {
@@ -222,16 +258,22 @@ async fn build(
                     )
                 }
             };
-            let mut chart = astro::chart::compute_chart(&input)?;
+            let (mut chart, mut warnings) = astro::chart::compute_chart_reporting(&input)?;
             if let Some(t) = &transcript {
                 let router = lexicon_for(&chart);
-                index_transcript(&mut chart, t, &router);
+                warnings.extend(index_transcript(&mut chart, t, &router).warnings);
             }
-            Ok((chart, persisted))
+            Ok((chart, persisted, warnings))
         },
     )
     .await
     .map_err(|e| format!("build task failed: {e}"))??;
+
+    // Surface non-fatal warnings (DST-ambiguous birth time, Verify-gate
+    // rejections) the pipeline used to write to stderr; the webview toasts them.
+    if !warnings.is_empty() {
+        let _ = app.emit("build-warnings", &warnings);
+    }
 
     // Practitioner branding rides on the chart's meta (and thus into both
     // chart.json and the engraved artifact). Both best-effort.
@@ -335,7 +377,7 @@ async fn stop_recording(
     // corrections) survives every stop.
     let jsonl = astro::transcribe::to_jsonl(&segments);
     let take = Transcript::from_segments(segments);
-    append_transcript(chart, &take, &lexicon_for(chart));
+    let warnings = append_transcript(chart, &take, &lexicon_for(chart)).warnings;
 
     // library auto-save: the take's transcription (session-offset anchors,
     // matching the folio) and the refreshed chart
@@ -344,6 +386,9 @@ async fn stop_recording(
         let path = dir.join(format!("take-{}.jsonl", inner.takes));
         std::fs::write(&path, jsonl).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
         save_chart_json(dir, chart)?;
+    }
+    if !warnings.is_empty() {
+        let _ = app.emit("build-warnings", &warnings);
     }
     Ok(chart.clone())
 }
@@ -649,6 +694,7 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder.invoke_handler(tauri::generate_handler![
         search_places,
+        list_locales,
         build,
         save_artifact,
         save_pdf,
@@ -669,6 +715,7 @@ pub fn run() {
     #[cfg(mobile)]
     let builder = builder.invoke_handler(tauri::generate_handler![
         search_places,
+        list_locales,
         build,
         save_artifact,
         save_pdf,

@@ -29,6 +29,14 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 chrono = "0.4"
+# TypeScript bindings for the DTOs this crate hands the webview. Optional and
+# off by default (production builds never pull the proc-macro); the bindings
+# are generated under the `ts` feature — run `npm run gen:types` (desktop/).
+ts-rs = { version = "12", optional = true }
+
+[features]
+# Emit TypeScript bindings from the command DTOs when running the tests.
+ts = ["dep:ts-rs"]
 
 # Desktop-only: microphone capture (cpal) + WAV writing (hound), and the
 # transcription feature of the core crate. `cfg(desktop)` isn't known to Cargo

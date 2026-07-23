@@ -4,7 +4,7 @@
   import { SvelteSet } from "svelte/reactivity";
   import type { ChartData, Excerpt } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
-  import { app, notify, selected, toggle } from "$lib/state.svelte";
+  import { app, isBusy, notify, selected, toggle } from "$lib/state.svelte";
 
   let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
 
@@ -15,8 +15,8 @@
   // unambiguous when nothing filters the list — no selection and no hover
   // preview. amend/remove/add are id-based and safe under any filter, so they
   // stay available whenever the app isn't busy.
-  const mergeable = $derived(selected.size === 0 && app.hovered === null && app.busy === false);
-  const editable = $derived(app.busy === false);
+  const mergeable = $derived(selected.size === 0 && app.hovered === null && !isBusy());
+  const editable = $derived(!isBusy());
 
   let editing = $state<string | null>(null);
   let draft = $state("");
@@ -102,6 +102,15 @@
   const composerKeys = escCommit(() => (composing = false), fileIt);
 </script>
 
+<!-- the reference chip shared by passage refs and the composer's tag picker:
+     a glyph + name toggle, its category coloring keyed off the tag -->
+{#snippet refButton(tag: string, glyph: string, name: string, pressed: boolean, onToggle: () => void)}
+  <button class="ref" aria-pressed={pressed} onclick={onToggle}>
+    <span class="g g-{catOf(tag)}">{textGlyph(glyph)}</span>
+    <span class="nm">{name}</span>
+  </button>
+{/snippet}
+
 <h2 class="rubric">Commentary</h2>
 {#if visible.length === 0}
   <div class="empty-plate">
@@ -160,10 +169,7 @@
       {#each ex.tags as tag, i (tag)}
         {@const el = lookup.get(tag)}
         {#if i > 0}<span class="sep"> · </span>{/if}
-        <button class="ref" aria-pressed={selected.has(tag)} onclick={() => toggle(tag)}>
-          <span class="g g-{catOf(tag)}">{textGlyph(el?.glyph ?? "")}</span>
-          <span class="nm">{el?.name ?? tag}</span>
-        </button>
+        {@render refButton(tag, el?.glyph ?? "", el?.name ?? tag, selected.has(tag), () => toggle(tag))}
       {/each}
     </div>
   </article>
@@ -183,14 +189,8 @@
       ></textarea>
       <div class="tag-row">
         {#each elements as el (el.tag)}
-          <button
-            class="ref"
-            aria-pressed={draftTags.has(el.tag)}
-            onclick={() => (draftTags.has(el.tag) ? draftTags.delete(el.tag) : draftTags.add(el.tag))}
-          >
-            <span class="g g-{catOf(el.tag)}">{textGlyph(el.glyph)}</span>
-            <span class="nm">{el.name}</span>
-          </button>
+          {@render refButton(el.tag, el.glyph, el.name, draftTags.has(el.tag), () =>
+            draftTags.has(el.tag) ? draftTags.delete(el.tag) : draftTags.add(el.tag))}
         {/each}
       </div>
       <div class="composer-actions">

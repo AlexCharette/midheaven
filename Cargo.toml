@@ -18,6 +18,11 @@ hound = { version = "3.5.1", optional = true }
 krilla = { version = "0.8", default-features = false, features = ["pdf", "simple-text", "raster-images"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# TypeScript bindings for the desktop webview, derived from the `contract`
+# types. Optional and off by default so no production target (CLI, desktop,
+# mobile) pulls in the proc-macro; the bindings are generated under the `ts`
+# feature — run `npm run gen:types` (desktop/), enforced by the CI drift check.
+ts-rs = { version = "12", optional = true }
 ttf-parser = "0.25.1"
 # whisper.cpp uses std::filesystem → macOS deployment target must be ≥ 10.15
 # (see desktop/src-tauri/tauri.conf.json bundle.macOS.minimumSystemVersion).
@@ -35,6 +40,8 @@ xalen-time = "0.6.0"
 # cross-compiling whisper.cpp and shipping multi-hundred-MB models is deferred.
 default = ["transcribe"]
 transcribe = ["dep:whisper-rs", "dep:hound"]
+# Emit TypeScript bindings from the contract types when running the tests.
+ts = ["dep:ts-rs"]
 
 # The CLI drives transcription directly, so it only builds with the feature on
 # (mobile builds pull in the library, never this binary).

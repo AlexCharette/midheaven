@@ -28,7 +28,9 @@ pub mod transcribe;
 
 /// Where a reading's transcript comes from. `Audio` encodes the
 /// "a recording needs a model" invariant in the type; [`TranscriptSource::classify`]
-/// owns the decision procedure so no frontend re-states it.
+/// owns the decision for *free-form* string inputs (the desktop's text fields),
+/// so those frontends never re-state it. The CLI builds this from typed clap
+/// flags instead, sharing only the model-required error ([`ClassifyError`]).
 pub enum TranscriptSource {
     None,
     /// A transcript file: plain text or timestamped JSONL.
@@ -127,16 +129,24 @@ pub fn birth_at_place(
     }
 }
 
+/// What a full build produced besides the chart: the span count the router
+/// emitted before gating, and any non-fatal warnings (a DST-ambiguous birth
+/// time, Verify-gate rejections) for the caller to surface.
+#[derive(Debug, Default)]
+pub struct BuildReport {
+    pub n_routed: usize,
+    pub warnings: Vec<String>,
+}
+
 /// The whole pipeline in one call: obtain the transcript (reading a file, or
 /// transcribing audio while reporting whole-percent `progress`), compute the
-/// chart, route + verify passages into `excerpts`. Returns the chart and the
-/// number of spans the router emitted before gating. This is the single
-/// entry point the CLI and tests share.
+/// chart, route + verify passages into `excerpts`. Returns the chart and a
+/// [`BuildReport`]. This is the single entry point the CLI and tests share.
 pub fn build_reading(
     input: &chart::BirthInput,
     source: TranscriptSource,
     progress: impl FnMut(i32) + Send + 'static,
-) -> Result<(contract::ChartData, usize), String> {
+) -> Result<(contract::ChartData, BuildReport), String> {
     // `progress` is only consumed by the audio arm; without the feature that
     // arm is gone, so drop the callback to keep it from reading as unused.
     #[cfg(not(feature = "transcribe"))]
@@ -161,12 +171,14 @@ pub fn build_reading(
 fn route_into_chart(
     input: &chart::BirthInput,
     transcript: Option<route::Transcript>,
-) -> Result<(contract::ChartData, usize), String> {
-    let mut chart = chart::compute_chart(input)?;
+) -> Result<(contract::ChartData, BuildReport), String> {
+    let (mut chart, mut warnings) = chart::compute_chart_reporting(input)?;
     let mut n_routed = 0;
     if let Some(transcript) = transcript {
         let router = route::lexicon_for(&chart);
-        n_routed = route::index_transcript(&mut chart, &transcript, &router);
+        let report = route::index_transcript(&mut chart, &transcript, &router);
+        n_routed = report.n_routed;
+        warnings.extend(report.warnings);
     }
-    Ok((chart, n_routed))
+    Ok((chart, BuildReport { n_routed, warnings }))
 }

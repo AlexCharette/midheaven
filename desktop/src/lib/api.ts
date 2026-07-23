@@ -2,10 +2,12 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { BirthForm, ChartData, PlaceDto, Preferences, ReadingEntry } from "./types";
+import type { BirthForm, ChartData, LocaleDto, PlaceDto, Preferences, ReadingEntry } from "./types";
 
 export const searchPlaces = (query: string) =>
   invoke<PlaceDto[]>("search_places", { query });
+
+export const listLocales = () => invoke<LocaleDto[]>("list_locales");
 
 export const build = (form: BirthForm) => invoke<ChartData>("build", { form });
 
@@ -22,6 +24,11 @@ export const savePdf = (path: string) => invoke<string>("save_pdf", { path });
 
 export const onTranscribeProgress = (handler: (pct: number) => void) =>
   listen<number>("transcribe-progress", (e) => handler(e.payload));
+
+/** Non-fatal build/routing warnings the backend used to write to stderr
+ * (DST-ambiguous birth time, Verify-gate rejections). */
+export const onBuildWarnings = (handler: (warnings: string[]) => void) =>
+  listen<string[]>("build-warnings", (e) => handler(e.payload));
 
 export const startRecording = (model: string) =>
   invoke<void>("start_recording", { model });

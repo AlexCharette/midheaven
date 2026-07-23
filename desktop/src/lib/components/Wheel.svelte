@@ -4,6 +4,7 @@
     catOf, degInSign, norm360, planetById, relatedTo, signDensity, textGlyph,
   } from "$lib/types";
   import { focusedTag, peek, selected, toggle, unpeek } from "$lib/state.svelte";
+  import type { Snippet } from "svelte";
 
   let { chart }: { chart: ChartData } = $props();
 
@@ -192,6 +193,31 @@
   class:focusing={focusTag !== null}
   aria-label="Natal chart wheel; the index of elements offers the same filters"
 >
+  <!-- every clickable element on the plate shares one interactive contract:
+       pin on click/Enter, preview on hover/focus, and the sel/focus/rel
+       lighting. Defined once here (in SVG scope) and rendered per shape. -->
+  {#snippet sector(id: string, cls: string, label: string | undefined, style: string | undefined, body: Snippet)}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <g
+      class={cls}
+      class:sel={selected.has(id)}
+      class:focus={focusTag === id}
+      class:rel={related.has(id)}
+      role="button"
+      tabindex="0"
+      aria-label={label}
+      {style}
+      onclick={() => toggle(id)}
+      onmouseenter={() => peek(id)}
+      onmouseleave={unpeek}
+      onfocus={() => peek(id)}
+      onblur={unpeek}
+      onkeydown={pinKey(id)}
+    >
+      {@render body()}
+    </g>
+  {/snippet}
+
   <!-- decorative drift ring — the one moving, non-data track -->
   <g class="drift" aria-hidden="true">
     {#each driftStars as s, i (i)}
@@ -210,22 +236,7 @@
   <circle cx={CX} cy={CY} r="2.6" class="engrave-strong hub-dot" />
 
   {#each signBands as band (band.s.id)}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <g
-      class="sign"
-      class:sel={selected.has(band.s.id)}
-      class:focus={focusTag === band.s.id}
-      class:rel={related.has(band.s.id)}
-      role="button"
-      tabindex="0"
-      aria-label="{band.s.name} — {band.s.element}"
-      onclick={() => toggle(band.s.id)}
-      onmouseenter={() => peek(band.s.id)}
-      onmouseleave={unpeek}
-      onfocus={() => peek(band.s.id)}
-      onblur={unpeek}
-      onkeydown={pinKey(band.s.id)}
-    >
+    {#snippet body()}
       <path d={band.d} class="wash wash-{band.s.element}" />
       <path d={band.d} class="sign-band"><title>{band.s.name} — {band.s.element}</title></path>
       {#if band.bar}
@@ -234,30 +245,17 @@
       <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
         >{textGlyph(band.s.glyph)}</text
       >
-    </g>
+    {/snippet}
+    {@render sector(band.s.id, "sign", `${band.s.name} — ${band.s.element}`, undefined, body)}
   {/each}
 
   {#each houseWedges as w (w.h.id)}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <g
-      class="house"
-      class:sel={selected.has(w.h.id)}
-      class:focus={focusTag === w.h.id}
-      class:rel={related.has(w.h.id)}
-      role="button"
-      tabindex="0"
-      aria-label={w.h.name}
-      onclick={() => toggle(w.h.id)}
-      onmouseenter={() => peek(w.h.id)}
-      onmouseleave={unpeek}
-      onfocus={() => peek(w.h.id)}
-      onblur={unpeek}
-      onkeydown={pinKey(w.h.id)}
-    >
+    {#snippet body()}
       <path d={w.d} class="house-wedge"><title>{w.h.name}</title></path>
       <line x1={w.spoke.x1} y1={w.spoke.y1} x2={w.spoke.x2} y2={w.spoke.y2} class="cusp-spoke" />
       <text x={w.lx} y={w.ly} class="house-label" text-anchor="middle" dominant-baseline="central">{w.h.label}</text>
-    </g>
+    {/snippet}
+    {@render sector(w.h.id, "house", w.h.name, undefined, body)}
   {/each}
 
   {#each axes as ax (ax.label)}
@@ -272,44 +270,16 @@
   </g>
 
   {#each chords as c (c.a.id)}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <g
-      class="aspect"
-      class:sel={selected.has(c.a.id)}
-      class:focus={focusTag === c.a.id}
-      class:rel={related.has(c.a.id)}
-      role="button"
-      tabindex="0"
-      onclick={() => toggle(c.a.id)}
-      onmouseenter={() => peek(c.a.id)}
-      onmouseleave={unpeek}
-      onfocus={() => peek(c.a.id)}
-      onblur={unpeek}
-      onkeydown={pinKey(c.a.id)}
-    >
+    {#snippet body()}
       <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} class="chord nature-{c.a.nature}" />
       <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} class="chord-hit" />
       <title>{c.a.name} {textGlyph(c.a.glyph)}</title>
-    </g>
+    {/snippet}
+    {@render sector(c.a.id, "aspect", undefined, undefined, body)}
   {/each}
 
   {#each planets as pl, i (pl.p.id)}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <g
-      class="planet"
-      style="--d: {520 + i * 55}ms"
-      class:sel={selected.has(pl.p.id)}
-      class:focus={focusTag === pl.p.id}
-      class:rel={related.has(pl.p.id)}
-      role="button"
-      tabindex="0"
-      onclick={() => toggle(pl.p.id)}
-      onmouseenter={() => peek(pl.p.id)}
-      onmouseleave={unpeek}
-      onfocus={() => peek(pl.p.id)}
-      onblur={unpeek}
-      onkeydown={pinKey(pl.p.id)}
-    >
+    {#snippet body()}
       <line x1={pl.tick.x1} y1={pl.tick.y1} x2={pl.tick.x2} y2={pl.tick.y2} class="tick" />
       <circle cx={pl.gx} cy={pl.gy} r="15" class="halo" />
       <text x={pl.gx} y={pl.gy} class="glyph" font-size={pl.p.glyph.length > 1 ? 13 : 22} text-anchor="middle" dominant-baseline="central"
@@ -317,7 +287,8 @@
       >
       <text x={pl.dx} y={pl.dy} class="deg" text-anchor="middle" dominant-baseline="central">{pl.deg}°</text>
       <title>{pl.p.name}</title>
-    </g>
+    {/snippet}
+    {@render sector(pl.p.id, "planet", undefined, `--d: ${520 + i * 55}ms`, body)}
   {/each}
 </svg>
 

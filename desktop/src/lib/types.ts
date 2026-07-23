@@ -1,105 +1,26 @@
-// Mirrors contract::ChartData — the same JSON the artifact embeds.
+// The contract types (ChartData & co.) and the backend DTOs are GENERATED
+// from the Rust structs by ts-rs — see `./generated/`. Do not hand-edit those
+// files or re-declare the shapes here; regenerate with `npm run gen:types` so
+// a Rust rename can never silently drift from the webview. This module
+// re-exports them under the familiar `$lib/types` path and adds the pure
+// client-side derivations.
 
-export interface ChartData {
-  meta: {
-    name: string;
-    born: string;
-    place: string;
-    system: string;
-    zodiac: string;
-    /** Reading language code ("en", "ru"); may be absent on older charts. */
-    locale?: string;
-    astrologer?: string;
-    logo?: string;
-  };
-  axes: { asc: number; mc: number };
-  houseCusps: number[];
-  planets: Body[];
-  signs: Ref[];
-  houses: HouseRef[];
-  aspects: Aspect[];
-  excerpts: Excerpt[];
-}
-export interface Body {
-  id: string;
-  glyph: string;
-  name: string;
-  lon: number;
-  house: number;
-}
-interface Ref {
-  id: string;
-  glyph: string;
-  name: string;
-  element: string;
-}
-interface HouseRef {
-  id: string;
-  label: string;
-  name: string;
-}
-interface Aspect {
-  id: string;
-  glyph: string;
-  name: string;
-  a: string;
-  b: string;
-  /** "harmonious" | "challenging" | "neutral" — chord coloring. */
-  nature: string;
-}
-export interface Excerpt {
-  id: string;
-  time: string;
-  span: [number, number];
-  text: string;
-  tags: string[];
-}
+export type { ChartData } from "./generated/ChartData";
+export type { Meta } from "./generated/Meta";
+export type { Axes } from "./generated/Axes";
+export type { Body } from "./generated/Body";
+export type { Ref } from "./generated/Ref";
+export type { HouseRef } from "./generated/HouseRef";
+export type { Aspect } from "./generated/Aspect";
+export type { Excerpt } from "./generated/Excerpt";
+export type { PlaceDto } from "./generated/PlaceDto";
+export type { Preferences } from "./generated/Preferences";
+export type { ReadingEntry } from "./generated/ReadingEntry";
+export type { BirthForm } from "./generated/BirthForm";
+export type { LocaleDto } from "./generated/LocaleDto";
 
-export interface PlaceDto {
-  id: number;
-  label: string;
-}
-
-/** Mirrors prefs::Preferences — every field optional; None ⇔ null. */
-export interface Preferences {
-  models_dir: string | null;
-  default_model: string | null;
-  readings_dir: string | null;
-  astrologer: string | null;
-  logo: string | null;
-  page_size: string | null;
-  default_locale: string | null;
-}
-
-/** Mirrors the backend's ReadingEntry — one row of the saved-readings library. */
-export interface ReadingEntry {
-  chartPath: string;
-  dir: string;
-  name: string;
-  born: string;
-  place: string;
-  excerpts: number;
-  modifiedMs: number | null;
-}
-
-export interface BirthForm {
-  name: string;
-  date: string;
-  time: string;
-  place_id: number;
-  transcript: string | null;
-  model: string | null;
-  /** Reading language code ("en", "ru"); backend falls back to the
-   * default-language preference, then English. */
-  lang: string | null;
-}
-
-/** Reading languages offered in the UI — mirrors i18n::Locale::ALL.
- * `label` is shown in the language's own script (endonym). */
-export const LOCALES: { code: string; label: string }[] = [
-  { code: "en", label: "English" },
-  { code: "ru", label: "Русский" },
-];
+import type { ChartData } from "./generated/ChartData";
+import type { Excerpt } from "./generated/Excerpt";
 
 /** Force text presentation — glyphs must engrave, not render as emoji. */
 export const textGlyph = (g: string) => g + "\ufe0e";

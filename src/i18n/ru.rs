@@ -13,6 +13,8 @@ pub static TABLE: LocaleTable = LocaleTable {
     system: "Целые знаки",
     zodiac: "Тропический",
     anonymous: "Без имени",
+    endonym: "Русский",
+    house_suffix: " дом",
     pdf: PdfChrome {
         nativity_of: "Натальная карта",
         prepared_by: "Подготовил",

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct ChartData {
     pub meta: Meta,
     pub axes: Axes,
@@ -156,6 +157,7 @@ fn default_locale() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Meta {
     pub name: String,
     pub born: String,
@@ -170,13 +172,16 @@ pub struct Meta {
     /// Practitioner branding for the artifact ("prepared by …"); absent
     /// unless a frontend stamps it, keeping unbranded output byte-identical.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub astrologer: Option<String>,
     /// Practitioner logo as a `data:` URI — the artifact stays self-contained.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub logo: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Axes {
     /// Ecliptic longitude in degrees; 0 = 0° Aries.
     pub asc: f64,
@@ -184,6 +189,7 @@ pub struct Axes {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Body {
     pub id: String,
     pub glyph: String,
@@ -193,6 +199,7 @@ pub struct Body {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Ref {
     pub id: String,
     pub glyph: String,
@@ -202,6 +209,7 @@ pub struct Ref {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct HouseRef {
     pub id: String,
     /// Roman numeral.
@@ -210,6 +218,7 @@ pub struct HouseRef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Aspect {
     pub id: String,
     pub glyph: String,
@@ -220,13 +229,20 @@ pub struct Aspect {
     /// "harmonious" (trine, sextile), "challenging" (square, opposition),
     /// or "neutral" (conjunction) — drives the wheel's chord coloring.
     pub nature: String,
+    /// Deviation from the aspect's exact angle, in degrees — the orb. Computed
+    /// once at detect time (see `chart::detect_aspects`) so no viewer re-derives
+    /// it from longitudes. Defaulted so charts written before this field load.
+    #[serde(default)]
+    pub orb: f64,
     /// Aspect kind ("trine", …) for routers matching aspect words; not part
     /// of the serialized artifact contract.
     #[serde(skip)]
+    #[cfg_attr(feature = "ts", ts(skip))]
     pub kind: &'static str,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Excerpt {
     /// Unique among the chart's excerpts (the `x{n}` scheme is convention;
     /// uniqueness is the invariant consumers rely on).
@@ -291,6 +307,7 @@ mod tests {
                 a: "planet:sun".into(),
                 b: "planet:moon".into(),
                 nature: "harmonious".into(),
+                orb: 0.0,
                 kind: "",
             }],
             excerpts: vec![Excerpt {

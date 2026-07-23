@@ -3,23 +3,32 @@
 //! commentary). Pure vector output via krilla; fonts are embedded and
 //! subset, nothing external. The dark rendition stays the artifact's; paper
 //! gets dark inks on warm cream.
+//!
+//! The module is split by concern: [`palette`] (the color table),
+//! [`primitives`] (paint/path helpers), [`text`] (typography), [`wheel`] (the
+//! chart plate), and [`flow`] (the pages-2+ layout engine). This file is the
+//! driver: page geometry, ornaments, and the [`render`] entry point.
 
+mod flow;
 mod fonts;
+mod palette;
+mod primitives;
+mod text;
 mod wheel;
 
-use crate::contract::{ChartData, Excerpt};
+use crate::contract::ChartData;
 use crate::i18n::Locale;
 use base64::Engine;
-use fonts::{Face, Fonts, glyph_face, sym};
+use flow::{Frame, build_flow};
+use fonts::{Face, Fonts};
 use krilla::Document;
-use krilla::geom::{Path as KPath, PathBuilder, Point, Rect, Size};
-use krilla::num::NormalizedF32;
+use krilla::geom::{PathBuilder, Rect, Size};
 use krilla::page::PageSettings;
-use krilla::paint::{Fill, Stroke};
 use krilla::surface::Surface;
-use krilla::text::TextDirection;
-use std::borrow::Cow;
+use palette::*;
+use primitives::{circle_path, fill, filled, hline, rect_stroke, stroke, stroked};
 use std::path::Path;
+use text::{center_str, draw_tracked, wrap};
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum PageSize {
@@ -50,376 +59,75 @@ impl PageSize {
     }
 }
 
-/// The engraved palette, pulled on paper: same identities as the artifact
-/// (brass planets, verdigris signs, steel houses, oxblood aspects), darkened
-/// for cream ground; hairlines are ink pre-blended onto the paper tone.
-pub(crate) mod palette {
-    pub const PAPER: (u8, u8, u8) = (244, 239, 226);
-    pub const INK: (u8, u8, u8) = (43, 39, 33);
-    pub const INK2: (u8, u8, u8) = (87, 80, 63);
-    pub const INK3: (u8, u8, u8) = (122, 114, 92);
-    pub const LINE: (u8, u8, u8) = (212, 207, 195);
-    pub const HAIRLINE: (u8, u8, u8) = (184, 179, 168);
-    pub const BRASS: (u8, u8, u8) = (138, 106, 28);
-    pub const VERDIGRIS: (u8, u8, u8) = (30, 111, 82);
-    pub const STEEL: (u8, u8, u8) = (60, 95, 150);
-    pub const OXBLOOD: (u8, u8, u8) = (142, 52, 70);
+/// The page margin — the content box the title plate and the flow both live in.
+const MARGIN: f32 = 64.0;
 
-    /// Element washes, pre-blended onto the paper tone (the artifact's
-    /// rgba washes against cream instead of night).
-    pub fn wash(element: &str) -> (u8, u8, u8) {
-        match element {
-            "fire" => (239, 224, 209),
-            "earth" => (233, 224, 203),
-            "air" => (238, 232, 213),
-            _ => (229, 229, 224), // water
-        }
-    }
-}
-use palette::*;
+/// Title-plate layout (page 1). The page reads top-to-bottom as a cursor `y`
+/// advanced past each band; these name the bands' type sizes, baseline drops,
+/// and advances so the layout reads as rhythm rather than bare literals.
+mod plate {
+    /// Gap below the top margin before the ornament.
+    pub const TOP_PAD: f32 = 8.0;
 
-pub(crate) fn solid(c: (u8, u8, u8)) -> krilla::paint::Paint {
-    krilla::color::rgb::Color::new(c.0, c.1, c.2).into()
-}
+    // ornament (practitioner logo, or the compass fallback)
+    pub const ORNAMENT_ADVANCE: f32 = 46.0;
+    pub const COMPASS_DROP: f32 = 16.0; // compass centre below the cursor
+    pub const COMPASS_RADIUS: f32 = 17.0;
+    pub const LOGO_UNIT: f32 = 34.0; // logo width per unit of aspect ratio
+    pub const LOGO_MAX_W: f32 = 130.0;
 
-pub(crate) fn fill(c: (u8, u8, u8), alpha: f32) -> Fill {
-    Fill {
-        paint: solid(c),
-        opacity: NormalizedF32::new(alpha).unwrap_or(NormalizedF32::ONE),
-        ..Default::default()
-    }
-}
+    // "nativity of" super-title
+    pub const SUPERTITLE_SIZE: f32 = 12.0;
+    pub const SUPERTITLE_BASELINE: f32 = 12.0;
+    pub const SUPERTITLE_ADVANCE: f32 = 26.0;
 
-pub(crate) fn stroke(c: (u8, u8, u8), width: f32, alpha: f32) -> Stroke {
-    Stroke {
-        paint: solid(c),
-        width,
-        opacity: NormalizedF32::new(alpha).unwrap_or(NormalizedF32::ONE),
-        ..Default::default()
-    }
-}
+    // the name, auto-shrunk to fit the content width
+    pub const NAME_MAX_SIZE: f32 = 23.0;
+    pub const NAME_MIN_SIZE: f32 = 12.0;
+    pub const NAME_SHRINK_STEP: f32 = 1.0;
+    pub const NAME_TRACKING_RATIO: f32 = 0.17;
+    pub const NAME_ADVANCE_PAD: f32 = 14.0; // added to the fitted size
 
-/// Fill and stroke are persistent surface state in krilla — every paint
-/// helper must clear the one it doesn't use, or paths inherit stale paint.
-pub(crate) fn stroked(s: &mut Surface, path: &KPath, st: Stroke) {
-    s.set_fill(None);
-    s.set_stroke(Some(st));
-    s.draw_path(path);
-}
+    // born · place detail line
+    pub const DETAIL_SIZE: f32 = 10.5;
+    pub const DETAIL_BASELINE: f32 = 10.0;
+    pub const DETAIL_ADVANCE: f32 = 20.0;
 
-pub(crate) fn filled(s: &mut Surface, path: &KPath, f: Fill) {
-    s.set_stroke(None);
-    s.set_fill(Some(f));
-    s.draw_path(path);
+    // "prepared by …" byline (present only when branded)
+    pub const BYLINE_SIZE: f32 = 7.5;
+    pub const BYLINE_TRACKING: f32 = 1.1;
+    pub const BYLINE_BASELINE: f32 = 9.0;
+    pub const BYLINE_ADVANCE: f32 = 18.0;
+
+    // the double rule under the header
+    pub const RULE_TOP_PAD: f32 = 10.0;
+    pub const RULE_MAX_W: f32 = 300.0;
+    pub const RULE_GAP: f32 = 5.0; // between the two rules
+    pub const RULE_ADVANCE: f32 = 26.0;
+
+    // the plate: double frame + wheel, sized to what the page leaves
+    pub const CAPTION_ROOM: f32 = 64.0; // vertical room reserved for the caption
+    pub const BOTTOM_SLACK: f32 = 12.0;
+    pub const FRAME_INSET: f32 = 6.0; // inner frame inset from the outer
+    pub const WHEEL_INSET: f32 = 22.0; // label ring inside the inner frame
+    pub const ADVANCE_PAD: f32 = 20.0; // below the plate before the caption
+
+    // the figure caption
+    pub const CAPTION_SIZE: f32 = 9.5;
+    pub const CAPTION_WIDTH_RATIO: f32 = 0.9;
+    pub const CAPTION_BASELINE: f32 = 9.5;
+    pub const CAPTION_LEADING: f32 = 14.5;
 }
 
-/// A circle as four cubic segments — krilla's `PathBuilder` has no circle
-/// primitive. The one bezier-circle in the module (the wheel's rings and the
-/// compass both build on it).
-pub(crate) fn circle_path(cx: f32, cy: f32, r: f32) -> KPath {
-    const KAPPA: f32 = 0.552_284_8; // 4/3·tan(π/8)
-    let k = KAPPA * r;
-    let mut pb = PathBuilder::new();
-    pb.move_to(cx + r, cy);
-    pb.cubic_to(cx + r, cy + k, cx + k, cy + r, cx, cy + r);
-    pb.cubic_to(cx - k, cy + r, cx - r, cy + k, cx - r, cy);
-    pb.cubic_to(cx - r, cy - k, cx - k, cy - r, cx, cy - r);
-    pb.cubic_to(cx + k, cy - r, cx + r, cy - k, cx + r, cy);
-    pb.close();
-    pb.finish().expect("circle path")
+/// Flowed pages (2+) layout.
+mod flowed {
+    pub const FOOTER_ROOM: f32 = 18.0; // bottom margin the folio sits in
+    pub const FOOTER_DROP: f32 = 40.0; // folio baseline above the page bottom
+    pub const FOOTER_SIZE: f32 = 9.0;
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_str(
-    s: &mut Surface,
-    fonts: &Fonts,
-    face: Face,
-    size: f32,
-    color: (u8, u8, u8),
-    x: f32,
-    baseline: f32,
-    text: &str,
-) {
-    let text: Cow<str> = if face == Face::Symbols { sym(text) } else { Cow::Borrowed(text) };
-    s.set_stroke(None);
-    s.set_fill(Some(fill(color, 1.0)));
-    s.draw_text(
-        Point::from_xy(x, baseline),
-        fonts.font(face),
-        size,
-        &text,
-        false,
-        TextDirection::LeftToRight,
-    );
-}
-
-/// Letterspaced run (the engraved caps voice); measure with
-/// `fonts.width(face, size, tracking, text)`.
-#[allow(clippy::too_many_arguments)]
-fn draw_tracked(
-    s: &mut Surface,
-    fonts: &Fonts,
-    face: Face,
-    size: f32,
-    color: (u8, u8, u8),
-    tracking: f32,
-    x: f32,
-    baseline: f32,
-    text: &str,
-) {
-    let mut cx = x;
-    let mut buf = [0u8; 4];
-    for c in text.chars() {
-        let cs: &str = c.encode_utf8(&mut buf);
-        draw_str(s, fonts, face, size, color, cx, baseline, cs);
-        cx += fonts.width(face, size, 0.0, cs) + tracking;
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn center_str(
-    s: &mut Surface,
-    fonts: &Fonts,
-    face: Face,
-    size: f32,
-    color: (u8, u8, u8),
-    cx: f32,
-    baseline: f32,
-    text: &str,
-) {
-    let w = fonts.width(face, size, 0.0, text);
-    draw_str(s, fonts, face, size, color, cx - w / 2.0, baseline, text);
-}
-
-fn hline(s: &mut Surface, x1: f32, x2: f32, y: f32, color: (u8, u8, u8), width: f32) {
-    let mut pb = PathBuilder::new();
-    pb.move_to(x1, y);
-    pb.line_to(x2, y);
-    stroked(s, &pb.finish().expect("hline"), stroke(color, width, 1.0));
-}
-
-fn rect_stroke(s: &mut Surface, x: f32, y: f32, w: f32, h: f32, color: (u8, u8, u8), width: f32) {
-    let mut pb = PathBuilder::new();
-    pb.push_rect(Rect::from_xywh(x, y, w, h).expect("rect"));
-    stroked(s, &pb.finish().expect("rect path"), stroke(color, width, 1.0));
-}
-
-/// Greedy word wrap against `width` points — incremental (each word is
-/// measured once; a running line width replaces re-measuring the line).
-fn wrap(fonts: &Fonts, face: Face, size: f32, width: f32, text: &str) -> Vec<String> {
-    let space_w = fonts.width(face, size, 0.0, " ");
-    let mut lines = Vec::new();
-    let mut line = String::new();
-    let mut line_w = 0.0f32;
-    for word in text.split_whitespace() {
-        let word_w = fonts.width(face, size, 0.0, word);
-        if line.is_empty() {
-            line.push_str(word);
-            line_w = word_w;
-        } else if line_w + space_w + word_w <= width {
-            line.push(' ');
-            line.push_str(word);
-            line_w += space_w + word_w;
-        } else {
-            lines.push(std::mem::take(&mut line));
-            line.push_str(word);
-            line_w = word_w;
-        }
-    }
-    if !line.is_empty() {
-        lines.push(line);
-    }
-    lines
-}
-
-/// `17°42' Cancer` — the template's fmtPos (U+2019 stands in for the
-/// minutes prime; Libre Baskerville has no U+2032).
-fn fmt_pos(chart: &ChartData, lon: f64) -> String {
-    let within = lon.rem_euclid(360.0) % 30.0;
-    let mut d = within.floor();
-    let mut m = ((within - d) * 60.0).round();
-    if m >= 60.0 {
-        d += 1.0;
-        m = 0.0;
-    }
-    let sign = &chart.signs[(lon.rem_euclid(360.0) / 30.0) as usize % 12];
-    format!("{d}\u{b0}{m:02}\u{2019} {}", sign.name)
-}
-
-/// A line's painter, called with the line's top y.
-type Painter<'c> = Box<dyn Fn(&mut Surface, &Fonts, f32) + 'c>;
-
-/// One flowed line on pages 2+: height, an orphan guard, and its painter.
-struct FlowLine<'c> {
-    h: f32,
-    /// Keep this line on the same page as the one after it.
-    keep: bool,
-    draw: Painter<'c>,
-}
-
-struct Frame {
-    w: f32,
-    margin: f32,
-}
-
-impl Frame {
-    fn content_w(&self) -> f32 {
-        self.w - 2.0 * self.margin
-    }
-}
-
-/// A rubric — letterspaced small head flanked by rules.
-fn rubric<'c>(frame: &Frame, title: &'c str) -> FlowLine<'c> {
-    let margin = frame.margin;
-    let cw = frame.content_w();
-    FlowLine {
-        h: 30.0,
-        keep: true,
-        draw: Box::new(move |s, fonts, y| {
-            let size = 9.5;
-            let tracking = size * 0.28;
-            let text = title.to_uppercase();
-            let w = fonts.width(Face::Regular, size, tracking, &text);
-            let cx = margin + cw / 2.0;
-            let baseline = y + 18.0;
-            draw_tracked(s, fonts, Face::Regular, size, INK2, tracking, cx - w / 2.0, baseline, &text);
-            let gap = 14.0;
-            hline(s, margin, cx - w / 2.0 - gap, baseline - size * 0.32, LINE, 0.8);
-            hline(s, cx + w / 2.0 + gap, margin + cw, baseline - size * 0.32, LINE, 0.8);
-        }),
-    }
-}
-
-fn spacer(h: f32) -> FlowLine<'static> {
-    FlowLine { h, keep: false, draw: Box::new(|_, _, _| {}) }
-}
-
-/// Resolve a tag id to its chip: (glyph text, face, identity color). Serves
-/// the folio chips AND the index rows — the one Rust home for "planets/
-/// signs/aspects show their glyph, houses their roman label".
-fn tag_chip(chart: &ChartData, tag: &str) -> Option<(String, Face, (u8, u8, u8))> {
-    if let Some(p) = chart.planet(tag) {
-        return Some((p.glyph.clone(), glyph_face(&p.glyph), BRASS));
-    }
-    if let Some(sign) = chart.signs.iter().find(|x| x.id == tag) {
-        return Some((sign.glyph.clone(), Face::Symbols, VERDIGRIS));
-    }
-    if let Some(h) = chart.houses.iter().find(|x| x.id == tag) {
-        return Some((h.label.clone(), Face::Regular, STEEL));
-    }
-    if let Some(a) = chart.aspects.iter().find(|x| x.id == tag) {
-        let (pa, pb) = (chart.planet(&a.a)?, chart.planet(&a.b)?);
-        return Some((format!("{} {} {}", pa.glyph, a.glyph, pb.glyph), Face::Symbols, OXBLOOD));
-    }
-    None
-}
-
-/// The passage block: folio line (time anchor + tag chips) and wrapped text.
-fn passage<'c>(
-    chart: &'c ChartData,
-    ex: &'c Excerpt,
-    fonts: &Fonts,
-    frame: &Frame,
-) -> Vec<FlowLine<'c>> {
-    let margin = frame.margin;
-    let cw = frame.content_w();
-    let mut out: Vec<FlowLine<'c>> = Vec::new();
-
-    // folio: chips laid out right-to-left from the right edge, time on the left
-    let chips: Vec<(String, Face, (u8, u8, u8))> =
-        ex.tags.iter().filter_map(|t| tag_chip(chart, t)).collect();
-    let chip_size = 10.0;
-    let mut positions = Vec::new();
-    let mut right = margin + cw;
-    for (text, face, color) in chips {
-        let w = fonts.width(face, chip_size, 0.0, &text);
-        right -= w;
-        positions.push((right, text, face, color));
-        right -= 10.0;
-    }
-    let time: &'c str = &ex.time;
-    out.push(FlowLine {
-        h: 16.0,
-        keep: true,
-        draw: Box::new(move |s, fonts, y| {
-            let baseline = y + 11.0;
-            if !time.is_empty() {
-                draw_str(s, fonts, Face::Italic, 9.0, INK3, margin, baseline, time);
-            }
-            for (x, text, face, color) in &positions {
-                draw_str(s, fonts, *face, chip_size, *color, *x, baseline, text);
-            }
-        }),
-    });
-
-    let size = 10.5;
-    let leading = 16.0;
-    for (i, line) in wrap(fonts, Face::Regular, size, cw, &ex.text).into_iter().enumerate() {
-        out.push(FlowLine {
-            h: leading,
-            keep: i == 0, // the folio must not sit alone above a page break
-            draw: Box::new(move |s, fonts, y| {
-                draw_str(s, fonts, Face::Regular, size, INK, margin, y + size, &line);
-            }),
-        });
-    }
-    out.push(spacer(12.0));
-    out
-}
-
-/// Everything that flows on pages 2+ — index of elements, then commentary.
-fn build_flow<'c>(chart: &'c ChartData, fonts: &Fonts, frame: &Frame) -> Vec<FlowLine<'c>> {
-    let margin = frame.margin;
-    let cw = frame.content_w();
-    let loc = Locale::parse(&chart.meta.locale);
-    let mut flow: Vec<FlowLine<'c>> = Vec::new();
-
-    flow.push(rubric(frame, loc.pdf().index_of_elements));
-    flow.push(spacer(4.0));
-    for p in &chart.planets {
-        let Some((glyph, gface, _)) = tag_chip(chart, &p.id) else { continue };
-        let name: &'c str = &p.name;
-        let pos = fmt_pos(chart, p.lon);
-        let house: &'c str = &chart.houses[(p.house as usize).saturating_sub(1) % 12].label;
-        flow.push(FlowLine {
-            h: 17.0,
-            keep: false,
-            draw: Box::new(move |s, fonts, y| {
-                let b = y + 12.0;
-                draw_str(s, fonts, gface, 11.0, BRASS, margin, b, &glyph);
-                draw_str(s, fonts, Face::Regular, 10.5, INK, margin + 26.0, b, name);
-                draw_str(s, fonts, Face::Regular, 10.5, INK2, margin + 130.0, b, &pos);
-                let w = fonts.width(Face::Regular, 10.5, 0.0, house);
-                draw_str(s, fonts, Face::Regular, 10.5, STEEL, margin + cw - w, b, house);
-            }),
-        });
-    }
-    if !chart.aspects.is_empty() {
-        flow.push(spacer(10.0));
-        for a in &chart.aspects {
-            let Some((glyphs, _, _)) = tag_chip(chart, &a.id) else { continue };
-            let name: &'c str = &a.name;
-            flow.push(FlowLine {
-                h: 16.0,
-                keep: false,
-                draw: Box::new(move |s, fonts, y| {
-                    let b = y + 11.5;
-                    draw_str(s, fonts, Face::Symbols, 10.5, OXBLOOD, margin, b, &glyphs);
-                    draw_str(s, fonts, Face::Regular, 10.0, INK2, margin + 64.0, b, name);
-                }),
-            });
-        }
-    }
-
-    if !chart.excerpts.is_empty() {
-        flow.push(spacer(20.0));
-        flow.push(rubric(frame, loc.pdf().commentary));
-        flow.push(spacer(4.0));
-        for ex in &chart.excerpts {
-            flow.extend(passage(chart, ex, fonts, frame));
-        }
-    }
-    flow
+fn page_settings(w: f32, h: f32) -> PageSettings {
+    PageSettings::new(Size::from_wh(w, h).expect("page size"))
 }
 
 /// The compass ornament from the artifact's title plate, at `r` points.
@@ -470,95 +178,114 @@ pub fn render(chart: &ChartData, size: PageSize) -> Result<Vec<u8>, String> {
     let loc = Locale::parse(&chart.meta.locale);
     let fonts = Fonts::new(loc)?;
     let (w, h) = size.dims();
-    let frame = Frame { w, margin: 64.0 };
+    let frame = Frame { w, margin: MARGIN };
+    let mut doc = Document::new();
+
+    render_title_page(&mut doc, chart, &fonts, loc, &frame, h);
+    paginate(&mut doc, chart, &fonts, &frame, h);
+
+    doc.finish().map_err(|e| format!("cannot assemble the PDF: {e:?}"))
+}
+
+/// Page 1: the title plate — header (ornament, super-title, name, details,
+/// byline), a double rule, the framed wheel, and the figure caption.
+fn render_title_page(
+    doc: &mut Document,
+    chart: &ChartData,
+    fonts: &Fonts,
+    loc: Locale,
+    frame: &Frame,
+    h: f32,
+) {
+    use plate::*;
+    let w = frame.w;
     let cw = frame.content_w();
     let cx = w / 2.0;
-    let mut doc = Document::new();
-    let settings = || PageSettings::new(Size::from_wh(w, h).expect("page size"));
+    let mut page = doc.start_page_with(page_settings(w, h));
+    let mut s = page.surface();
+    paper(&mut s, w, h);
+    let mut y = frame.margin + TOP_PAD;
 
-    // ---- page 1: title plate + the plate ----
-    {
-        let mut page = doc.start_page_with(settings());
-        let mut s = page.surface();
-        paper(&mut s, w, h);
-        let mut y = frame.margin + 8.0;
-
-        // ornament: the practitioner's mark when present, the compass otherwise
-        match logo_image(&chart.meta.logo) {
-            Some((image, aspect)) => {
-                let lw = (34.0 * aspect).min(130.0);
-                let lh = lw / aspect;
-                s.push_transform(&krilla::geom::Transform::from_translate(cx - lw / 2.0, y));
-                s.draw_image(image, Size::from_wh(lw, lh).expect("logo"));
-                s.pop();
-            }
-            None => compass(&mut s, cx, y + 16.0, 17.0),
+    // ornament: the practitioner's mark when present, the compass otherwise
+    match logo_image(&chart.meta.logo) {
+        Some((image, aspect)) => {
+            let lw = (LOGO_UNIT * aspect).min(LOGO_MAX_W);
+            let lh = lw / aspect;
+            s.push_transform(&krilla::geom::Transform::from_translate(cx - lw / 2.0, y));
+            s.draw_image(image, Size::from_wh(lw, lh).expect("logo"));
+            s.pop();
         }
-        y += 46.0;
+        None => compass(&mut s, cx, y + COMPASS_DROP, COMPASS_RADIUS),
+    }
+    y += ORNAMENT_ADVANCE;
 
-        center_str(&mut s, &fonts, Face::Italic, 12.0, INK2, cx, y + 12.0, loc.pdf().nativity_of);
-        y += 26.0;
+    center_str(&mut s, fonts, Face::Italic, SUPERTITLE_SIZE, INK2, cx, y + SUPERTITLE_BASELINE, loc.pdf().nativity_of);
+    y += SUPERTITLE_ADVANCE;
 
-        let name = chart.meta.name.to_uppercase();
-        let mut nsize = 23.0;
-        let tracking = |sz: f32| sz * 0.17;
-        while fonts.width(Face::Regular, nsize, tracking(nsize), &name) > cw && nsize > 12.0 {
-            nsize -= 1.0;
-        }
-        let nw = fonts.width(Face::Regular, nsize, tracking(nsize), &name);
-        draw_tracked(&mut s, &fonts, Face::Regular, nsize, INK, tracking(nsize), cx - nw / 2.0, y + nsize, &name);
-        y += nsize + 14.0;
+    let name = chart.meta.name.to_uppercase();
+    let mut nsize = NAME_MAX_SIZE;
+    let tracking = |sz: f32| sz * NAME_TRACKING_RATIO;
+    while fonts.width(Face::Regular, nsize, tracking(nsize), &name) > cw && nsize > NAME_MIN_SIZE {
+        nsize -= NAME_SHRINK_STEP;
+    }
+    let nw = fonts.width(Face::Regular, nsize, tracking(nsize), &name);
+    draw_tracked(&mut s, fonts, Face::Regular, nsize, INK, tracking(nsize), cx - nw / 2.0, y + nsize, &name);
+    y += nsize + NAME_ADVANCE_PAD;
 
-        let details = if chart.meta.place.is_empty() {
-            chart.meta.born.clone()
-        } else {
-            format!("{} \u{b7} {}", chart.meta.born, chart.meta.place)
-        };
-        center_str(&mut s, &fonts, Face::Italic, 10.5, INK2, cx, y + 10.0, &details);
-        y += 20.0;
+    let details = if chart.meta.place.is_empty() {
+        chart.meta.born.clone()
+    } else {
+        format!("{} \u{b7} {}", chart.meta.born, chart.meta.place)
+    };
+    center_str(&mut s, fonts, Face::Italic, DETAIL_SIZE, INK2, cx, y + DETAIL_BASELINE, &details);
+    y += DETAIL_ADVANCE;
 
-        if let Some(astrologer) = chart.meta.astrologer.as_deref() {
-            let text = format!("{} {}", loc.pdf().prepared_by.to_uppercase(), astrologer.to_uppercase());
-            let tw = fonts.width(Face::Regular, 7.5, 1.1, &text);
-            draw_tracked(&mut s, &fonts, Face::Regular, 7.5, INK3, 1.1, cx - tw / 2.0, y + 9.0, &text);
-            y += 18.0;
-        }
-
-        // double rule
-        y += 10.0;
-        let rw = 300.0f32.min(cw);
-        hline(&mut s, cx - rw / 2.0, cx + rw / 2.0, y, HAIRLINE, 0.9);
-        hline(&mut s, cx - rw / 2.0, cx + rw / 2.0, y + 5.0, LINE, 0.8);
-        y += 26.0;
-
-        // the plate: double frame + wheel, sized to what the page leaves us
-        let caption_room = 64.0;
-        let side = cw.min(h - frame.margin - caption_room - y - 12.0);
-        let px = cx - side / 2.0;
-        rect_stroke(&mut s, px, y, side, side, LINE, 0.8);
-        rect_stroke(&mut s, px + 6.0, y + 6.0, side - 12.0, side - 12.0, HAIRLINE, 0.9);
-        wheel::draw(&mut s, &fonts, chart, cx, y + side / 2.0, side / 2.0 - 22.0);
-        y += side + 20.0;
-
-        let caption = loc.pdf_figure_caption(
-            &chart.meta.name,
-            &chart.meta.born,
-            &chart.meta.place,
-            &chart.meta.system,
-            &chart.meta.zodiac,
-        );
-        for line in wrap(&fonts, Face::Italic, 9.5, cw * 0.9, &caption) {
-            center_str(&mut s, &fonts, Face::Italic, 9.5, INK3, cx, y + 9.5, &line);
-            y += 14.5;
-        }
-
-        s.finish();
-        page.finish();
+    if let Some(astrologer) = chart.meta.astrologer.as_deref() {
+        let text = format!("{} {}", loc.pdf().prepared_by.to_uppercase(), astrologer.to_uppercase());
+        let tw = fonts.width(Face::Regular, BYLINE_SIZE, BYLINE_TRACKING, &text);
+        draw_tracked(&mut s, fonts, Face::Regular, BYLINE_SIZE, INK3, BYLINE_TRACKING, cx - tw / 2.0, y + BYLINE_BASELINE, &text);
+        y += BYLINE_ADVANCE;
     }
 
-    // ---- pages 2+: index + commentary flow (measure, then draw) ----
-    let flow = build_flow(chart, &fonts, &frame);
-    let bottom = h - frame.margin - 18.0;
+    // double rule
+    y += RULE_TOP_PAD;
+    let rw = RULE_MAX_W.min(cw);
+    hline(&mut s, cx - rw / 2.0, cx + rw / 2.0, y, HAIRLINE, 0.9);
+    hline(&mut s, cx - rw / 2.0, cx + rw / 2.0, y + RULE_GAP, LINE, 0.8);
+    y += RULE_ADVANCE;
+
+    // the plate: double frame + wheel, sized to what the page leaves us
+    let side = cw.min(h - frame.margin - CAPTION_ROOM - y - BOTTOM_SLACK);
+    let px = cx - side / 2.0;
+    rect_stroke(&mut s, px, y, side, side, LINE, 0.8);
+    rect_stroke(&mut s, px + FRAME_INSET, y + FRAME_INSET, side - 2.0 * FRAME_INSET, side - 2.0 * FRAME_INSET, HAIRLINE, 0.9);
+    wheel::draw(&mut s, fonts, chart, cx, y + side / 2.0, side / 2.0 - WHEEL_INSET);
+    y += side + ADVANCE_PAD;
+
+    let caption = loc.pdf_figure_caption(
+        &chart.meta.name,
+        &chart.meta.born,
+        &chart.meta.place,
+        &chart.meta.system,
+        &chart.meta.zodiac,
+    );
+    for line in wrap(fonts, Face::Italic, CAPTION_SIZE, cw * CAPTION_WIDTH_RATIO, &caption) {
+        center_str(&mut s, fonts, Face::Italic, CAPTION_SIZE, INK3, cx, y + CAPTION_BASELINE, &line);
+        y += CAPTION_LEADING;
+    }
+
+    s.finish();
+    page.finish();
+}
+
+/// Pages 2+: measure the flow once, then lay it out page by page — fit lines
+/// by height, pull back any trailing keep-with-next run so a folio never sits
+/// alone at a break, and stamp the folio number.
+fn paginate(doc: &mut Document, chart: &ChartData, fonts: &Fonts, frame: &Frame, h: f32) {
+    let w = frame.w;
+    let cx = w / 2.0;
+    let flow = build_flow(chart, fonts, frame);
+    let bottom = h - frame.margin - flowed::FOOTER_ROOM;
     let mut i = 0;
     let mut page_no = 2;
     while i < flow.len() {
@@ -574,21 +301,19 @@ pub fn render(chart: &ChartData, size: PageSize) -> Result<Vec<u8>, String> {
             i -= 1;
         }
 
-        let mut page = doc.start_page_with(settings());
+        let mut page = doc.start_page_with(page_settings(w, h));
         let mut s = page.surface();
         paper(&mut s, w, h);
         let mut y = frame.margin;
         for line in &flow[start..i] {
-            (line.draw)(&mut s, &fonts, y);
+            (line.draw)(&mut s, fonts, y);
             y += line.h;
         }
-        center_str(&mut s, &fonts, Face::Italic, 9.0, INK3, cx, h - 40.0, &format!("\u{b7} {page_no} \u{b7}"));
+        center_str(&mut s, fonts, Face::Italic, flowed::FOOTER_SIZE, INK3, cx, h - flowed::FOOTER_DROP, &format!("\u{b7} {page_no} \u{b7}"));
         s.finish();
         page.finish();
         page_no += 1;
     }
-
-    doc.finish().map_err(|e| format!("cannot assemble the PDF: {e:?}"))
 }
 
 /// Render and write — the one entry point frontends call.
@@ -601,6 +326,7 @@ pub fn write_pdf(chart: &ChartData, size: PageSize, path: &Path) -> Result<(), S
 mod tests {
     use super::*;
     use crate::chart::catalog::{ASPECT_TYPES, PLANETS, SIGNS_ALL};
+    use crate::contract::Excerpt;
 
     fn chart_fixture() -> ChartData {
         let input = crate::chart::BirthInput {

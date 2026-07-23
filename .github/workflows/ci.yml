@@ -23,6 +23,15 @@ jobs:
           key: geonames-${{ hashFiles('build.rs') }}
       - run: cargo test -p astro
       - run: cargo clippy -p astro --all-targets -- -D warnings
+      # The webview's TypeScript contract types are generated from the Rust
+      # structs by ts-rs. Regenerate and fail if the committed bindings drift —
+      # so a contract rename can't silently diverge from the frontend. (The
+      # desktop DTOs are generated from the desktop crate, which CI doesn't
+      # build; `npm run gen:types` locally + the svelte `check` job cover those.)
+      - name: contract bindings are up to date
+        run: |
+          TS_RS_EXPORT_DIR="$PWD/desktop/src/lib" cargo test -p astro --features ts export_bindings
+          git diff --exit-code desktop/src/lib/generated
 
   svelte:
     runs-on: ubuntu-latest
