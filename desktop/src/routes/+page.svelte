@@ -132,7 +132,12 @@
   <div class="reading">
     <figure class="plate">
       <div class="plate-frame">
-        <Wheel chart={app.chart} />
+        <!-- keyed on the calculation so a live reproject remounts the wheel and
+             replays its ring-draw/rise-in entrance as the transition; ChartCore
+             stays mounted so the caption control keeps focus across the swap -->
+        {#key app.chart.meta.house_system + "|" + (app.chart.meta.ayanamsa ?? "tropical")}
+          <Wheel chart={app.chart} />
+        {/key}
         <ChartCore chart={app.chart} />
       </div>
     </figure>

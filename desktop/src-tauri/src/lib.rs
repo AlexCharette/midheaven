@@ -342,6 +342,14 @@ async fn build(
     chart.meta.astrologer = p.astrologer.clone().filter(|s| !s.trim().is_empty());
     chart.meta.logo = p.logo.as_deref().and_then(|l| prefs::logo_data_uri(Path::new(l)));
 
+    // The seed that lets the reading view recompute geometry live (house system
+    // / zodiac). Rides into chart.json so reopened readings stay reprojectable.
+    chart.meta.birth = Some(astro::contract::BirthSeed {
+        place_id: form.place_id,
+        date: form.date.clone(),
+        time: form.time.clone(),
+    });
+
     let stem = format!("{}_{}", slug(&chart.meta.name), chrono::Local::now().format("%Y-%m-%d"));
     let session_dir = match p.readings_dir.as_deref().map(str::trim) {
         Some(root) if !root.is_empty() => {
@@ -470,6 +478,58 @@ fn with_chart(
         save_chart_json(dir, chart)?;
     }
     Ok(chart.clone())
+}
+
+/// Recompute the current chart's geometry under a new house system / zodiac,
+/// live from the reading view. Reconstructs the birth input from `meta.birth`
+/// (so it works for both freshly-built and library-reopened readings), then
+/// carries the routed passages and branding onto the new chart — excerpt tags
+/// describe spoken words, not placements, so they stay valid across the swap.
+#[tauri::command]
+fn reproject(
+    state: State<'_, AppState>,
+    house_system: String,
+    zodiac: String,
+    ayanamsa: Option<String>,
+) -> Result<ChartData, String> {
+    let mut guard = state.0.lock().unwrap();
+    let inner = &mut *guard;
+    let old = inner.chart.as_ref().ok_or("no chart has been built yet")?;
+    let seed = old
+        .meta
+        .birth
+        .clone()
+        .ok_or("this reading has no saved birth data to recalculate from")?;
+    // Clone everything the recompute must preserve, releasing the borrow on
+    // `inner.chart` before we replace it below.
+    let name = old.meta.name.clone();
+    let locale = astro::i18n::Locale::parse(&old.meta.locale);
+    let excerpts = old.excerpts.clone();
+    let astrologer = old.meta.astrologer.clone();
+    let logo = old.meta.logo.clone();
+
+    let place = geo::by_id(seed.place_id).ok_or("the birth place is no longer in the gazetteer")?;
+    let date = seed.date.parse().map_err(|_| "the saved birth date is invalid".to_string())?;
+    let house = astro::chart::systems::house_system(&house_system);
+    let ayanamsa = if zodiac.trim().eq_ignore_ascii_case("sidereal") {
+        Some(astro::chart::systems::ayanamsa(ayanamsa.as_deref().unwrap_or("lahiri")))
+    } else {
+        None
+    };
+    let input =
+        astro::birth_at_place(&name, date, parse_time(&seed.time)?, place, locale, house, ayanamsa);
+
+    let mut chart = astro::chart::compute_chart(&input)?;
+    chart.excerpts = excerpts;
+    chart.meta.astrologer = astrologer;
+    chart.meta.logo = logo;
+    chart.meta.birth = Some(seed);
+
+    if let Some(dir) = &inner.session_dir {
+        save_chart_json(dir, &chart)?;
+    }
+    inner.chart = Some(chart.clone());
+    Ok(chart)
 }
 
 /// Merge the excerpt into its predecessor: verbatim parts joined, tags
@@ -779,6 +839,7 @@ pub fn run() {
         list_house_systems,
         list_ayanamsas,
         build,
+        reproject,
         save_artifact,
         save_pdf,
         start_recording,
@@ -803,6 +864,7 @@ pub fn run() {
         list_house_systems,
         list_ayanamsas,
         build,
+        reproject,
         save_artifact,
         save_pdf,
         merge_up,

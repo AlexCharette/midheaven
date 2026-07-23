@@ -23,6 +23,11 @@ export const listAyanamsas = () => invoke<OptionDto[]>("list_ayanamsas");
 
 export const build = (form: BirthForm) => invoke<ChartData>("build", { form });
 
+/** Recompute the current chart's geometry under a new house system / zodiac,
+ * keeping its passages. `ayanamsa` is used only when zodiac is "sidereal". */
+export const reproject = (houseSystem: string, zodiac: string, ayanamsa: string | null) =>
+  invoke<ChartData>("reproject", { houseSystem, zodiac, ayanamsa });
+
 export const loadChart = (path: string) => invoke<ChartData>("load_chart", { path });
 
 export const listReadings = () => invoke<ReadingEntry[]>("list_readings");

@@ -267,6 +267,9 @@ fn birth_meta(input: &BirthInput) -> Meta {
         locale: loc.code().to_string(),
         astrologer: None, // branding is a frontend concern (desktop prefs)
         logo: None,
+        // the reproject seed needs the gazetteer place id, which only the
+        // desktop layer has; it stamps `birth` after the build (like branding).
+        birth: None,
     }
 }
 
@@ -349,6 +352,34 @@ mod tests {
         assert!(cs.meta.zodiac.starts_with("Sidereal"), "zodiac {}", cs.meta.zodiac);
         // Tropical charts record no ayanamsa.
         assert_eq!(ct.meta.ayanamsa, None);
+    }
+
+    #[test]
+    fn excerpts_survive_a_house_system_reproject() {
+        // A live reproject recomputes geometry and carries the routed passages
+        // onto the new chart. The cusps change, but the vocabulary (sign/house/
+        // aspect ids) is stable, so pre-existing excerpt tags stay valid.
+        let mut input = birth("1990-07-13", "14:30:00", 52.52, 13.405, "Europe/Berlin");
+        let whole = compute_chart(&input).unwrap();
+        input.house_system = HouseSystem::Placidus;
+        let placidus = compute_chart(&input).unwrap();
+        assert_ne!(whole.house_cusps, placidus.house_cusps, "cusps should differ");
+
+        let tags = vec![
+            whole.signs[0].id.clone(),
+            "house:5".to_string(),
+            whole.aspects.first().map(|a| a.id.clone()).unwrap_or_else(|| whole.signs[1].id.clone()),
+        ];
+        let carried = crate::contract::Excerpt {
+            id: "x1".into(),
+            time: String::new(),
+            span: [0, 0],
+            text: "t".into(),
+            tags,
+        };
+        let mut reprojected = placidus;
+        reprojected.excerpts = vec![carried];
+        assert!(reprojected.validate().is_ok(), "carried excerpt must stay valid");
     }
 
     #[test]

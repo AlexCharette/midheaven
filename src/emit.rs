@@ -43,6 +43,7 @@ mod tests {
                 locale: "en".into(),
                 astrologer: None,
                 logo: None,
+                birth: None,
             },
             axes: Axes { asc: 0.0, mc: 270.0 },
             house_cusps: (0..12).map(|i| i as f64 * 30.0).collect(),

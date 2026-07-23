@@ -7,6 +7,7 @@
 
 export type { ChartData } from "./generated/ChartData";
 export type { Meta } from "./generated/Meta";
+export type { BirthSeed } from "./generated/BirthSeed";
 export type { Axes } from "./generated/Axes";
 export type { Body } from "./generated/Body";
 export type { Ref } from "./generated/Ref";
