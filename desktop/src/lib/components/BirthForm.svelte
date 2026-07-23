@@ -1,11 +1,11 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { build, getPreferences, searchPlaces } from "$lib/api";
-  import { app, notify } from "$lib/state.svelte";
+  import { app, locales, notify } from "$lib/state.svelte";
   import Library from "./Library.svelte";
   import Preferences from "./Preferences.svelte";
   import WheelMark from "./WheelMark.svelte";
-  import { LOCALES, type PlaceDto } from "$lib/types";
+  import type { PlaceDto } from "$lib/types";
   import { fade } from "svelte/transition";
 
   const reduceMotion =
@@ -177,7 +177,7 @@
     <label>
       <span>language</span>
       <select class="lang" bind:value={lang}>
-        {#each LOCALES as l (l.code)}
+        {#each locales as l (l.code)}
           <option value={l.code}>{l.label}</option>
         {/each}
       </select>

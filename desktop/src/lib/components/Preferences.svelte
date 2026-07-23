@@ -1,8 +1,7 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { getPreferences, listModels, setPreferences } from "$lib/api";
-  import { notify } from "$lib/state.svelte";
-  import { LOCALES } from "$lib/types";
+  import { locales, notify } from "$lib/state.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -131,7 +130,7 @@
   <label>
     <span>default language</span>
     <select bind:value={defaultLocale}>
-      {#each LOCALES as l (l.code)}
+      {#each locales as l (l.code)}
         <option value={l.code}>{l.label}</option>
       {/each}
     </select>

@@ -1,7 +1,8 @@
 // The app's shared state (Svelte 5 runes) — one Model, Elm-ish.
 
 import { SvelteSet } from "svelte/reactivity";
-import type { ChartData, Excerpt } from "./types";
+import { listLocales } from "./api";
+import type { ChartData, Excerpt, LocaleDto } from "./types";
 
 export const app = $state({
   chart: null as ChartData | null,
@@ -20,6 +21,28 @@ export const app = $state({
 });
 
 export const selected = new SvelteSet<string>();
+
+/** Reading languages offered in the UI, fetched once from the backend
+ * (`list_locales`, sourced from `i18n::Locale`): endonym labels for the
+ * selectors and the house-name suffix to strip. Empty until `loadLocales`. */
+export const locales = $state<LocaleDto[]>([]);
+
+/** Populate `locales` from the backend once; a no-op after the first call. */
+export async function loadLocales() {
+  if (locales.length > 0) return;
+  try {
+    locales.push(...(await listLocales()));
+  } catch (e) {
+    notify(`${e}`, "error");
+  }
+}
+
+/** The word to strip from a house name for `code` (" House", " дом"), or ""
+ * when the locale list hasn't loaded or the code is unknown. The one client
+ * home for the mapping — the strings themselves come from the backend. */
+export function houseSuffix(code: string): string {
+  return locales.find((l) => l.code === code)?.houseSuffix ?? "";
+}
 
 /** Transient focus, shared by the wheel, the index legend, and any sector: set
  * it on pointer-enter / keyboard-focus, clear it on leave / blur. Drives the

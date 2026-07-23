@@ -25,21 +25,10 @@
   const planetGlyph = (id: string) => planetById(chart, id)?.glyph ?? "";
   const roman = (n: number) => chart.houses[n - 1]?.label ?? String(n);
 
-  // Canonical aspect separations, so the read-out can quote an orb. Unknown
-  // names simply omit it.
-  const ASPECT_ANGLE: Record<string, number> = {
-    conjunction: 0, opposition: 180, trine: 120, square: 90, sextile: 60,
-    quincunx: 150, inconjunct: 150, semisextile: 30, semisquare: 45,
-    sesquisquare: 135, quintile: 72,
-  };
-  function orbOf(aName: string, lonA: number, lonB: number): string | null {
-    const exact = ASPECT_ANGLE[aName.toLowerCase()];
-    if (exact === undefined) return null;
-    const sep = Math.abs(((lonA - lonB) % 360) + 360) % 360;
-    const folded = sep > 180 ? 360 - sep : sep;
-    const orb = Math.abs(folded - exact);
-    return `${orb < 1 ? orb.toFixed(1) : Math.round(orb)}° orb`;
-  }
+  // The orb (deviation from the exact aspect angle) is computed once in the
+  // backend and carried on the aspect — the read-out just formats it, rather
+  // than re-deriving it from longitudes with a duplicated angle table.
+  const fmtOrb = (orb: number) => `${orb < 1 ? orb.toFixed(1) : Math.round(orb)}° orb`;
 
   // planets standing in a sign / tenanting a house — the read-out's "occupants"
   const planetsInSign = (signId: string) =>
@@ -119,11 +108,10 @@
       {:else if cat === "aspect"}
         {@const a = chart.aspects.find((x) => x.id === focusTag)}
         {#if a}
-          {@const orb = orbOf(a.name, planetById(chart, a.a)?.lon ?? 0, planetById(chart, a.b)?.lon ?? 0)}
           <span class="glyph g-aspect">{textGlyph(a.glyph)}</span>
           <p class="name">{planetName(a.a)} – {planetName(a.b)}</p>
           <p class="pos sub nature-{a.nature}">{a.name} · {a.nature}</p>
-          {#if orb}<p class="pos sub">{orb}</p>{/if}
+          <p class="pos sub">{fmtOrb(a.orb)}</p>
           <p class="count">{passages(count)}</p>
         {/if}
       {/if}

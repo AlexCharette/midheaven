@@ -47,6 +47,18 @@ impl Locale {
     /// Every locale the app can produce a reading in — for building selectors.
     pub const ALL: &'static [Locale] = &[Locale::En, Locale::Ru];
 
+    /// The language's own name (endonym), shown in UI language selectors.
+    pub fn endonym(self) -> &'static str {
+        self.table().endonym
+    }
+
+    /// The word every house name ends with (`" House"`, `" дом"`); a viewer
+    /// strips it to show the bare ordinal ("First") — the one home for that
+    /// mapping, so no frontend re-encodes it.
+    pub fn house_suffix(self) -> &'static str {
+        self.table().house_suffix
+    }
+
     fn table(self) -> &'static LocaleTable {
         match self {
             Locale::En => &en::TABLE,
@@ -177,6 +189,11 @@ pub struct LocaleTable {
     pub system: &'static str,
     pub zodiac: &'static str,
     pub anonymous: &'static str,
+    /// The language's own name (endonym), for UI language selectors.
+    pub endonym: &'static str,
+    /// The trailing word shared by every house name (`" House"`, `" дом"`) —
+    /// lets a viewer show the bare ordinal without re-encoding the mapping.
+    pub house_suffix: &'static str,
     pub pdf: PdfChrome,
 }
 

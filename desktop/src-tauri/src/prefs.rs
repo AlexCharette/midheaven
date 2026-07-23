@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Preferences {
     /// Folder holding ggml whisper models (`.bin`).
     pub models_dir: Option<String>,

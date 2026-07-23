@@ -133,6 +133,7 @@ mod tests {
             a: "planet:sun".into(),
             b: "planet:moon".into(),
             nature: "harmonious".into(),
+            orb: 0.0,
             kind: "trine",
         }];
         let router = LexiconRouter::new(&v, &aspects, Locale::En);
@@ -164,6 +165,7 @@ mod tests {
             a: "planet:sun".into(),
             b: "planet:moon".into(),
             nature: "harmonious".into(),
+            orb: 0.0,
             kind: "trine",
         }];
         let router = LexiconRouter::new(&v, &aspects, Locale::Ru);

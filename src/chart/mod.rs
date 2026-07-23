@@ -150,6 +150,7 @@ fn detect_aspects(planets: &[Body], loc: Locale) -> Vec<Aspect> {
                         a: planets[i].id.clone(),
                         b: planets[j].id.clone(),
                         nature: nature.to_string(),
+                        orb: (sep - angle).abs(),
                         kind,
                     });
                     break;

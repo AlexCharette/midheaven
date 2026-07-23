@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
   import { catOf, degInSign, planetById, relatedTo, signAt, textGlyph } from "$lib/types";
-  import { app, focusedTag, peek, selected, toggle, unpeek } from "$lib/state.svelte";
+  import { app, focusedTag, houseSuffix, peek, selected, toggle, unpeek } from "$lib/state.svelte";
 
   let { chart }: { chart: ChartData } = $props();
 
@@ -14,9 +14,9 @@
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
 
   // House entries show the ordinal without the trailing "house" word; the
-  // suffix to strip is language-specific (empty locale = strip nothing).
-  const HOUSE_SUFFIX: Record<string, string> = { en: " House", ru: " дом" };
-  const houseSuffix = $derived(HOUSE_SUFFIX[chart.meta.locale ?? "en"] ?? "");
+  // suffix to strip is language-specific and comes from the backend (i18n),
+  // so the mapping lives in one place. Empty until the locale list loads.
+  const suffix = $derived(houseSuffix(chart.meta.locale ?? "en"));
 
   // Relevance rule (canonical prose lives in templates/reading.html beside
   // syncRelevance; keep the two in step): visible = occupied ∪ selected ∪
@@ -59,7 +59,7 @@
       entries: chart.houses.map((h) => ({
         tag: h.id,
         glyph: h.label,
-        name: h.name.replace(houseSuffix, ""),
+        name: h.name.replace(suffix, ""),
         detail: "",
       })),
     },

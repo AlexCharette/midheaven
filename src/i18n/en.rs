@@ -12,6 +12,8 @@ pub static TABLE: LocaleTable = LocaleTable {
     system: "Whole Sign",
     zodiac: "Tropical",
     anonymous: "Anonymous",
+    endonym: "English",
+    house_suffix: " House",
     pdf: PdfChrome {
         nativity_of: "The Nativity of",
         prepared_by: "Prepared by",
