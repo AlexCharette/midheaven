@@ -144,7 +144,7 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "astro"
-version = "0.3.5"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "astro-desktop"
-version = "0.3.5"
+version = "0.4.0"
 dependencies = [
  "astro",
  "base64 0.22.1",
