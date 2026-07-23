@@ -5,7 +5,8 @@
 //! carry over unchanged.
 
 use super::palette::*;
-use super::{center_str, circle_path, fill, filled, stroke, stroked};
+use super::primitives::{circle_path, fill, filled, stroke, stroked};
+use super::text::center_str;
 use crate::chart::separation;
 use crate::contract::ChartData;
 use crate::pdf::fonts::{Face, Fonts, glyph_face};
