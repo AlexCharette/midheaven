@@ -1,13 +1,42 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
   import { catOf, degInSign, planetById, signAt, textGlyph } from "$lib/types";
-  import { excerptsMatching, focusedTag } from "$lib/state.svelte";
+  import { app, ayanamsas, excerptsMatching, focusedTag, houseSystems, notify } from "$lib/state.svelte";
+  import { reproject } from "$lib/api";
   import { swapDuration } from "$lib/motion";
   import { fade } from "svelte/transition";
 
   let { chart }: { chart: ChartData } = $props();
 
   const coreSwap = { duration: swapDuration() };
+
+  // Live calculation controls. They mirror the chart's current codes and
+  // re-sync whenever the chart changes (a reproject or a reopen), so the line
+  // always reflects the active calculation.
+  let houseSystem = $state("whole-sign");
+  let zodiac = $state("tropical");
+  let ayanamsa = $state("lahiri");
+  let reprojecting = $state(false);
+  $effect(() => {
+    houseSystem = chart.meta.house_system || "whole-sign";
+    zodiac = chart.meta.ayanamsa ? "sidereal" : "tropical";
+    ayanamsa = chart.meta.ayanamsa ?? "lahiri";
+  });
+
+  async function recalc() {
+    reprojecting = true;
+    try {
+      app.chart = await reproject(houseSystem, zodiac, zodiac === "sidereal" ? ayanamsa : null);
+    } catch (e) {
+      notify(`${e}`, "error");
+      // Snap the selects back to what the (unchanged) chart actually is.
+      houseSystem = chart.meta.house_system || "whole-sign";
+      zodiac = chart.meta.ayanamsa ? "sidereal" : "tropical";
+      ayanamsa = chart.meta.ayanamsa ?? "lahiri";
+    } finally {
+      reprojecting = false;
+    }
+  }
 
   // The hub reads out the focused element (a pin locks it, else the hovered
   // one); with nothing focused the centre stays clear and only the corner
@@ -40,7 +69,25 @@
   <p class="vitals">{chart.meta.born}</p>
   <p class="vitals">{chart.meta.place}</p>
   <span class="double-rule" aria-hidden="true"></span>
-  <p class="system">{chart.meta.system} · {chart.meta.zodiac}</p>
+  {#if chart.meta.birth}
+    <div class="calc">
+      <select class="calc-sel" aria-label="house system" bind:value={houseSystem} onchange={recalc} disabled={reprojecting}>
+        {#each houseSystems as h (h.code)}<option value={h.code}>{h.label}</option>{/each}
+      </select>
+      <span class="sep" aria-hidden="true">·</span>
+      <select class="calc-sel" aria-label="zodiac" bind:value={zodiac} onchange={recalc} disabled={reprojecting}>
+        <option value="tropical">Tropical</option>
+        <option value="sidereal">Sidereal</option>
+      </select>
+      {#if zodiac === "sidereal"}
+        <select class="calc-sel" aria-label="ayanamsa" bind:value={ayanamsa} onchange={recalc} disabled={reprojecting}>
+          {#each ayanamsas as a (a.code)}<option value={a.code}>{a.label}</option>{/each}
+        </select>
+      {/if}
+    </div>
+  {:else}
+    <p class="system">{chart.meta.system} · {chart.meta.zodiac}</p>
+  {/if}
 </div>
 
 <!-- the hub read-out appears only while an element is focused; at rest the
@@ -183,6 +230,51 @@
     font-variant: small-caps;
     letter-spacing: 0.12em;
     color: var(--ink-2);
+  }
+  /* the calc line is a live control: re-enable pointer events (the caption is
+     a pointer-transparent overlay) and let the small selects wrap in the tight
+     cartouche. Styled like the form's minimal selects — engraved, chromeless. */
+  .plate-caption .calc {
+    pointer-events: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.1rem 0.3rem;
+    font-size: 0.64rem;
+    font-variant: small-caps;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+  }
+  .plate-caption .calc-sel {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-2);
+    font: inherit;
+    font-variant: small-caps;
+    letter-spacing: inherit;
+    padding: 0 0.1rem;
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-out-quint),
+      border-color var(--dur-fast) var(--ease-out-quint);
+  }
+  .plate-caption .calc-sel:hover,
+  .plate-caption .calc-sel:focus-visible {
+    color: var(--ink);
+    border-bottom-color: var(--hairline);
+  }
+  .plate-caption .calc-sel:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .plate-caption .calc option {
+    background: var(--bg-deep);
+    color: var(--ink);
+    font-variant: normal;
+    letter-spacing: normal;
+  }
+  .plate-caption .calc .sep {
+    color: var(--ink-3);
   }
   /* --- focused element dossier --- */
   .glyph {

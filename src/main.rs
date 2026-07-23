@@ -1,4 +1,4 @@
-use astro::chart::{BirthInput, compute_chart_reporting, parse_time};
+use astro::chart::{BirthInput, compute_chart_reporting, parse_time, systems};
 use astro::i18n::Locale;
 use astro::{ClassifyError, TranscriptSource, build_reading, emit, geo};
 use clap::{Args, Parser, Subcommand};
@@ -100,6 +100,17 @@ struct BirthArgs {
     /// Place label shown on the chart header (defaults to the resolved place).
     #[arg(long)]
     place_label: Option<String>,
+    /// House system: whole-sign, placidus, koch, equal, regiomontanus,
+    /// campanus, or porphyry.
+    #[arg(long, default_value = "whole-sign")]
+    house_system: String,
+    /// Zodiac: tropical or sidereal.
+    #[arg(long, default_value = "tropical")]
+    zodiac: String,
+    /// Ayanamsa used when --zodiac sidereal: lahiri, fagan-bradley, kp, raman,
+    /// or true-chitra.
+    #[arg(long, default_value = "lahiri")]
+    ayanamsa: String,
 }
 
 impl BirthArgs {
@@ -147,6 +158,13 @@ impl BirthArgs {
         let name = self.name.trim();
         let name = if name.is_empty() { locale.anonymous().to_string() } else { name.to_string() };
 
+        let house_system = systems::house_system(&self.house_system);
+        let ayanamsa = if self.zodiac.trim().eq_ignore_ascii_case("sidereal") {
+            Some(systems::ayanamsa(&self.ayanamsa))
+        } else {
+            None
+        };
+
         let field = |manual: Option<f64>, from_place: Option<f64>, flag: &str| {
             manual.or(from_place).ok_or(format!("--{flag} is required unless --place/--place-id is given"))
         };
@@ -165,6 +183,8 @@ impl BirthArgs {
                 .or(resolved.map(|p| p.label()))
                 .unwrap_or_default(),
             locale,
+            house_system,
+            ayanamsa,
         };
         Ok((input, notice))
     }

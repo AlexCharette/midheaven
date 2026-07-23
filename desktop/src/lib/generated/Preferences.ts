@@ -29,4 +29,19 @@ page_size: string | null,
  * Default reading language code ("en", "ru") that prefills the birth
  * form's language selector (absent = en).
  */
-default_locale: string | null, };
+default_locale: string | null, 
+/**
+ * Default house-system code ("whole-sign", "placidus", …) that prefills
+ * the form's house-system selector (absent = whole-sign).
+ */
+default_house_system: string | null, 
+/**
+ * Default zodiac ("tropical" | "sidereal") that prefills the form (absent
+ * = tropical).
+ */
+default_zodiac: string | null, 
+/**
+ * Default ayanamsa code ("lahiri", …) that prefills the form's ayanamsa
+ * selector when sidereal (absent = lahiri).
+ */
+default_ayanamsa: string | null, };

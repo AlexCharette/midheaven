@@ -25,6 +25,15 @@ pub struct Preferences {
     /// Default reading language code ("en", "ru") that prefills the birth
     /// form's language selector (absent = en).
     pub default_locale: Option<String>,
+    /// Default house-system code ("whole-sign", "placidus", …) that prefills
+    /// the form's house-system selector (absent = whole-sign).
+    pub default_house_system: Option<String>,
+    /// Default zodiac ("tropical" | "sidereal") that prefills the form (absent
+    /// = tropical).
+    pub default_zodiac: Option<String>,
+    /// Default ayanamsa code ("lahiri", …) that prefills the form's ayanamsa
+    /// selector when sidereal (absent = lahiri).
+    pub default_ayanamsa: Option<String>,
 }
 
 fn path(app: &tauri::AppHandle) -> Result<PathBuf, String> {

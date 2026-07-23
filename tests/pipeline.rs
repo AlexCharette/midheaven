@@ -18,6 +18,8 @@ fn transcript_to_artifact() {
         tz: "Europe/Berlin".parse().unwrap(),
         place: "Berlin, Germany".into(),
         locale: Locale::En,
+        house_system: astro::chart::systems::house_system("whole-sign"),
+        ayanamsa: None,
     };
     let mut chart = compute_chart(&input).expect("chart computes");
 

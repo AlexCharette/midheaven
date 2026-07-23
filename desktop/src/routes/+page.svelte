@@ -10,7 +10,7 @@
     startRecording,
     stopRecording,
   } from "$lib/api";
-  import { app, excerptsMatching, isBusy, loadLocales, notify, selected, visibleExcerpts } from "$lib/state.svelte";
+  import { app, excerptsMatching, isBusy, loadCalcOptions, loadLocales, notify, selected, visibleExcerpts } from "$lib/state.svelte";
   import BirthForm from "$lib/components/BirthForm.svelte";
   import ChartCore from "$lib/components/ChartCore.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
@@ -35,6 +35,7 @@
     // The reading-language list (endonyms + house suffixes) comes from the
     // backend once; the form and preferences selectors read it from state.
     loadLocales();
+    loadCalcOptions();
     // A configured default model enables live transcription on ANY open chart,
     // not only ones just built through the form (which sets app.model itself) —
     // so a reading opened from the library can still be transcribed onto.
@@ -131,7 +132,12 @@
   <div class="reading">
     <figure class="plate">
       <div class="plate-frame">
-        <Wheel chart={app.chart} />
+        <!-- keyed on the calculation so a live reproject remounts the wheel and
+             replays its ring-draw/rise-in entrance as the transition; ChartCore
+             stays mounted so the caption control keeps focus across the swap -->
+        {#key app.chart.meta.house_system + "|" + (app.chart.meta.ayanamsa ?? "tropical")}
+          <Wheel chart={app.chart} />
+        {/key}
         <ChartCore chart={app.chart} />
       </div>
     </figure>

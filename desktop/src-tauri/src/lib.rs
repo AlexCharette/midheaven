@@ -190,6 +190,38 @@ fn list_locales() -> Vec<LocaleDto> {
         .collect()
 }
 
+/// A calculation-option row for a UI selector: the stable wire `code` and its
+/// display `label`. Serves both the house-system and ayanamsa dropdowns.
+#[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+struct OptionDto {
+    code: String,
+    label: String,
+}
+
+/// The house systems offered in the form, labelled in English (the canonical
+/// system names). The chart itself records the label in the reading's locale.
+#[tauri::command]
+fn list_house_systems() -> Vec<OptionDto> {
+    astro::chart::systems::HOUSE_SYSTEMS
+        .iter()
+        .map(|&(code, _)| OptionDto {
+            code: code.to_string(),
+            label: astro::i18n::Locale::En.house_system_label(code).to_string(),
+        })
+        .collect()
+}
+
+/// The ayanamsas offered when the sidereal zodiac is chosen, labelled by their
+/// own names (proper nouns).
+#[tauri::command]
+fn list_ayanamsas() -> Vec<OptionDto> {
+    astro::chart::systems::AYANAMSAS
+        .iter()
+        .map(|&(code, ayanamsa)| OptionDto { code: code.to_string(), label: ayanamsa.to_string() })
+        .collect()
+}
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 struct BirthForm {
@@ -202,6 +234,15 @@ struct BirthForm {
     /// Reading language code ("en", "ru"); absent falls back to the
     /// default-language preference, then English.
     lang: Option<String>,
+    /// House-system code ("whole-sign", "placidus", …); absent falls back to
+    /// the default-house-system preference, then Whole Sign.
+    house_system: Option<String>,
+    /// Zodiac ("tropical" | "sidereal"); absent falls back to the preference,
+    /// then tropical.
+    zodiac: Option<String>,
+    /// Ayanamsa code ("lahiri", …) used when `zodiac` is "sidereal"; absent
+    /// falls back to the preference, then Lahiri.
+    ayanamsa: Option<String>,
 }
 
 #[tauri::command]
@@ -222,7 +263,28 @@ async fn build(
     let locale = astro::i18n::Locale::parse(
         form.lang.as_deref().or(p.default_locale.as_deref()).unwrap_or("en"),
     );
-    let input = astro::birth_at_place(&form.name, date, parse_time(&form.time)?, place, locale);
+    // House system + zodiac: the form's choice, else the matching preference,
+    // else the historical default (Whole Sign · Tropical).
+    let house_system = astro::chart::systems::house_system(
+        form.house_system.as_deref().or(p.default_house_system.as_deref()).unwrap_or("whole-sign"),
+    );
+    let zodiac = form.zodiac.as_deref().or(p.default_zodiac.as_deref()).unwrap_or("tropical");
+    let ayanamsa = if zodiac.trim().eq_ignore_ascii_case("sidereal") {
+        Some(astro::chart::systems::ayanamsa(
+            form.ayanamsa.as_deref().or(p.default_ayanamsa.as_deref()).unwrap_or("lahiri"),
+        ))
+    } else {
+        None
+    };
+    let input = astro::birth_at_place(
+        &form.name,
+        date,
+        parse_time(&form.time)?,
+        place,
+        locale,
+        house_system,
+        ayanamsa,
+    );
     let source = TranscriptSource::classify(
         form.transcript.as_deref().unwrap_or(""),
         form.model.as_deref().unwrap_or(""),
@@ -279,6 +341,14 @@ async fn build(
     // chart.json and the engraved artifact). Both best-effort.
     chart.meta.astrologer = p.astrologer.clone().filter(|s| !s.trim().is_empty());
     chart.meta.logo = p.logo.as_deref().and_then(|l| prefs::logo_data_uri(Path::new(l)));
+
+    // The seed that lets the reading view recompute geometry live (house system
+    // / zodiac). Rides into chart.json so reopened readings stay reprojectable.
+    chart.meta.birth = Some(astro::contract::BirthSeed {
+        place_id: form.place_id,
+        date: form.date.clone(),
+        time: form.time.clone(),
+    });
 
     let stem = format!("{}_{}", slug(&chart.meta.name), chrono::Local::now().format("%Y-%m-%d"));
     let session_dir = match p.readings_dir.as_deref().map(str::trim) {
@@ -410,6 +480,58 @@ fn with_chart(
     Ok(chart.clone())
 }
 
+/// Recompute the current chart's geometry under a new house system / zodiac,
+/// live from the reading view. Reconstructs the birth input from `meta.birth`
+/// (so it works for both freshly-built and library-reopened readings), then
+/// carries the routed passages and branding onto the new chart — excerpt tags
+/// describe spoken words, not placements, so they stay valid across the swap.
+#[tauri::command]
+fn reproject(
+    state: State<'_, AppState>,
+    house_system: String,
+    zodiac: String,
+    ayanamsa: Option<String>,
+) -> Result<ChartData, String> {
+    let mut guard = state.0.lock().unwrap();
+    let inner = &mut *guard;
+    let old = inner.chart.as_ref().ok_or("no chart has been built yet")?;
+    let seed = old
+        .meta
+        .birth
+        .clone()
+        .ok_or("this reading has no saved birth data to recalculate from")?;
+    // Clone everything the recompute must preserve, releasing the borrow on
+    // `inner.chart` before we replace it below.
+    let name = old.meta.name.clone();
+    let locale = astro::i18n::Locale::parse(&old.meta.locale);
+    let excerpts = old.excerpts.clone();
+    let astrologer = old.meta.astrologer.clone();
+    let logo = old.meta.logo.clone();
+
+    let place = geo::by_id(seed.place_id).ok_or("the birth place is no longer in the gazetteer")?;
+    let date = seed.date.parse().map_err(|_| "the saved birth date is invalid".to_string())?;
+    let house = astro::chart::systems::house_system(&house_system);
+    let ayanamsa = if zodiac.trim().eq_ignore_ascii_case("sidereal") {
+        Some(astro::chart::systems::ayanamsa(ayanamsa.as_deref().unwrap_or("lahiri")))
+    } else {
+        None
+    };
+    let input =
+        astro::birth_at_place(&name, date, parse_time(&seed.time)?, place, locale, house, ayanamsa);
+
+    let mut chart = astro::chart::compute_chart(&input)?;
+    chart.excerpts = excerpts;
+    chart.meta.astrologer = astrologer;
+    chart.meta.logo = logo;
+    chart.meta.birth = Some(seed);
+
+    if let Some(dir) = &inner.session_dir {
+        save_chart_json(dir, &chart)?;
+    }
+    inner.chart = Some(chart.clone());
+    Ok(chart)
+}
+
 /// Merge the excerpt into its predecessor: verbatim parts joined, tags
 /// unioned, the earlier passage's time anchor kept (contract semantics via
 /// [`Excerpt::absorb`]; only the text-joining strategy is ours).
@@ -517,6 +639,22 @@ fn get_preferences(app: AppHandle) -> prefs::Preferences {
     prefs::load(&app)
 }
 
+/// Open the bundled third-party license notices (Apache-2.0 attribution for the
+/// `xalen-*` ephemeris crates and every other dependency) in the OS browser.
+/// The file is generated by `cargo about` and shipped as an app resource.
+#[tauri::command]
+fn open_licenses(app: AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    use tauri_plugin_opener::OpenerExt;
+    let path = app
+        .path()
+        .resolve("THIRD-PARTY-LICENSES.html", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("cannot locate the licenses file: {e}"))?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|e| format!("cannot open the licenses file: {e}"))
+}
+
 /// Persist preferences, normalizing blanks to None and refusing paths that
 /// don't exist — a bad folder should fail here, not at the next build.
 #[tauri::command]
@@ -532,6 +670,9 @@ fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), Stri
         logo: norm(prefs.logo),
         page_size: norm(prefs.page_size),
         default_locale: norm(prefs.default_locale),
+        default_house_system: norm(prefs.default_house_system),
+        default_zodiac: norm(prefs.default_zodiac),
+        default_ayanamsa: norm(prefs.default_ayanamsa),
     };
     if let Some(size) = &prefs.page_size {
         astro::pdf::PageSize::parse(size)?;
@@ -695,7 +836,10 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         search_places,
         list_locales,
+        list_house_systems,
+        list_ayanamsas,
         build,
+        reproject,
         save_artifact,
         save_pdf,
         start_recording,
@@ -706,6 +850,7 @@ pub fn run() {
         delete_excerpt,
         get_preferences,
         set_preferences,
+        open_licenses,
         list_models,
         artifact_filename,
         load_chart,
@@ -716,7 +861,10 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         search_places,
         list_locales,
+        list_house_systems,
+        list_ayanamsas,
         build,
+        reproject,
         save_artifact,
         save_pdf,
         merge_up,
@@ -725,6 +873,7 @@ pub fn run() {
         delete_excerpt,
         get_preferences,
         set_preferences,
+        open_licenses,
         list_models,
         artifact_filename,
         load_chart,
@@ -751,6 +900,8 @@ mod tests {
             tz: chrono_tz::Europe::Berlin,
             place: "Berlin".into(),
             locale: astro::i18n::Locale::En,
+            house_system: astro::chart::systems::house_system("whole-sign"),
+            ayanamsa: None,
         };
         astro::chart::compute_chart(&input).unwrap()
     }

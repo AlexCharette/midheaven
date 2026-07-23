@@ -115,6 +115,8 @@ pub fn birth_at_place(
     time: chrono::NaiveTime,
     place: &geo::Place,
     locale: i18n::Locale,
+    house_system: xalen_houses::HouseSystem,
+    ayanamsa: Option<xalen_ayanamsa::Ayanamsa>,
 ) -> chart::BirthInput {
     let name = name.trim();
     chart::BirthInput {
@@ -126,6 +128,8 @@ pub fn birth_at_place(
         tz: place.tz,
         place: place.label(),
         locale,
+        house_system,
+        ayanamsa,
     }
 }
 

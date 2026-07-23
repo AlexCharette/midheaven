@@ -3,12 +3,14 @@
 //! (VSOP87A + ELP2000-82 via `xalen-ephem`), no data files, fully offline.
 
 pub mod catalog;
+pub mod systems;
 
 use crate::contract::{Aspect, Axes, Body, ChartData, HouseRef, Meta, Ref};
 use crate::i18n::Locale;
 use catalog::{ASPECT_TYPES, HOUSE_NAMES, PLANETS, SIGNS_ALL};
 use chrono::{Datelike, NaiveDate, NaiveTime, TimeZone, Timelike};
 use chrono_tz::Tz;
+use xalen_ayanamsa::{Ayanamsa, tropical_to_sidereal};
 use xalen_coords::mean_obliquity;
 use xalen_ephem::Almanac;
 use xalen_houses::{GeoLocation, HouseCusps, HouseSystem, compute_houses};
@@ -27,6 +29,11 @@ pub struct BirthInput {
     /// The language the reading is in — drives element names and, downstream,
     /// the router's match terms (recorded on `meta.locale`).
     pub locale: Locale,
+    /// The house division to compute (default Whole Sign).
+    pub house_system: HouseSystem,
+    /// `None` = tropical zodiac; `Some(a)` = sidereal, shifting every longitude
+    /// and house cusp by that ayanamsa.
+    pub ayanamsa: Option<Ayanamsa>,
 }
 
 fn norm360(x: f64) -> f64 {
@@ -54,8 +61,25 @@ pub fn parse_time(s: &str) -> Result<NaiveTime, String> {
 pub fn compute_chart_reporting(input: &BirthInput) -> Result<(ChartData, Vec<String>), String> {
     let loc = input.locale;
     let (jd_ut1, warning) = birth_moment(input)?;
-    let cusps = natal_houses(jd_ut1, input.lat, input.lon)?;
-    let mut planets = planet_positions(jd_ut1, &cusps, loc)?;
+    // Terrestrial Time drives both the obliquity (inside `natal_houses`) and the
+    // ayanamsa epoch, so compute it once and thread it through.
+    let jd_tt = jd_ut1.to_tt(&DeltaTModel::StephensonMorrisonHohenkerk2016).0;
+    let mut cusps = natal_houses(jd_ut1, jd_tt, input.lat, input.lon, input.house_system)?;
+    // Sidereal: shift every cusp and angle by the ayanamsa. Planet longitudes
+    // get the same shift below, so house assignment stays consistent.
+    if let Some(ay) = input.ayanamsa {
+        cusps = cusps.to_sidereal(ay.compute(jd_tt));
+    }
+    let mut warnings: Vec<String> = warning.into_iter().collect();
+    if cusps.fallback_used {
+        // Placidus/Koch are undefined near the poles; the crate substitutes
+        // Porphyry. Surface it rather than silently returning other cusps.
+        warnings.push(format!(
+            "{} houses are undefined at this latitude; the chart uses Porphyry cusps instead.",
+            input.house_system
+        ));
+    }
+    let mut planets = planet_positions(jd_ut1, jd_tt, &cusps, loc, input.ayanamsa)?;
     let aspects = detect_aspects(&planets, loc);
     let asc = norm360(cusps.ascendant.to_degrees());
     planets.push(ascendant_point(asc, loc));
@@ -69,7 +93,7 @@ pub fn compute_chart_reporting(input: &BirthInput) -> Result<(ChartData, Vec<Str
         aspects,
         excerpts: Vec::new(),
     };
-    Ok((chart, warning.into_iter().collect()))
+    Ok((chart, warnings))
 }
 
 /// Compute the chart, dropping any non-fatal warnings — the common form used
@@ -109,20 +133,32 @@ fn birth_moment(input: &BirthInput) -> Result<(JdUT1, Option<String>), String> {
     Ok((jd_ut1, warning))
 }
 
-/// Whole Sign cusps and angles for the birth place, using the mean obliquity
-/// of date.
-fn natal_houses(jd_ut1: JdUT1, lat: f64, lon: f64) -> Result<HouseCusps, String> {
-    let jd_tt = jd_ut1.to_tt(&DeltaTModel::StephensonMorrisonHohenkerk2016);
-    let t = (jd_tt.0 - J2000_JD) / DAYS_PER_JULIAN_CENTURY;
+/// Cusps and angles for the birth place in the chosen `system`, using the mean
+/// obliquity of date (tropical frame; the caller shifts to sidereal if asked).
+fn natal_houses(
+    jd_ut1: JdUT1,
+    jd_tt: f64,
+    lat: f64,
+    lon: f64,
+    system: HouseSystem,
+) -> Result<HouseCusps, String> {
+    let t = (jd_tt - J2000_JD) / DAYS_PER_JULIAN_CENTURY;
     let eps = mean_obliquity(t);
     let location = GeoLocation::try_new(lat, lon)
         .ok_or_else(|| format!("invalid coordinates: lat {lat} lon {lon}"))?;
-    Ok(compute_houses(jd_ut1.0, &location, eps, HouseSystem::WholeSign))
+    Ok(compute_houses(jd_ut1.0, &location, eps, system))
 }
 
 /// Geocentric ecliptic longitudes for the ten catalog bodies, each placed in
-/// its house.
-fn planet_positions(jd_ut1: JdUT1, cusps: &HouseCusps, loc: Locale) -> Result<Vec<Body>, String> {
+/// its house. When `ayanamsa` is `Some`, longitudes are shifted to the sidereal
+/// frame — the same shift the cusps received, so house assignment is unchanged.
+fn planet_positions(
+    jd_ut1: JdUT1,
+    jd_tt: f64,
+    cusps: &HouseCusps,
+    loc: Locale,
+    ayanamsa: Option<Ayanamsa>,
+) -> Result<Vec<Body>, String> {
     let almanac = Almanac::default_vedic(); // default VSOP87 provider chain
     PLANETS
         .iter()
@@ -130,12 +166,18 @@ fn planet_positions(jd_ut1: JdUT1, cusps: &HouseCusps, loc: Locale) -> Result<Ve
             let pos = almanac
                 .geocentric_ecliptic(body, jd_ut1)
                 .map_err(|e| format!("ephemeris error for planet:{id}: {e:?}"))?;
+            // Sidereal longitude (radians) when an ayanamsa is set; used for both
+            // the reported degree and the house lookup, keeping them coherent.
+            let lon_rad = match ayanamsa {
+                Some(ay) => tropical_to_sidereal(pos.longitude, &ay, jd_tt),
+                None => pos.longitude,
+            };
             Ok(Body {
                 id: format!("planet:{id}"),
                 glyph: glyph.to_string(),
                 name: loc.planet_name(id).to_string(),
-                lon: norm360(pos.longitude.to_degrees()),
-                house: cusps.planet_in_house(pos.longitude) as u8,
+                lon: norm360(lon_rad.to_degrees()),
+                house: cusps.planet_in_house(lon_rad) as u8,
             })
         })
         .collect()
@@ -211,17 +253,23 @@ fn house_refs(loc: Locale) -> Vec<HouseRef> {
 
 fn birth_meta(input: &BirthInput) -> Meta {
     let loc = input.locale;
+    let house_code = systems::house_code(input.house_system);
     Meta {
         name: input.name.clone(),
         // The zone/offset stays out of `born`: it drives the local→UT
         // conversion but is noise to the reader.
         born: format!("{} {}", input.date, input.time.format("%H:%M")),
         place: input.place.clone(),
-        system: loc.system_label().to_string(),
-        zodiac: loc.zodiac_label().to_string(),
+        system: loc.house_system_label(house_code).to_string(),
+        zodiac: loc.zodiac_label_for(input.ayanamsa),
+        house_system: house_code.to_string(),
+        ayanamsa: input.ayanamsa.map(|a| systems::ayanamsa_code(a).to_string()),
         locale: loc.code().to_string(),
         astrologer: None, // branding is a frontend concern (desktop prefs)
         logo: None,
+        // the reproject seed needs the gazetteer place id, which only the
+        // desktop layer has; it stamps `birth` after the build (like branding).
+        birth: None,
     }
 }
 
@@ -239,6 +287,8 @@ mod tests {
             tz: tz.parse().unwrap(),
             place: "Test".into(),
             locale: Locale::En,
+            house_system: HouseSystem::WholeSign,
+            ayanamsa: None,
         }
     }
 
@@ -265,6 +315,71 @@ mod tests {
         // First cusp is 0° of the Ascendant's sign.
         let asc_sign_start = (chart.axes.asc / 30.0).floor() * 30.0;
         assert!(separation(chart.house_cusps[0], asc_sign_start) < 1e-6);
+    }
+
+    #[test]
+    fn placidus_cusps_are_quadrant_not_sign_boundaries() {
+        let mut input = birth("1990-07-13", "14:30:00", 52.52, 13.405, "Europe/Berlin");
+        input.house_system = HouseSystem::Placidus;
+        let chart = compute_chart(&input).unwrap();
+        // A quadrant system at mid-latitude yields intermediate cusps: at least
+        // one is clearly off a 30° boundary (unlike Whole Sign).
+        let off_boundary = chart.house_cusps.iter().any(|c| {
+            let nearest = (c / 30.0).round() * 30.0;
+            (c - nearest).abs() > 0.5
+        });
+        assert!(off_boundary, "Placidus cusps unexpectedly all on sign boundaries");
+        // The Ascendant still coincides with the first house cusp.
+        assert!(separation(chart.axes.asc, chart.house_cusps[0]) < 1e-6);
+        assert_eq!(chart.meta.system, "Placidus");
+        assert_eq!(chart.meta.house_system, "placidus");
+    }
+
+    #[test]
+    fn sidereal_shifts_every_longitude_by_the_ayanamsa() {
+        let tropical = birth("2000-01-01", "12:00:00", 0.0, 0.0, "UTC");
+        let mut sidereal = birth("2000-01-01", "12:00:00", 0.0, 0.0, "UTC");
+        sidereal.ayanamsa = Some(Ayanamsa::Lahiri);
+        let ct = compute_chart(&tropical).unwrap();
+        let cs = compute_chart(&sidereal).unwrap();
+        // Lahiri near J2000 is ≈ 23.85°; each sidereal longitude is the tropical
+        // one minus the ayanamsa (mod 360), bodies and the ASC point alike.
+        for (t, s) in ct.planets.iter().zip(cs.planets.iter()) {
+            let shift = norm360(t.lon - s.lon);
+            assert!((shift - 23.85).abs() < 0.3, "{}: shift {shift}", t.id);
+        }
+        assert_eq!(cs.meta.ayanamsa.as_deref(), Some("lahiri"));
+        assert!(cs.meta.zodiac.starts_with("Sidereal"), "zodiac {}", cs.meta.zodiac);
+        // Tropical charts record no ayanamsa.
+        assert_eq!(ct.meta.ayanamsa, None);
+    }
+
+    #[test]
+    fn excerpts_survive_a_house_system_reproject() {
+        // A live reproject recomputes geometry and carries the routed passages
+        // onto the new chart. The cusps change, but the vocabulary (sign/house/
+        // aspect ids) is stable, so pre-existing excerpt tags stay valid.
+        let mut input = birth("1990-07-13", "14:30:00", 52.52, 13.405, "Europe/Berlin");
+        let whole = compute_chart(&input).unwrap();
+        input.house_system = HouseSystem::Placidus;
+        let placidus = compute_chart(&input).unwrap();
+        assert_ne!(whole.house_cusps, placidus.house_cusps, "cusps should differ");
+
+        let tags = vec![
+            whole.signs[0].id.clone(),
+            "house:5".to_string(),
+            whole.aspects.first().map(|a| a.id.clone()).unwrap_or_else(|| whole.signs[1].id.clone()),
+        ];
+        let carried = crate::contract::Excerpt {
+            id: "x1".into(),
+            time: String::new(),
+            span: [0, 0],
+            text: "t".into(),
+            tags,
+        };
+        let mut reprojected = placidus;
+        reprojected.excerpts = vec![carried];
+        assert!(reprojected.validate().is_ok(), "carried excerpt must stay valid");
     }
 
     #[test]

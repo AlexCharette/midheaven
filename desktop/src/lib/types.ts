@@ -7,6 +7,7 @@
 
 export type { ChartData } from "./generated/ChartData";
 export type { Meta } from "./generated/Meta";
+export type { BirthSeed } from "./generated/BirthSeed";
 export type { Axes } from "./generated/Axes";
 export type { Body } from "./generated/Body";
 export type { Ref } from "./generated/Ref";
@@ -18,6 +19,7 @@ export type { Preferences } from "./generated/Preferences";
 export type { ReadingEntry } from "./generated/ReadingEntry";
 export type { BirthForm } from "./generated/BirthForm";
 export type { LocaleDto } from "./generated/LocaleDto";
+export type { OptionDto } from "./generated/OptionDto";
 
 import type { ChartData } from "./generated/ChartData";
 import type { Excerpt } from "./generated/Excerpt";

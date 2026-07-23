@@ -11,6 +11,8 @@ pub static TABLE: LocaleTable = LocaleTable {
     aspects: ASPECTS,
     system: "Whole Sign",
     zodiac: "Tropical",
+    house_systems: HOUSE_SYSTEMS,
+    sidereal: "Sidereal",
     anonymous: "Anonymous",
     endonym: "English",
     house_suffix: " House",
@@ -21,6 +23,18 @@ pub static TABLE: LocaleTable = LocaleTable {
         commentary: "Commentary",
     },
 };
+
+// House-system labels keyed by the `chart::systems` wire codes. English uses
+// the systems' canonical names (the same as `xalen_houses` Display).
+static HOUSE_SYSTEMS: &[(&str, &str)] = &[
+    ("whole-sign", "Whole Sign"),
+    ("placidus", "Placidus"),
+    ("koch", "Koch"),
+    ("equal", "Equal"),
+    ("regiomontanus", "Regiomontanus"),
+    ("campanus", "Campanus"),
+    ("porphyry", "Porphyry"),
+];
 
 // Terms mirror the old `planet_terms`: the slug itself, plus "rising" for the
 // Ascendant. The slug doubled as the English match term historically.

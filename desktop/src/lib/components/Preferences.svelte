@@ -1,7 +1,7 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import { getPreferences, listModels, setPreferences } from "$lib/api";
-  import { locales, notify } from "$lib/state.svelte";
+  import { getPreferences, listModels, openLicenses, setPreferences } from "$lib/api";
+  import { ayanamsas, houseSystems, locales, notify } from "$lib/state.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -12,6 +12,9 @@
   let logo = $state("");
   let pageSize = $state("a4");
   let defaultLocale = $state("en");
+  let defaultHouseSystem = $state("whole-sign");
+  let defaultZodiac = $state("tropical");
+  let defaultAyanamsa = $state("lahiri");
   let models = $state<string[]>([]);
   let error = $state("");
 
@@ -32,6 +35,9 @@
       logo = p.logo ?? "";
       pageSize = p.page_size ?? "a4";
       defaultLocale = p.default_locale ?? "en";
+      defaultHouseSystem = p.default_house_system ?? "whole-sign";
+      defaultZodiac = p.default_zodiac ?? "tropical";
+      defaultAyanamsa = p.default_ayanamsa ?? "lahiri";
       refreshModels();
     });
   });
@@ -56,6 +62,14 @@
     if (typeof path === "string") logo = path;
   }
 
+  async function showLicenses() {
+    try {
+      await openLicenses();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   async function keep() {
     error = "";
     try {
@@ -67,6 +81,9 @@
         logo: logo || null,
         page_size: pageSize === "a4" ? null : pageSize,
         default_locale: defaultLocale === "en" ? null : defaultLocale,
+        default_house_system: defaultHouseSystem === "whole-sign" ? null : defaultHouseSystem,
+        default_zodiac: defaultZodiac === "tropical" ? null : defaultZodiac,
+        default_ayanamsa: defaultAyanamsa === "lahiri" ? null : defaultAyanamsa,
       });
       notify("preferences kept");
       onclose();
@@ -136,6 +153,43 @@
     </select>
   </label>
 
+  <p class="section">calculation</p>
+  <label>
+    <span>house system</span>
+    <select bind:value={defaultHouseSystem}>
+      {#each houseSystems as h (h.code)}
+        <option value={h.code}>{h.label}</option>
+      {/each}
+    </select>
+  </label>
+  <label>
+    <span>zodiac</span>
+    <select bind:value={defaultZodiac}>
+      <option value="tropical">Tropical</option>
+      <option value="sidereal">Sidereal</option>
+    </select>
+  </label>
+  {#if defaultZodiac === "sidereal"}
+    <label>
+      <span>ayanamsa</span>
+      <select bind:value={defaultAyanamsa}>
+        {#each ayanamsas as a (a.code)}
+          <option value={a.code}>{a.label}</option>
+        {/each}
+      </select>
+    </label>
+  {/if}
+
+  <p class="section">about</p>
+  <label>
+    <span>acknowledgements</span>
+    <span class="ack">
+      Ephemeris and house calculations by the
+      <button type="button" class="linklike" onclick={showLicenses}>xalen</button>
+      crates (Apache-2.0).
+    </span>
+  </label>
+
   {#if error}<p class="error">✗ {error}</p>{/if}
 
   <div class="actions">
@@ -186,6 +240,19 @@
   }
   .browse:hover {
     color: var(--ink);
+  }
+  .ack {
+    font-size: 0.85rem;
+    color: var(--ink-3);
+    line-height: 1.5;
+  }
+  .linklike {
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .linklike:hover {
+    color: var(--steel);
   }
   .error {
     color: var(--oxblood);

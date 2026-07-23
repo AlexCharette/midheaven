@@ -162,8 +162,20 @@ pub struct Meta {
     pub name: String,
     pub born: String,
     pub place: String,
+    /// Localized house-system label for display ("Whole Sign", "Placidus", …).
     pub system: String,
+    /// Localized zodiac label for display ("Tropical", "Sidereal · Lahiri …").
     pub zodiac: String,
+    /// Machine-readable house-system code (`whole-sign`, `placidus`, …) — the
+    /// stable value for JSON consumers, distinct from the display `system`.
+    /// Defaulted so charts written before this field still deserialize.
+    #[serde(default)]
+    pub house_system: String,
+    /// Machine-readable ayanamsa code (`lahiri`, …) when the chart is sidereal;
+    /// absent for tropical charts, keeping tropical JSON byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub ayanamsa: Option<String>,
     /// Reading language as a short code (`en`, `ru`). Drives the router's
     /// match terms and every renderer's chrome; parsed via `i18n::Locale`.
     /// Defaulted so charts written before this field still deserialize.
@@ -178,6 +190,27 @@ pub struct Meta {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub logo: Option<String>,
+    /// Machine-readable seed to recompute this chart's geometry (live house-
+    /// system / zodiac swaps in the reading view). Stamped by the desktop build;
+    /// absent on charts saved before this existed and on CLI output, which then
+    /// simply aren't reprojectable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub birth: Option<BirthSeed>,
+}
+
+/// The minimum needed to reconstruct a `chart::BirthInput` for a live
+/// recalculation: the gazetteer place id (re-resolves lat/lon/tz) plus the raw
+/// birth date and time. Name, locale, and the calculation codes come from the
+/// rest of `Meta`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+pub struct BirthSeed {
+    pub place_id: u32,
+    /// Birth date, `YYYY-MM-DD`.
+    pub date: String,
+    /// Local birth time, `HH:MM` or `HH:MM:SS`.
+    pub time: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -272,9 +305,12 @@ mod tests {
                 place: "p".into(),
                 system: "Whole Sign".into(),
                 zodiac: "Tropical".into(),
+                house_system: "whole-sign".into(),
+                ayanamsa: None,
                 locale: "en".into(),
                 astrologer: None,
                 logo: None,
+                birth: None,
             },
             axes: Axes { asc: 0.0, mc: 270.0 },
             house_cusps: (0..12).map(|i| i as f64 * 30.0).collect(),

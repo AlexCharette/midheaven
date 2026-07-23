@@ -5,4 +5,19 @@ export type BirthForm = { name: string, date: string, time: string, place_id: nu
  * Reading language code ("en", "ru"); absent falls back to the
  * default-language preference, then English.
  */
-lang: string | null, };
+lang: string | null, 
+/**
+ * House-system code ("whole-sign", "placidus", …); absent falls back to
+ * the default-house-system preference, then Whole Sign.
+ */
+house_system: string | null, 
+/**
+ * Zodiac ("tropical" | "sidereal"); absent falls back to the preference,
+ * then tropical.
+ */
+zodiac: string | null, 
+/**
+ * Ayanamsa code ("lahiri", …) used when `zodiac` is "sidereal"; absent
+ * falls back to the preference, then Lahiri.
+ */
+ayanamsa: string | null, };

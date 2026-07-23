@@ -2,14 +2,31 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { BirthForm, ChartData, LocaleDto, PlaceDto, Preferences, ReadingEntry } from "./types";
+import type {
+  BirthForm,
+  ChartData,
+  LocaleDto,
+  OptionDto,
+  PlaceDto,
+  Preferences,
+  ReadingEntry,
+} from "./types";
 
 export const searchPlaces = (query: string) =>
   invoke<PlaceDto[]>("search_places", { query });
 
 export const listLocales = () => invoke<LocaleDto[]>("list_locales");
 
+export const listHouseSystems = () => invoke<OptionDto[]>("list_house_systems");
+
+export const listAyanamsas = () => invoke<OptionDto[]>("list_ayanamsas");
+
 export const build = (form: BirthForm) => invoke<ChartData>("build", { form });
+
+/** Recompute the current chart's geometry under a new house system / zodiac,
+ * keeping its passages. `ayanamsa` is used only when zodiac is "sidereal". */
+export const reproject = (houseSystem: string, zodiac: string, ayanamsa: string | null) =>
+  invoke<ChartData>("reproject", { houseSystem, zodiac, ayanamsa });
 
 export const loadChart = (path: string) => invoke<ChartData>("load_chart", { path });
 
@@ -52,5 +69,8 @@ export const setPreferences = (prefs: Preferences) =>
   invoke<void>("set_preferences", { prefs });
 
 export const listModels = (dir: string) => invoke<string[]>("list_models", { dir });
+
+/** Open the bundled third-party license notices in the OS browser. */
+export const openLicenses = () => invoke<void>("open_licenses");
 
 export const artifactFilename = () => invoke<string>("artifact_filename");

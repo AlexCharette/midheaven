@@ -1,7 +1,7 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { build, getPreferences, searchPlaces } from "$lib/api";
-  import { app, isBusy, locales, notify } from "$lib/state.svelte";
+  import { app, ayanamsas, houseSystems, isBusy, locales, notify } from "$lib/state.svelte";
   import Library from "./Library.svelte";
   import Preferences from "./Preferences.svelte";
   import WheelMark from "./WheelMark.svelte";
@@ -21,6 +21,9 @@
   let transcript = $state("");
   let model = $state("");
   let lang = $state("");
+  let houseSystem = $state("");
+  let zodiac = $state("tropical");
+  let ayanamsa = $state("");
   let error = $state("");
   let prefsOpen = $state(false);
   let libraryOpen = $state(false);
@@ -31,6 +34,10 @@
     const p = await getPreferences();
     if (!model.trim() && p.default_model) model = p.default_model;
     if (!lang) lang = p.default_locale ?? "en";
+    if (!houseSystem) houseSystem = p.default_house_system ?? "whole-sign";
+    if (!ayanamsa) ayanamsa = p.default_ayanamsa ?? "lahiri";
+    // Zodiac is a real toggle (default tropical); only a set preference moves it.
+    if (p.default_zodiac) zodiac = p.default_zodiac;
   }
   $effect(() => {
     if (!prefsOpen) prefillModel();
@@ -101,6 +108,9 @@
         transcript: transcript || null,
         model: model || null,
         lang: lang || null,
+        house_system: houseSystem || null,
+        zodiac: zodiac || null,
+        ayanamsa: zodiac === "sidereal" ? ayanamsa || null : null,
       });
       // Only worth announcing the routing when a transcript was actually
       // supplied; a bare chart with no transcript routes nothing.
@@ -180,6 +190,29 @@
         {/each}
       </select>
     </label>
+    <div class="pair">
+      <label class="lbl" for="f-house">house system</label>
+      <select id="f-house" class="lang" bind:value={houseSystem}>
+        {#each houseSystems as h (h.code)}
+          <option value={h.code}>{h.label}</option>
+        {/each}
+      </select>
+      <label class="lbl" for="f-zodiac">zodiac</label>
+      <select id="f-zodiac" class="lang" bind:value={zodiac}>
+        <option value="tropical">Tropical</option>
+        <option value="sidereal">Sidereal</option>
+      </select>
+    </div>
+    {#if zodiac === "sidereal"}
+      <label>
+        <span>ayanamsa</span>
+        <select class="lang" bind:value={ayanamsa}>
+          {#each ayanamsas as a (a.code)}
+            <option value={a.code}>{a.label}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
     <label>
       <span>transcript</span>
       <input bind:value={transcript} placeholder=".txt / .jsonl — or a .wav to transcribe (optional)" />
@@ -269,10 +302,28 @@
     position: relative;
   }
   label span:first-child,
-  .duo .lbl {
+  .duo .lbl,
+  .pair .lbl {
     font-style: italic;
     color: var(--ink-3);
     text-align: right;
+  }
+  /* house system + zodiac share a row, packed to the left like .duo: the first
+     label keeps the shared 7.5rem gutter (aligning with every other field), each
+     select sizes to its content, and "zodiac" sits snug after the first select
+     rather than drifting to the plate edge. */
+  .pair {
+    display: grid;
+    grid-template-columns: 7.5rem auto 4.5rem auto;
+    justify-content: start;
+    gap: 0 1rem;
+    align-items: baseline;
+    margin-bottom: 0.7rem;
+  }
+  /* the labels are <label>s, which the global rule makes 7.5rem grids; here they
+     must size to their own text so "zodiac" doesn't overrun its column. */
+  .pair .lbl {
+    display: block;
   }
   .duo {
     display: grid;

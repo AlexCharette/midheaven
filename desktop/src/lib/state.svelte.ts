@@ -1,8 +1,8 @@
 // The app's shared state (Svelte 5 runes) — one Model, Elm-ish.
 
 import { SvelteSet } from "svelte/reactivity";
-import { listLocales } from "./api";
-import type { ChartData, Excerpt, LocaleDto } from "./types";
+import { listAyanamsas, listHouseSystems, listLocales } from "./api";
+import type { ChartData, Excerpt, LocaleDto, OptionDto } from "./types";
 
 /** What the app is doing: idle, a synchronous chart build, or transcription at
  * a whole-percent progress. One discriminated shape so consumers ask `isBusy()`
@@ -54,6 +54,22 @@ export async function loadLocales() {
  * home for the mapping — the strings themselves come from the backend. */
 export function houseSuffix(code: string): string {
   return locales.find((l) => l.code === code)?.houseSuffix ?? "";
+}
+
+/** House systems and ayanamsas offered in the form, each `{code,label}`,
+ * fetched once from the backend (`list_house_systems` / `list_ayanamsas`,
+ * sourced from `chart::systems`). Empty until `loadCalcOptions`. */
+export const houseSystems = $state<OptionDto[]>([]);
+export const ayanamsas = $state<OptionDto[]>([]);
+
+/** Populate the calculation-option lists once; a no-op after the first call. */
+export async function loadCalcOptions() {
+  try {
+    if (houseSystems.length === 0) houseSystems.push(...(await listHouseSystems()));
+    if (ayanamsas.length === 0) ayanamsas.push(...(await listAyanamsas()));
+  } catch (e) {
+    notify(`${e}`, "error");
+  }
 }
 
 /** Transient focus, shared by the wheel, the index legend, and any sector: set

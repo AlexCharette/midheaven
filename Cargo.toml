@@ -3,7 +3,7 @@ members = [".", "desktop/src-tauri"]
 
 [package]
 name = "astro"
-version = "0.3.5"
+version = "0.4.0"
 edition = "2024"
 license = "MIT"
 
@@ -29,6 +29,7 @@ ttf-parser = "0.25.1"
 # Optional so mobile targets (Android/iOS) can build without a C++ toolchain
 # or on-device model inference — see the `transcribe` feature below.
 whisper-rs = { version = "0.16.0", optional = true }
+xalen-ayanamsa = "0.6.0"
 xalen-coords = "0.6.0"
 xalen-ephem = "0.6.0"
 xalen-houses = "0.6.0"
