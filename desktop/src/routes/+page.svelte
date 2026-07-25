@@ -11,7 +11,7 @@
     stopRecording,
   } from "$lib/api";
   import { app, excerptsMatching, isBusy, loadCalcOptions, loadLocales, notify, selected, visibleExcerpts } from "$lib/state.svelte";
-  import BirthForm from "$lib/components/BirthForm.svelte";
+  import Calculator from "$lib/components/Calculator.svelte";
   import ChartCore from "$lib/components/ChartCore.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
   import IndexOfElements from "$lib/components/IndexOfElements.svelte";
@@ -196,7 +196,9 @@
     </span>
   </footer>
 {:else}
-  <BirthForm />
+  <!-- the landing view: the live chart calculator; the birth form now lives
+       in its fly-out -->
+  <Calculator />
 {/if}
 
 <style>

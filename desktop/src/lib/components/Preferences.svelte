@@ -17,6 +17,9 @@
   let defaultAyanamsa = $state("lahiri");
   let models = $state<string[]>([]);
   let error = $state("");
+  // Not a pane field — the calculator's remembered place, carried through the
+  // save so keeping preferences never erases it.
+  let lastPlaceId = $state<number | null>(null);
 
   const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
@@ -38,6 +41,7 @@
       defaultHouseSystem = p.default_house_system ?? "whole-sign";
       defaultZodiac = p.default_zodiac ?? "tropical";
       defaultAyanamsa = p.default_ayanamsa ?? "lahiri";
+      lastPlaceId = p.last_place_id;
       refreshModels();
     });
   });
@@ -84,6 +88,7 @@
         default_house_system: defaultHouseSystem === "whole-sign" ? null : defaultHouseSystem,
         default_zodiac: defaultZodiac === "tropical" ? null : defaultZodiac,
         default_ayanamsa: defaultAyanamsa === "lahiri" ? null : defaultAyanamsa,
+        last_place_id: lastPlaceId,
       });
       notify("preferences kept");
       onclose();

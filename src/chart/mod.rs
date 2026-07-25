@@ -152,6 +152,14 @@ fn natal_houses(
 /// Geocentric ecliptic longitudes for the ten catalog bodies, each placed in
 /// its house. When `ayanamsa` is `Some`, longitudes are shifted to the sidereal
 /// frame — the same shift the cusps received, so house assignment is unchanged.
+/// The default VSOP87 provider chain, built once — the live calculator calls
+/// [`compute_chart_reporting`] at interactive scrub rates, so per-call
+/// construction would be pure waste.
+fn almanac() -> &'static Almanac {
+    static ALMANAC: std::sync::OnceLock<Almanac> = std::sync::OnceLock::new();
+    ALMANAC.get_or_init(Almanac::default_vedic)
+}
+
 fn planet_positions(
     jd_ut1: JdUT1,
     jd_tt: f64,
@@ -159,7 +167,7 @@ fn planet_positions(
     loc: Locale,
     ayanamsa: Option<Ayanamsa>,
 ) -> Result<Vec<Body>, String> {
-    let almanac = Almanac::default_vedic(); // default VSOP87 provider chain
+    let almanac = almanac();
     PLANETS
         .iter()
         .map(|&(body, id, glyph, _name)| {
@@ -402,6 +410,19 @@ mod tests {
         // Sun in mid-July is in Cancer [90°, 120°).
         let sun = &chart.planets[0];
         assert!((90.0..120.0).contains(&sun.lon), "Sun lon {}", sun.lon);
+    }
+
+    #[test]
+    fn dst_gap_is_an_error_and_dst_fold_a_warning() {
+        // Berlin springs forward 2024-03-31 02:00 → 03:00: 02:30 never happens.
+        let gap = birth("2024-03-31", "02:30:00", 52.52, 13.405, "Europe/Berlin");
+        let err = compute_chart_reporting(&gap).unwrap_err();
+        assert!(err.contains("DST gap"), "{err}");
+        // It falls back 2024-10-27 03:00 → 02:00: 02:30 happens twice; the
+        // chart uses the earlier offset and says so instead of failing.
+        let fold = birth("2024-10-27", "02:30:00", 52.52, 13.405, "Europe/Berlin");
+        let (_, warnings) = compute_chart_reporting(&fold).unwrap();
+        assert!(warnings.iter().any(|w| w.contains("DST fold")), "{warnings:?}");
     }
 
     #[test]

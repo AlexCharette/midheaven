@@ -20,6 +20,8 @@ export type { ReadingEntry } from "./generated/ReadingEntry";
 export type { BirthForm } from "./generated/BirthForm";
 export type { LocaleDto } from "./generated/LocaleDto";
 export type { OptionDto } from "./generated/OptionDto";
+export type { PreviewInput } from "./generated/PreviewInput";
+export type { PreviewDto } from "./generated/PreviewDto";
 
 import type { ChartData } from "./generated/ChartData";
 import type { Excerpt } from "./generated/Excerpt";
