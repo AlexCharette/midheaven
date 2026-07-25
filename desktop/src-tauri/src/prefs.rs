@@ -34,6 +34,9 @@ pub struct Preferences {
     /// Default ayanamsa code ("lahiri", …) that prefills the form's ayanamsa
     /// selector when sidereal (absent = lahiri).
     pub default_ayanamsa: Option<String>,
+    /// Gazetteer id of the calculator's last-used place — written when a place
+    /// is picked (`set_last_place`), not by the preferences pane.
+    pub last_place_id: Option<u32>,
 }
 
 fn path(app: &tauri::AppHandle) -> Result<PathBuf, String> {

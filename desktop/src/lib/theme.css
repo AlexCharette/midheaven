@@ -99,6 +99,7 @@
   --z-dropdown: 20;
   --z-sticky: 30;
   --z-footer: 40;
+  --z-overlay: 50; /* modal veil: above the fixed footer, below toasts */
   --z-toast: 60;
   --z-tooltip: 70;
 
@@ -125,6 +126,7 @@ body {
   color: var(--ink);
   font-family: var(--font-serif);
   line-height: 1.6;
+  -webkit-user-select: none; /* WKWebView still wants the prefix */
   user-select: none;
   cursor: default;
 }

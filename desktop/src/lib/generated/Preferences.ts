@@ -44,4 +44,9 @@ default_zodiac: string | null,
  * Default ayanamsa code ("lahiri", …) that prefills the form's ayanamsa
  * selector when sidereal (absent = lahiri).
  */
-default_ayanamsa: string | null, };
+default_ayanamsa: string | null, 
+/**
+ * Gazetteer id of the calculator's last-used place — written when a place
+ * is picked (`set_last_place`), not by the preferences pane.
+ */
+last_place_id: number | null, };

@@ -1,84 +1,70 @@
 <script lang="ts">
+  // The birth-chart form — lives in the calculator's fly-out. `initial` seeds
+  // it with the moment being explored (the calculator's date/time/place and
+  // calculation choices); submitting builds a full reading and flips the app
+  // into the reading view.
   import { open } from "@tauri-apps/plugin-dialog";
-  import { build, getPreferences, searchPlaces } from "$lib/api";
-  import { app, ayanamsas, houseSystems, isBusy, locales, notify } from "$lib/state.svelte";
-  import Library from "./Library.svelte";
-  import Preferences from "./Preferences.svelte";
-  import WheelMark from "./WheelMark.svelte";
+  import { build, getPreferences, setLastPlace } from "$lib/api";
+  import { app, isBusy, locales, notify, selected } from "$lib/state.svelte";
+  import CalcOptions from "./CalcOptions.svelte";
+  import PlacePicker from "./PlacePicker.svelte";
   import type { PlaceDto } from "$lib/types";
-  import { swapDuration } from "$lib/motion";
-  import { fade } from "svelte/transition";
+  import { onMount } from "svelte";
 
-  const swap = { duration: swapDuration() };
+  type Initial = Partial<{
+    date: string;
+    time: string;
+    place: PlaceDto | null;
+    houseSystem: string;
+    zodiac: string;
+    ayanamsa: string;
+  }>;
 
+  let {
+    initial,
+    onclose,
+  }: {
+    initial?: Initial;
+    onclose?: () => void;
+  } = $props();
+
+  // `initial` is a seed by design — the form captures the calculator's moment
+  // at open and then owns its own edits, so the captures below are one-shot.
+  /* svelte-ignore state_referenced_locally */
   let name = $state("");
-  let date = $state("");
-  let time = $state("");
-  let placeQuery = $state("");
-  let picked = $state<PlaceDto | null>(null);
-  let suggestions = $state<PlaceDto[]>([]);
-  let sel = $state(0);
+  /* svelte-ignore state_referenced_locally */
+  let date = $state(initial?.date ?? "");
+  /* svelte-ignore state_referenced_locally */
+  let time = $state(initial?.time ?? "");
+  /* svelte-ignore state_referenced_locally */
+  let picked = $state<PlaceDto | null>(initial?.place ?? null);
   let transcript = $state("");
   let model = $state("");
   let lang = $state("");
-  let houseSystem = $state("");
-  let zodiac = $state("tropical");
-  let ayanamsa = $state("");
+  /* svelte-ignore state_referenced_locally */
+  let houseSystem = $state(initial?.houseSystem ?? "");
+  /* svelte-ignore state_referenced_locally */
+  let zodiac = $state(initial?.zodiac ?? "tropical");
+  /* svelte-ignore state_referenced_locally */
+  let ayanamsa = $state(initial?.ayanamsa ?? "");
   let error = $state("");
-  let prefsOpen = $state(false);
-  let libraryOpen = $state(false);
 
-  // the preferred model / default language prefill untouched fields (again on
-  // pane close, so a freshly chosen default lands without retyping)
-  async function prefillModel() {
+  // the model is picked as a file but read as a name — the path is backend
+  // detail, the basename is what a person recognizes
+  const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
+
+  // the preferred model / default language prefill untouched fields; the
+  // calculator's `initial` values were seeded above, so they win
+  onMount(async () => {
     const p = await getPreferences();
     if (!model.trim() && p.default_model) model = p.default_model;
     if (!lang) lang = p.default_locale ?? "en";
     if (!houseSystem) houseSystem = p.default_house_system ?? "whole-sign";
     if (!ayanamsa) ayanamsa = p.default_ayanamsa ?? "lahiri";
-    // Zodiac is a real toggle (default tropical); only a set preference moves it.
-    if (p.default_zodiac) zodiac = p.default_zodiac;
-  }
-  $effect(() => {
-    if (!prefsOpen) prefillModel();
+    // Zodiac is a real toggle (default tropical); a set preference moves it
+    // only when the calculator didn't hand one over.
+    if (initial?.zodiac === undefined && p.default_zodiac) zodiac = p.default_zodiac;
   });
-
-  // monotonic counter: a slow stale response must not overwrite a newer one
-  // or re-open a dropdown the user already resolved
-  let latest = 0;
-  async function queryPlaces() {
-    picked = null;
-    const seq = ++latest;
-    const q = placeQuery.trim();
-    const result = q ? await searchPlaces(q) : [];
-    if (seq === latest) {
-      suggestions = result;
-      sel = 0;
-    }
-  }
-
-  function pick(p: PlaceDto) {
-    latest++;
-    picked = p;
-    placeQuery = p.label;
-    suggestions = [];
-  }
-
-  function onPlaceKey(e: KeyboardEvent) {
-    if (suggestions.length === 0) return;
-    if (e.key === "ArrowDown") {
-      sel = Math.min(sel + 1, suggestions.length - 1);
-      e.preventDefault();
-    } else if (e.key === "ArrowUp") {
-      sel = Math.max(sel - 1, 0);
-      e.preventDefault();
-    } else if (e.key === "Enter") {
-      pick(suggestions[sel]);
-      e.preventDefault();
-    } else if (e.key === "Escape") {
-      suggestions = [];
-    }
-  }
 
   async function pickFile(kind: "transcript" | "model") {
     const filters =
@@ -100,7 +86,7 @@
     }
     app.busy = { kind: "compute" };
     try {
-      app.chart = await build({
+      const chart = await build({
         name,
         date,
         time,
@@ -112,10 +98,17 @@
         zodiac: zodiac || null,
         ayanamsa: zodiac === "sidereal" ? ayanamsa || null : null,
       });
+      // a built reading is the strongest "last used place" signal
+      setLastPlace(picked.id).catch(() => {});
+      // the calculator's plate shares the pin/hover state — a fresh reading
+      // must not inherit stale selections
+      selected.clear();
+      app.hovered = null;
+      app.chart = chart;
       // Only worth announcing the routing when a transcript was actually
       // supplied; a bare chart with no transcript routes nothing.
       if (transcript.trim()) {
-        const n = app.chart.excerpts.length;
+        const n = chart.excerpts.length;
         notify(`${n} ${n === 1 ? "passage" : "passages"} routed past the verify gate`);
       }
       app.model = model.trim();
@@ -127,170 +120,86 @@
   }
 </script>
 
-<div class="entry">
-  <div class="plate-frame entry-plate">
-  <header class="masthead">
-    <div class="mark"><WheelMark size={92} /></div>
-    <h1>MIDHEAVEN</h1>
-    <div class="double-rule"></div>
-    <p class="apparatus-text tagline">your offline astrology workbench</p>
-  </header>
-
-  {#if prefsOpen}
-    <div class="swap" in:fade={swap}>
-      <Preferences onclose={() => (prefsOpen = false)} />
-    </div>
-  {:else if libraryOpen}
-    <div class="swap" in:fade={swap}>
-      <Library onclose={() => (libraryOpen = false)} />
-    </div>
-  {:else}
-  <form
-    in:fade={swap}
-    onsubmit={(e) => {
-      e.preventDefault();
-      compute();
-    }}
-  >
-    <label>
-      <span>name</span>
-      <input bind:value={name} placeholder="the chart holder's name" />
-    </label>
-    <div class="duo">
-      <label class="lbl" for="f-date">born on</label>
-      <input id="f-date" bind:value={date} placeholder="YYYY-MM-DD" />
-      <label class="lbl" for="f-time">at</label>
-      <input id="f-time" bind:value={time} placeholder="HH:MM · 24h" />
-    </div>
-    <label class="place">
-      <span>in</span>
-      <input
-        bind:value={placeQuery}
-        oninput={queryPlaces}
-        onkeydown={onPlaceKey}
-        placeholder="type a city"
-      />
-      {#if suggestions.length > 0}
-        <ul class="dropdown">
-          {#each suggestions as p, i (p.id)}
-            <li>
-              <button type="button" class:current={i === sel} onclick={() => pick(p)}>
-                <span class="marker">{i === sel ? "☞" : ""}</span>{p.label}
-              </button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </label>
-    <label>
-      <span>language</span>
-      <select class="lang" bind:value={lang}>
-        {#each locales as l (l.code)}
-          <option value={l.code}>{l.label}</option>
-        {/each}
-      </select>
-    </label>
-    <div class="pair">
-      <label class="lbl" for="f-house">house system</label>
-      <select id="f-house" class="lang" bind:value={houseSystem}>
-        {#each houseSystems as h (h.code)}
-          <option value={h.code}>{h.label}</option>
-        {/each}
-      </select>
-      <label class="lbl" for="f-zodiac">zodiac</label>
-      <select id="f-zodiac" class="lang" bind:value={zodiac}>
-        <option value="tropical">Tropical</option>
-        <option value="sidereal">Sidereal</option>
-      </select>
-    </div>
-    {#if zodiac === "sidereal"}
-      <label>
-        <span>ayanamsa</span>
-        <select class="lang" bind:value={ayanamsa}>
-          {#each ayanamsas as a (a.code)}
-            <option value={a.code}>{a.label}</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
-    <label>
-      <span>transcript</span>
-      <input bind:value={transcript} placeholder=".txt / .jsonl — or a .wav to transcribe (optional)" />
-      <button type="button" class="browse" onclick={() => pickFile("transcript")}>browse…</button>
-    </label>
-    <label>
-      <span>model</span>
-      <input bind:value={model} placeholder="ggml whisper model — for audio (optional)" />
-      <button type="button" class="browse" onclick={() => pickFile("model")}>browse…</button>
-    </label>
-
-    {#if error}<p class="error">✗ {error}</p>{/if}
-
-    <div class="actions">
-      <button type="submit" class="frame-btn compute" disabled={isBusy()}>
-        {#if app.busy.kind === "transcribe"}
-          transcribing… {app.busy.pct}%
-        {:else if app.busy.kind === "compute"}
-          computing the chart…
-        {:else}
-          compute the chart
-        {/if}
-      </button>
-    </div>
-    {#if app.busy.kind === "transcribe"}
-      <div class="bar"><div class="fill" style="width: {app.busy.pct}%"></div></div>
-    {/if}
-
-    <p class="prefs-line">
-      <button type="button" class="ghost" onclick={() => (libraryOpen = true)}>
-        open a saved reading
-      </button>
-      <span class="sep" aria-hidden="true">·</span>
-      <button type="button" class="ghost" onclick={() => (prefsOpen = true)}>preferences</button>
-    </p>
-  </form>
-  {/if}
+<p class="rubric">cast a natal chart</p>
+<form
+  onsubmit={(e) => {
+    e.preventDefault();
+    compute();
+  }}
+>
+  <label>
+    <span>name</span>
+    <input bind:value={name} placeholder="the chart holder's name" />
+  </label>
+  <div class="duo">
+    <label class="lbl" for="f-date">born on</label>
+    <input id="f-date" bind:value={date} placeholder="YYYY-MM-DD" />
+    <label class="lbl" for="f-time">at</label>
+    <input id="f-time" bind:value={time} placeholder="HH:MM" title="24-hour clock" />
   </div>
-</div>
+  <label class="place">
+    <span>in</span>
+    <PlacePicker bind:value={picked} />
+  </label>
+  <label>
+    <span>language</span>
+    <select class="lang" bind:value={lang}>
+      {#each locales as l (l.code)}
+        <option value={l.code}>{l.label}</option>
+      {/each}
+    </select>
+  </label>
+  <CalcOptions bind:houseSystem bind:zodiac bind:ayanamsa />
+  <label>
+    <span>transcript</span>
+    <input bind:value={transcript} placeholder=".txt / .jsonl — or a .wav to transcribe (optional)" />
+    <button type="button" class="browse" onclick={() => pickFile("transcript")}>browse…</button>
+  </label>
+  <label>
+    <span>model</span>
+    <span class="model-slot">
+      <input
+        readonly
+        value={model ? basename(model) : ""}
+        placeholder="ggml whisper model — for audio (optional)"
+        title={model || undefined}
+        onclick={() => pickFile("model")}
+        onkeydown={(e) => e.key === "Enter" && pickFile("model")}
+      />
+      {#if model}
+        <button type="button" class="clear" aria-label="clear the model" onclick={() => (model = "")}>×</button>
+      {/if}
+    </span>
+    <button type="button" class="browse" onclick={() => pickFile("model")}>browse…</button>
+  </label>
+
+  {#if error}<p class="error">✗ {error}</p>{/if}
+
+  <div class="actions">
+    <button type="submit" class="frame-btn compute" disabled={isBusy()}>
+      {#if app.busy.kind === "transcribe"}
+        transcribing… {app.busy.pct}%
+      {:else if app.busy.kind === "compute"}
+        computing the chart…
+      {:else}
+        compute the chart
+      {/if}
+    </button>
+  </div>
+  {#if app.busy.kind === "transcribe"}
+    <div class="bar"><div class="fill" style="width: {app.busy.pct}%"></div></div>
+  {/if}
+
+  {#if onclose}
+    <p class="close-line">
+      <button type="button" class="ghost" onclick={onclose}>← back to the calculator</button>
+    </p>
+  {/if}
+</form>
 
 <style>
-  /* fill the viewport and centre the plate, so the form never scrolls when it
-     fits (and still grows past 100vh, staying reachable, on a short window) */
-  .entry {
-    max-width: 43rem;
-    min-height: 100vh;
-    margin: 0 auto;
-    padding: clamp(0.75rem, 2vh, 1.5rem) 1rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-  }
-  /* the entry plate compresses its block padding so the whole form clears the
-     viewport without a scroll */
-  .entry-plate {
-    text-align: center;
-    padding-block: clamp(0.9rem, 2vh, 1.5rem);
-  }
-  .masthead {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .mark {
-    margin-bottom: 0.2rem;
-  }
-  h1 {
-    font-weight: 400;
-    letter-spacing: 0.34em;
-    text-indent: 0.34em;
-    font-size: clamp(1.8rem, 4.5vw, 2.2rem);
-    margin: 0.2rem 0 0;
-  }
-  .tagline {
-    margin: 0.45rem 0 0;
-  }
   form {
-    margin-top: 1.3rem;
+    margin-top: 1.1rem;
     text-align: left;
   }
   label {
@@ -302,28 +211,10 @@
     position: relative;
   }
   label span:first-child,
-  .duo .lbl,
-  .pair .lbl {
+  .duo .lbl {
     font-style: italic;
     color: var(--ink-3);
     text-align: right;
-  }
-  /* house system + zodiac share a row, packed to the left like .duo: the first
-     label keeps the shared 7.5rem gutter (aligning with every other field), each
-     select sizes to its content, and "zodiac" sits snug after the first select
-     rather than drifting to the plate edge. */
-  .pair {
-    display: grid;
-    grid-template-columns: 7.5rem auto 4.5rem auto;
-    justify-content: start;
-    gap: 0 1rem;
-    align-items: baseline;
-    margin-bottom: 0.7rem;
-  }
-  /* the labels are <label>s, which the global rule makes 7.5rem grids; here they
-     must size to their own text so "zodiac" doesn't overrun its column. */
-  .pair .lbl {
-    display: block;
   }
   .duo {
     display: grid;
@@ -338,10 +229,16 @@
   }
   .duo input {
     width: 8.5rem;
-    margin-left: 1rem; /* same gap after "born on" and after "at" */
+    margin-left: 1rem;
   }
   .duo label[for="f-time"] {
-    margin-left: 0.4rem; /* pressed up against the date */
+    margin-left: 0.6rem; /* pressed up against the date */
+  }
+  /* the time needs only five characters; sized to them and kept snug against
+     the date so the pair reads as one clause and never clips in the fly-out */
+  .duo input#f-time {
+    width: 5.5rem;
+    margin-left: 0.6rem;
   }
   .browse {
     font-size: 0.85rem;
@@ -349,6 +246,29 @@
     font-style: italic;
   }
   .browse:hover {
+    color: var(--ink);
+  }
+  /* the model shows its NAME (the path is a tooltip); the readonly input is
+     itself a picker, with a quiet × to unset it */
+  .model-slot {
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+  }
+  .model-slot input {
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+  }
+  .model-slot .clear {
+    position: absolute;
+    right: 0.15rem;
+    color: var(--ink-3);
+    font-size: 0.9rem;
+    padding: 0 0.2rem;
+  }
+  .model-slot .clear:hover {
     color: var(--ink);
   }
   .lang {
@@ -364,36 +284,6 @@
     background: var(--bg-deep);
     color: var(--ink);
   }
-  .dropdown {
-    position: absolute;
-    top: 100%;
-    left: 8.5rem;
-    right: 0;
-    z-index: var(--z-dropdown);
-    margin: 0.3rem 0 0;
-    padding: 0.3rem 0;
-    list-style: none;
-    background: var(--bg-deep);
-    border: 1px solid var(--hairline);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-  }
-  .dropdown button {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 0.15rem 0.7rem;
-    color: var(--ink-2);
-  }
-  .dropdown button .marker {
-    display: inline-block;
-    width: 1.2em;
-    color: var(--ink-2);
-  }
-  .dropdown button.current,
-  .dropdown button:hover {
-    color: var(--ink);
-    text-decoration: underline;
-  }
   .error {
     color: var(--oxblood);
     font-style: italic;
@@ -403,8 +293,7 @@
     text-align: center;
     margin-top: 1rem;
   }
-  /* the primary act on the page: a brass-framed plate that fills on hover,
-     clearly ahead of the quiet library/preferences links below it. */
+  /* the panel's primary act: a brass-framed plate that fills on hover */
   .compute {
     padding: 0.5rem 2rem;
     letter-spacing: 0.18em;
@@ -429,43 +318,9 @@
     background: var(--brass);
     transition: width 0.4s ease-out;
   }
-  .prefs-line {
+  .close-line {
     text-align: center;
     margin-top: 1.2rem;
     font-size: 0.85rem;
-  }
-  .prefs-line .sep {
-    color: var(--ink-3);
-    margin: 0 0.6rem;
-  }
-
-  /* The title page settles into place: wordmark, rule, tagline, then the
-     form — a gentle upward arrival over the wheel mark's self-draw. */
-  @media (prefers-reduced-motion: no-preference) {
-    h1,
-    .double-rule,
-    .tagline {
-      opacity: 0;
-      animation: settle 0.7s var(--ease-out-quint) forwards;
-    }
-    h1 {
-      animation-delay: 0.18s;
-    }
-    .double-rule {
-      animation-delay: 0.3s;
-    }
-    .tagline {
-      animation-delay: 0.42s;
-    }
-  }
-  @keyframes settle {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
   }
 </style>

@@ -4,9 +4,31 @@
     catOf, degInSign, norm360, planetById, relatedTo, signDensity, textGlyph,
   } from "$lib/types";
   import { focusedTag, peek, selected, toggle, unpeek } from "$lib/state.svelte";
-  import type { Snippet } from "svelte";
+  import { prefersReducedMotion } from "$lib/motion";
+  import { onMount, type Snippet } from "svelte";
 
-  let { chart }: { chart: ChartData } = $props();
+  // `interactive` off (the live calculator) mutes the pin/preview contract:
+  // ring drags around the plate must not flicker `app.hovered` or leak pins
+  // into `selected` for the next reading. `scrubbing` hides the derived
+  // apparatus (houses, aspect chords) while a ring is being dragged.
+  let {
+    chart,
+    interactive = true,
+    scrubbing = false,
+  }: { chart: ChartData; interactive?: boolean; scrubbing?: boolean } = $props();
+
+  // Once the entrance choreography has played, late-mounting elements (an
+  // aspect chord entering orb mid-scrub) must not replay its long delays —
+  // `settled` retunes their animation to a quick fade.
+  let settled = $state(false);
+  onMount(() => {
+    if (prefersReducedMotion()) {
+      settled = true;
+      return;
+    }
+    const t = setTimeout(() => (settled = true), 1600);
+    return () => clearTimeout(t);
+  });
 
   // Every element on the plate is a live index: hover or keyboard-focus to
   // preview and light up its relations, click/Enter to pin it. A pin locks the
@@ -142,7 +164,12 @@
     let prevR = R.planet;
     return byLon.map((p) => {
       const gap = prevLon === null ? 999 : Math.min(Math.abs(p.lon - prevLon), 360 - Math.abs(p.lon - prevLon));
-      const r = gap < 8 ? Math.max(prevR - 27, 176) : R.planet;
+      // De-stacking ramps in over 11°→8° instead of stepping at 8°, so a body
+      // closing on another during a live scrub slides inward rather than
+      // popping. (Static charts with gaps under 8° render exactly as before;
+      // gaps of 8–11° now inset slightly.)
+      const f = Math.max(0, Math.min(1, (11 - gap) / 3));
+      const r = f > 0 ? Math.max(prevR - 27 * f, 176) : R.planet;
       prevLon = p.lon;
       prevR = r;
       const [gx, gy] = pt(p.lon, r);
@@ -191,6 +218,9 @@
   viewBox="-52 -52 824 824"
   role="img"
   class:focusing={focusTag !== null}
+  class:settled
+  class:passive={!interactive}
+  class:scrubbing
   aria-label="Natal chart wheel; the index of elements offers the same filters"
 >
   <!-- every clickable element on the plate shares one interactive contract:
@@ -198,21 +228,23 @@
        lighting. Defined once here (in SVG scope) and rendered per shape. -->
   {#snippet sector(id: string, cls: string, label: string | undefined, style: string | undefined, body: Snippet)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex (role and tabindex are
+         set together: both "button"/0 when interactive, both absent when not) -->
     <g
       class={cls}
       class:sel={selected.has(id)}
       class:focus={focusTag === id}
       class:rel={related.has(id)}
-      role="button"
-      tabindex="0"
+      role={interactive ? "button" : undefined}
+      tabindex={interactive ? 0 : undefined}
       aria-label={label}
       {style}
-      onclick={() => toggle(id)}
-      onmouseenter={() => peek(id)}
-      onmouseleave={unpeek}
-      onfocus={() => peek(id)}
-      onblur={unpeek}
-      onkeydown={pinKey(id)}
+      onclick={interactive ? () => toggle(id) : undefined}
+      onmouseenter={interactive ? () => peek(id) : undefined}
+      onmouseleave={interactive ? unpeek : undefined}
+      onfocus={interactive ? () => peek(id) : undefined}
+      onblur={interactive ? unpeek : undefined}
+      onkeydown={interactive ? pinKey(id) : undefined}
     >
       {@render body()}
     </g>
@@ -599,6 +631,34 @@
   svg.focusing .aspect:not(.focus):not(.rel):not(.sel),
   svg.focusing .planet:not(.focus):not(.rel):not(.sel) {
     animation: none;
+  }
+  /* after the entrance, late arrivals (aspect chords entering orb during a
+     live scrub) fade up quickly instead of replaying the long staged delays;
+     already-finished animations stay finished (fill-mode holds them) */
+  svg.settled .aspect,
+  svg.settled .planet {
+    animation-delay: 0ms;
+    animation-duration: var(--dur-base);
+  }
+  /* the calculator's plate: geometry only — no pin/preview affordances */
+  svg.passive .sign,
+  svg.passive .house,
+  svg.passive .aspect,
+  svg.passive .planet {
+    pointer-events: none;
+    cursor: default;
+  }
+  /* while a ring is being scrubbed the derived apparatus hides — whole-sign
+     cusps snap 30° at every sign crossing and aspects pop in/out of orb,
+     which reads as jitter at drag rates — then eases back in on release
+     (houses via the group transition above; aspects by re-running their
+     fade-in, whose entrance fill must be released for the hide to apply) */
+  svg.scrubbing .house {
+    opacity: 0;
+  }
+  svg.scrubbing .aspect {
+    animation: none;
+    opacity: 0;
   }
   @keyframes ring-draw {
     to {

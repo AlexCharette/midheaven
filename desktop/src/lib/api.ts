@@ -9,6 +9,8 @@ import type {
   OptionDto,
   PlaceDto,
   Preferences,
+  PreviewDto,
+  PreviewInput,
   ReadingEntry,
 } from "./types";
 
@@ -27,6 +29,18 @@ export const build = (form: BirthForm) => invoke<ChartData>("build", { form });
  * keeping its passages. `ayanamsa` is used only when zodiac is "sidereal". */
 export const reproject = (houseSystem: string, zodiac: string, ayanamsa: string | null) =>
   invoke<ChartData>("reproject", { houseSystem, zodiac, ayanamsa });
+
+/** Chart geometry for an arbitrary moment — the live calculator's engine.
+ * Side-effect-free on the backend, so it may be called at scrub rates;
+ * non-fatal warnings (DST fold) come back inline, never as toast events. */
+export const preview = (input: PreviewInput) => invoke<PreviewDto>("preview", { input });
+
+/** The calculator's opening place: last used if it still resolves, else a
+ * default city. Total — never fails. */
+export const lastPlace = () => invoke<PlaceDto>("last_place");
+
+/** Persist the calculator's place; called on pick, never per scrub tick. */
+export const setLastPlace = (id: number) => invoke<void>("set_last_place", { id });
 
 export const loadChart = (path: string) => invoke<ChartData>("load_chart", { path });
 

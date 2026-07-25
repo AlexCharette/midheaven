@@ -245,6 +245,29 @@ struct BirthForm {
     ayanamsa: Option<String>,
 }
 
+/// The shared tail of every chart-computing command (`build`, `reproject`,
+/// `preview`): resolve the string-coded house-system/zodiac/ayanamsa choice
+/// and assemble a computable input. Sidereal opts into an ayanamsa (Lahiri
+/// unless named); any other zodiac string means tropical. The caller resolves
+/// place and date itself — their failure messages differ per command.
+fn resolve_input(
+    name: &str,
+    date: chrono::NaiveDate,
+    time: &str,
+    place: &geo::Place,
+    locale: astro::i18n::Locale,
+    house_system: &str,
+    zodiac: &str,
+    ayanamsa: Option<&str>,
+) -> Result<astro::chart::BirthInput, String> {
+    let house = astro::chart::systems::house_system(house_system);
+    let ayanamsa = zodiac
+        .trim()
+        .eq_ignore_ascii_case("sidereal")
+        .then(|| astro::chart::systems::ayanamsa(ayanamsa.unwrap_or("lahiri")));
+    Ok(astro::birth_at_place(name, date, parse_time(time)?, place, locale, house, ayanamsa))
+}
+
 #[tauri::command]
 async fn build(
     app: AppHandle,
@@ -259,32 +282,22 @@ async fn build(
 
     let p = prefs::load(&app);
     // Per-reading language: the form's choice, else the default-language
-    // preference, else English.
+    // preference, else English. House system / zodiac / ayanamsa follow the
+    // same ladder; the historical defaults (Whole Sign · Tropical · Lahiri)
+    // live in `resolve_input`.
     let locale = astro::i18n::Locale::parse(
         form.lang.as_deref().or(p.default_locale.as_deref()).unwrap_or("en"),
     );
-    // House system + zodiac: the form's choice, else the matching preference,
-    // else the historical default (Whole Sign · Tropical).
-    let house_system = astro::chart::systems::house_system(
-        form.house_system.as_deref().or(p.default_house_system.as_deref()).unwrap_or("whole-sign"),
-    );
-    let zodiac = form.zodiac.as_deref().or(p.default_zodiac.as_deref()).unwrap_or("tropical");
-    let ayanamsa = if zodiac.trim().eq_ignore_ascii_case("sidereal") {
-        Some(astro::chart::systems::ayanamsa(
-            form.ayanamsa.as_deref().or(p.default_ayanamsa.as_deref()).unwrap_or("lahiri"),
-        ))
-    } else {
-        None
-    };
-    let input = astro::birth_at_place(
+    let input = resolve_input(
         &form.name,
         date,
-        parse_time(&form.time)?,
+        &form.time,
         place,
         locale,
-        house_system,
-        ayanamsa,
-    );
+        form.house_system.as_deref().or(p.default_house_system.as_deref()).unwrap_or("whole-sign"),
+        form.zodiac.as_deref().or(p.default_zodiac.as_deref()).unwrap_or("tropical"),
+        form.ayanamsa.as_deref().or(p.default_ayanamsa.as_deref()),
+    )?;
     let source = TranscriptSource::classify(
         form.transcript.as_deref().unwrap_or(""),
         form.model.as_deref().unwrap_or(""),
@@ -510,14 +523,16 @@ fn reproject(
 
     let place = geo::by_id(seed.place_id).ok_or("the birth place is no longer in the gazetteer")?;
     let date = seed.date.parse().map_err(|_| "the saved birth date is invalid".to_string())?;
-    let house = astro::chart::systems::house_system(&house_system);
-    let ayanamsa = if zodiac.trim().eq_ignore_ascii_case("sidereal") {
-        Some(astro::chart::systems::ayanamsa(ayanamsa.as_deref().unwrap_or("lahiri")))
-    } else {
-        None
-    };
-    let input =
-        astro::birth_at_place(&name, date, parse_time(&seed.time)?, place, locale, house, ayanamsa);
+    let input = resolve_input(
+        &name,
+        date,
+        &seed.time,
+        place,
+        locale,
+        &house_system,
+        &zodiac,
+        ayanamsa.as_deref(),
+    )?;
 
     let mut chart = astro::chart::compute_chart(&input)?;
     chart.excerpts = excerpts;
@@ -530,6 +545,78 @@ fn reproject(
     }
     inner.chart = Some(chart.clone());
     Ok(chart)
+}
+
+/// A live-calculator moment: date/time/place plus calculation choices. No
+/// name, transcript, or model — previews are anonymous geometry.
+#[derive(Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+struct PreviewInput {
+    date: String,
+    time: String,
+    place_id: u32,
+    /// Locale for element labels; absent = English.
+    lang: Option<String>,
+    house_system: Option<String>,
+    zodiac: Option<String>,
+    ayanamsa: Option<String>,
+}
+
+/// A previewed chart with its non-fatal warnings inline. Unlike `build`, the
+/// warnings are NOT emitted as an event — at scrub rates events would
+/// toast-spam, so the calculator renders them as a quiet caption instead.
+#[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+struct PreviewDto {
+    chart: ChartData,
+    warnings: Vec<String>,
+}
+
+/// Chart geometry for an arbitrary moment — the live calculator's engine.
+/// Side-effect-free by contract: reads no AppState, writes no files, touches
+/// no session, so the frontend may call it at scrub rates. async keeps the
+/// ephemeris math off the main thread.
+#[tauri::command]
+async fn preview(input: PreviewInput) -> Result<PreviewDto, String> {
+    let locale = astro::i18n::Locale::parse(input.lang.as_deref().unwrap_or("en"));
+    let place = geo::by_id(input.place_id).ok_or("pick a place from the suggestions")?;
+    let date =
+        input.date.parse().map_err(|_| "a date as YYYY-MM-DD, e.g. 1990-07-13".to_string())?;
+    let birth = resolve_input(
+        "", // anonymous → locale.anonymous()
+        date,
+        &input.time,
+        place,
+        locale,
+        input.house_system.as_deref().unwrap_or("whole-sign"),
+        input.zodiac.as_deref().unwrap_or("tropical"),
+        input.ayanamsa.as_deref(),
+    )?;
+    let (chart, warnings) = astro::chart::compute_chart_reporting(&birth)?;
+    Ok(PreviewDto { chart, warnings })
+}
+
+/// The calculator's opening place: the persisted last-used place when it
+/// still resolves in the gazetteer, else a default city. Total — the fallback
+/// is a gazetteer *search*, so renumbered ids after a gazetteer rebuild can't
+/// break first run.
+#[tauri::command]
+fn last_place(app: AppHandle) -> PlaceDto {
+    prefs::load(&app)
+        .last_place_id
+        .and_then(geo::by_id)
+        .or_else(|| geo::search("London", 1).into_iter().next())
+        .map(|p| PlaceDto { id: p.id, label: p.label() })
+        .expect("the gazetteer always resolves the default city")
+}
+
+/// Persist the calculator's place — a read-modify-write of preferences.json.
+/// Called when a place is picked, never per scrub tick.
+#[tauri::command]
+fn set_last_place(app: AppHandle, id: u32) -> Result<(), String> {
+    let mut p = prefs::load(&app);
+    p.last_place_id = Some(id);
+    prefs::save(&app, &p)
 }
 
 /// Merge the excerpt into its predecessor: verbatim parts joined, tags
@@ -673,6 +760,9 @@ fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), Stri
         default_house_system: norm(prefs.default_house_system),
         default_zodiac: norm(prefs.default_zodiac),
         default_ayanamsa: norm(prefs.default_ayanamsa),
+        // Not a pane field — carried through so saving preferences never
+        // erases the calculator's remembered place.
+        last_place_id: prefs.last_place_id,
     };
     if let Some(size) = &prefs.page_size {
         astro::pdf::PageSize::parse(size)?;
@@ -840,6 +930,9 @@ pub fn run() {
         list_ayanamsas,
         build,
         reproject,
+        preview,
+        last_place,
+        set_last_place,
         save_artifact,
         save_pdf,
         start_recording,
@@ -865,6 +958,9 @@ pub fn run() {
         list_ayanamsas,
         build,
         reproject,
+        preview,
+        last_place,
+        set_last_place,
         save_artifact,
         save_pdf,
         merge_up,
@@ -1001,6 +1097,23 @@ mod tests {
         assert_eq!(added.id, "x6");
         assert_eq!(added.tags, vec!["planet:moon"]);
         assert!(add_in(&mut chart, "   ", vec![]).is_err());
+    }
+
+    #[test]
+    fn resolve_input_maps_zodiac_onto_ayanamsa_and_rejects_bad_times() {
+        let place = geo::search("Berlin", 1).into_iter().next().expect("gazetteer has Berlin");
+        let date: chrono::NaiveDate = "1990-07-13".parse().unwrap();
+        let en = astro::i18n::Locale::En;
+        // Tropical ignores any ayanamsa code; sidereal defaults to Lahiri.
+        let trop = resolve_input("", date, "14:30", place, en, "whole-sign", "tropical", Some("raman")).unwrap();
+        assert_eq!(trop.ayanamsa, None);
+        let sid = resolve_input("", date, "14:30", place, en, "placidus", "Sidereal", None).unwrap();
+        assert_eq!(sid.ayanamsa, Some(astro::chart::systems::ayanamsa("lahiri")));
+        assert_eq!(sid.house_system, astro::chart::systems::house_system("placidus"));
+        // A blank name resolves to the locale's anonymous label.
+        assert!(!trop.name.is_empty());
+        // The shared time rule still gates: nonsense fails here, not deeper.
+        assert!(resolve_input("", date, "25:00", place, en, "", "tropical", None).is_err());
     }
 
     #[test]
