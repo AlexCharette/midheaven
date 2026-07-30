@@ -1,0 +1,75 @@
+# Domain language
+
+The words this project uses for its own concepts. Where code and prose have
+drifted apart, the entry says which is which — the aim is one word per concept.
+
+Seeded while introducing `src/derive.rs`; extend it rather than coining synonyms.
+
+## Reading
+
+A recorded birth-chart consultation: the astrologer's spoken words plus the
+chart they were speaking about. The unit the whole app works on — a reading is
+what gets built, curated, saved to the library, and exported.
+
+## Chart
+
+The computed natal chart — `contract::ChartData`. Positions, houses, aspects and
+the localized names for them, plus any passages filed against them.
+
+## Passage · Excerpt
+
+**The same thing.** A verbatim span of the transcript filed under the chart
+elements it refers to. The type is `contract::Excerpt`; the UI, the PDF and most
+comments say "passage". Prefer *passage* in prose and user-facing text, *excerpt*
+only when naming the type or its field.
+
+Passages are always verbatim: the text must equal the transcript slice its span
+points at. That is provenance, not a formatting preference.
+
+## Tag id
+
+An element identifier in the closed form `{category}:{slug}` — `planet:sun`,
+`sign:leo`, `house:5`, `aspect:sun-moon`. Language-neutral, so a reading's
+language never changes its tags. The four categories are fixed.
+
+## Vocabulary
+
+The set of tag ids a particular chart admits, derived from the chart itself
+(`ChartData::vocab`). Closed: a router may only emit tags from it, and the Verify
+gate rejects anything outside it.
+
+## Verify gate
+
+The provenance check between a router's output and a chart's passages: the span
+must be a real slice of the transcript, and every tag must be in the chart's
+vocabulary. Rejections surface as warnings rather than failing the build.
+
+## Artifact
+
+The single self-contained offline HTML file a reading exports to. Self-contained
+is load-bearing: no external references at all, so it opens from `file://`
+forever. Distinct from the PDF, which is a separate rendering of the same chart.
+
+## Take
+
+One recording appended to a live session. Takes accumulate — each is transcribed
+and routed on its own, then appended, so earlier curation survives.
+
+## Reproject
+
+Recompute a chart's geometry for a different house system or zodiac, carrying its
+passages onto the result. Only the geometry changes; the vocabulary is stable
+enough that existing tags stay valid.
+
+## Derivation · Derived field
+
+A value computed from what a chart already carries, rather than measured
+independently: which sign a longitude falls in, how far into it, how wide a house
+is. **Derived fields belong to the chart, not to the renderer** — they are
+computed once in `src/derive.rs` and ride on `ChartData`, because the PDF, the
+artifact and the desktop wheel each used to derive them separately and drifted.
+
+The counterpart rule: anything genuinely specific to one rendering — radii,
+glyph-crowding policy, arc construction — is *not* a derived field and stays with
+its renderer. The desktop wheel is deliberately richer than paper; that is not
+drift.

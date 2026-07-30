@@ -15,10 +15,13 @@
 //!    the self-contained HTML viewer.
 //!
 //! [`contract`] holds the `ChartData` types — the contract between stages; no
-//! stage owns it.
+//! stage owns it. [`derive`] is the same kind of module for behaviour rather
+//! than data: the longitude arithmetic every renderer would otherwise
+//! re-derive, computed once so its results can ride on `ChartData` fields.
 
 pub mod chart;
 pub mod contract;
+pub mod derive;
 pub mod emit;
 pub mod geo;
 pub mod i18n;
