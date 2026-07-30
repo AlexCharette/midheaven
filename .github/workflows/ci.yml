@@ -46,3 +46,8 @@ jobs:
         working-directory: desktop
       - run: npm run check
         working-directory: desktop
+      # The frontend's unit tests (vitest) cover the pure modules: the session
+      # state machine, civil-date arithmetic, and the pose interpolation. They
+      # need no DOM environment, so they run in the same job as the type check.
+      - run: npm run test:unit
+        working-directory: desktop

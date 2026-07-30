@@ -1,6 +1,6 @@
-// The live calculator's model — deliberately separate from `app`:
-// `app.chart !== null` keeps meaning "a reading is open", so the reading view
-// and `back()` are untouched. Module state survives entering and leaving
+// The live calculator's model — deliberately separate from the reading session:
+// `session.hasReading()` keeps meaning "a reading is open", so the reading view
+// and leaving it are untouched. Module state survives entering and leaving
 // readings; returning to the calculator finds the explored moment intact.
 
 import { preview } from "./api";

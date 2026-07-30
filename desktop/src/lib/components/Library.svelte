@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ask, open } from "@tauri-apps/plugin-dialog";
   import { deleteReading, getPreferences, listReadings, loadChart } from "$lib/api";
+  import { openReading as installReading, whyCannotOpenAnother } from "$lib/session.svelte";
   import { app, isBusy, notify } from "$lib/state.svelte";
   import type { ReadingEntry } from "$lib/types";
 
@@ -29,15 +30,18 @@
     }
   }
 
-  // Setting app.chart makes +page.svelte swap to the reading view, unmounting
-  // this panel; a failed load leaves the panel up with the error shown.
+  // Installing the reading makes +page.svelte swap to the reading view,
+  // unmounting this panel; a failed load leaves the panel up with the error
+  // shown. Refused mid-take: it would re-seat the chart under a live recorder,
+  // and the take would then land on this reading instead of the one it was
+  // spoken over.
   async function openReading(chartPath: string) {
-    if (isBusy()) return;
+    if (isBusy() || whyCannotOpenAnother()) return;
     err = "";
     app.busy = { kind: "compute" };
     try {
-      app.chart = await loadChart(chartPath);
-      notify(`opened ${app.chart.meta.name}'s reading`);
+      const chart = await loadChart(chartPath);
+      if (installReading(chart)) notify(`opened ${chart.meta.name}'s reading`);
     } catch (e) {
       err = String(e);
     } finally {
@@ -114,7 +118,8 @@
             type="button"
             class="row"
             onclick={() => openReading(e.chartPath)}
-            disabled={isBusy()}
+            disabled={isBusy() || whyCannotOpenAnother() !== null}
+            title={whyCannotOpenAnother() ?? undefined}
           >
             <span class="who">
               <span class="name">{e.name || "untitled"}</span>
@@ -144,7 +149,13 @@
   {/if}
 
   <p class="foot">
-    <button type="button" class="ghost" onclick={openFile} disabled={isBusy()}>
+    <button
+      type="button"
+      class="ghost"
+      onclick={openFile}
+      disabled={isBusy() || whyCannotOpenAnother() !== null}
+      title={whyCannotOpenAnother() ?? undefined}
+    >
       open a file…
     </button>
     <span class="sep" aria-hidden="true">·</span>

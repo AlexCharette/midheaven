@@ -10,6 +10,16 @@
     startRecording,
     stopRecording,
   } from "$lib/api";
+  import {
+    chart as openChart,
+    isRecording,
+    leaveReading,
+    takeBegan,
+    takeEnded,
+    updateChart,
+    whyCannotLeave,
+    whyCannotRecord,
+  } from "$lib/session.svelte";
   import { app, excerptsMatching, isBusy, loadCalcOptions, loadLocales, notify, selected, visibleExcerpts } from "$lib/state.svelte";
   import Calculator from "$lib/components/Calculator.svelte";
   import ChartCore from "$lib/components/ChartCore.svelte";
@@ -22,11 +32,12 @@
   // once anything is pinned the hover preview stops and the commentary tracks
   // the pinned selection (empty selection = the whole reading).
   const previewing = $derived(selected.size === 0 && app.hovered !== null);
+  const reading = $derived(openChart());
   const visible = $derived(
-    app.chart
+    reading
       ? previewing
-        ? excerptsMatching(app.chart, [app.hovered!], "any")
-        : visibleExcerpts(app.chart)
+        ? excerptsMatching(reading, [app.hovered!], "any")
+        : visibleExcerpts(reading)
       : [],
   );
 
@@ -58,17 +69,22 @@
   });
 
   // ---- live session recording ----
-  let recording = $state(false);
+  // Whether a take is running lives in the session, alongside the reading it is
+  // being spoken over — the two used to be independent, which is how leaving a
+  // reading could strand a recorder. `recSecs` stays here because it is only a
+  // display counter, and no path can change the phase underneath it while
+  // recording (leaving, opening another reading and recalculating are refused).
   let recSecs = $state(0);
   let recTimer: ReturnType<typeof setInterval> | undefined;
   const mmss = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
   async function toggleRecording() {
-    if (!recording) {
+    if (!isRecording()) {
       try {
+        // The phase turns only after the backend confirms a recorder is up.
         await startRecording(app.model);
-        recording = true;
+        if (!takeBegan()) return;
         recSecs = 0;
         recTimer = setInterval(() => recSecs++, 1000);
         notify("listening — speak the reading; stop to route it");
@@ -78,12 +94,17 @@
       return;
     }
     clearInterval(recTimer);
-    recording = false;
+    // The recorder is gone the moment `stop_recording` is entered, so the phase
+    // leaves `recording` before the transcription await rather than after: the
+    // footer should show progress, not a stop button for a recorder that has
+    // already ended. A failed transcription therefore keeps the chart it had.
+    takeEnded(null);
     app.busy = { kind: "compute" };
     notify("routing the recording…");
     try {
-      app.chart = await stopRecording();
-      notify(`${app.chart.excerpts.length} passages on the chart`);
+      const routed = await stopRecording();
+      updateChart(routed);
+      notify(`${routed.excerpts.length} passages on the chart`);
     } catch (e) {
       notify(`${e}`, "error");
     } finally {
@@ -121,24 +142,28 @@
     }
   }
 
+  // Refused mid-take — the stop control lives in this view, so leaving would
+  // strand a recorder the user can no longer reach and its take would land on
+  // whatever reading is opened next. The button is disabled for the same reason;
+  // this is the backstop, and it surfaces the refusal rather than failing quietly.
   function back() {
-    app.chart = null;
+    if (!leaveReading()) return;
     app.hovered = null;
     selected.clear();
   }
 </script>
 
-{#if app.chart}
+{#if reading}
   <div class="reading">
     <figure class="plate">
       <div class="plate-frame">
         <!-- keyed on the calculation so a live reproject remounts the wheel and
              replays its ring-draw/rise-in entrance as the transition; ChartCore
              stays mounted so the caption control keeps focus across the swap -->
-        {#key app.chart.meta.house_system + "|" + (app.chart.meta.ayanamsa ?? "tropical")}
-          <Wheel chart={app.chart} />
+        {#key reading.meta.house_system + "|" + (reading.meta.ayanamsa ?? "tropical")}
+          <Wheel chart={reading} />
         {/key}
-        <ChartCore chart={app.chart} />
+        <ChartCore chart={reading} />
       </div>
     </figure>
 
@@ -151,25 +176,30 @@
         </span>
         <span class="apparatus-text">of the selection ·</span>
         <button class="ghost" onclick={() => selected.clear()}>clear</button>
-        <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
+        <span class="count apparatus-text">{visible.length} of {reading.excerpts.length} passages</span>
       </div>
 
-      <IndexOfElements chart={app.chart} />
+      <IndexOfElements chart={reading} />
 
-      <Commentary chart={app.chart} {visible} />
+      <Commentary chart={reading} {visible} />
     </section>
   </div>
   <footer>
-    <button class="ghost" onclick={back}>← new reading</button>
+    <button
+      class="ghost"
+      onclick={back}
+      disabled={whyCannotLeave() !== null}
+      title={whyCannotLeave() ?? undefined}>← new reading</button
+    >
     <span class="foot-actions">
       {#if app.model}
         <button
           class="frame-btn rec"
-          class:on={recording}
+          class:on={isRecording()}
           onclick={toggleRecording}
-          disabled={!recording && isBusy()}
+          disabled={!isRecording() && (isBusy() || whyCannotRecord() !== null)}
         >
-          {#if recording}
+          {#if isRecording()}
             <span class="dot" aria-hidden="true"></span> stop transcribing · {mmss(recSecs)}
           {:else if app.busy.kind === "transcribe"}
             transcribing… {app.busy.pct}%
@@ -183,13 +213,13 @@
         <button
           class="frame-btn primary"
           onclick={engrave}
-          disabled={recording}
+          disabled={isRecording()}
           title="the self-contained HTML reading — opens in any browser"
         >HTML</button>
         <button
           class="frame-btn"
           onclick={engravePdf}
-          disabled={recording}
+          disabled={isRecording()}
           title="a printer-friendly PDF"
         >PDF</button>
       </span>

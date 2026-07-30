@@ -12,8 +12,10 @@ export type Busy =
   | { kind: "compute" }
   | { kind: "transcribe"; pct: number };
 
+// The open reading itself lives in `session.svelte.ts`, not here: it is one half
+// of a state machine with the live recorder, and keeping them apart is what let
+// `back()` strand a recorder mid-take. Read it with `chart()` from there.
 export const app = $state({
-  chart: null as ChartData | null,
   mode: "any" as "any" | "all",
   busy: { kind: "idle" } as Busy,
   /** The form's whisper-model path; a non-empty value enables live recording. */

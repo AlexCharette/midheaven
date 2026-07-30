@@ -2,6 +2,7 @@
   import type { ChartData } from "$lib/types";
   import { catOf, degInSign, planetById, signAt, textGlyph } from "$lib/types";
   import { app, excerptsMatching, focusedTag, notify } from "$lib/state.svelte";
+  import { updateChart, whyCannotRecalculate } from "$lib/session.svelte";
   import { reproject } from "$lib/api";
   import CalcOptions from "./CalcOptions.svelte";
   import { swapDuration } from "$lib/motion";
@@ -19,21 +20,34 @@
   let ayanamsa = $state("lahiri");
   let reprojecting = $state(false);
   $effect(() => {
+    syncToChart();
+  });
+
+  // Snap the selects back to what the chart actually is. Also the body of the
+  // re-sync `$effect` above: on success the chart is replaced and that effect
+  // fires, on failure it does not, so the error path has to do it here.
+  function syncToChart() {
     houseSystem = chart.meta.house_system || "whole-sign";
     zodiac = chart.meta.ayanamsa ? "sidereal" : "tropical";
     ayanamsa = chart.meta.ayanamsa ?? "lahiri";
-  });
+  }
 
   async function recalc() {
+    // Refused mid-take: the backend releases the session across its
+    // transcription await, so a recalculation can land in that gap and the
+    // take's passages would be filed against a chart already replaced.
+    const refused = whyCannotRecalculate();
+    if (refused) {
+      notify(refused, "error");
+      syncToChart();
+      return;
+    }
     reprojecting = true;
     try {
-      app.chart = await reproject(houseSystem, zodiac, zodiac === "sidereal" ? ayanamsa : null);
+      updateChart(await reproject(houseSystem, zodiac, zodiac === "sidereal" ? ayanamsa : null));
     } catch (e) {
       notify(`${e}`, "error");
-      // Snap the selects back to what the (unchanged) chart actually is.
-      houseSystem = chart.meta.house_system || "whole-sign";
-      zodiac = chart.meta.ayanamsa ? "sidereal" : "tropical";
-      ayanamsa = chart.meta.ayanamsa ?? "lahiri";
+      syncToChart();
     } finally {
       reprojecting = false;
     }
@@ -71,13 +85,13 @@
   <p class="vitals">{chart.meta.place}</p>
   <span class="double-rule" aria-hidden="true"></span>
   {#if chart.meta.birth}
-    <div class="calc-line">
+    <div class="calc-line" title={whyCannotRecalculate() ?? undefined}>
       <CalcOptions
         variant="caption"
         bind:houseSystem
         bind:zodiac
         bind:ayanamsa
-        disabled={reprojecting}
+        disabled={reprojecting || whyCannotRecalculate() !== null}
         onchange={recalc}
       />
     </div>

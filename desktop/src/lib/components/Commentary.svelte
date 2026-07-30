@@ -4,6 +4,7 @@
   import { SvelteSet } from "svelte/reactivity";
   import type { ChartData, Excerpt } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
+  import { updateChart } from "$lib/session.svelte";
   import { app, isBusy, notify, selected, toggle } from "$lib/state.svelte";
 
   let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
@@ -24,7 +25,7 @@
 
   async function join(id: string) {
     try {
-      app.chart = await mergeUp(id);
+      updateChart(await mergeUp(id));
       notify("two passages joined");
     } catch (e) {
       notify(`${e}`, "error");
@@ -43,7 +44,7 @@
     editing = null;
     if (draft.trim() === original) return;
     try {
-      app.chart = await correctExcerpt(id, draft);
+      updateChart(await correctExcerpt(id, draft));
       notify("passage amended — re-sectioned");
     } catch (e) {
       notify(`${e}`, "error");
@@ -70,7 +71,7 @@
     });
     if (!sure) return;
     try {
-      app.chart = await deleteExcerpt(exId);
+      updateChart(await deleteExcerpt(exId));
       notify("passage removed");
     } catch (e) {
       notify(`${e}`, "error");
@@ -92,7 +93,7 @@
     if (!draftText.trim()) return;
     composing = false;
     try {
-      app.chart = await addExcerpt(draftText, [...draftTags]);
+      updateChart(await addExcerpt(draftText, [...draftTags]));
       notify("passage added");
     } catch (e) {
       notify(`${e}`, "error");

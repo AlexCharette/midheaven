@@ -50,6 +50,21 @@ The single self-contained offline HTML file a reading exports to. Self-contained
 is load-bearing: no external references at all, so it opens from `file://`
 forever. Distinct from the PDF, which is a separate rendering of the same chart.
 
+## Session
+
+The open working state: a reading the app currently holds, and possibly a live
+recorder capturing a take into it. Ten of the twenty-five backend commands
+require a session and say so only by failing with "no chart has been built yet".
+
+A session is **open** or **recording** or neither — never recording without a
+reading. It is modelled as one value in `desktop/src/lib/session.ts` precisely so
+that cannot drift: it used to be separate client facts, and leaving a reading
+mid-recording stranded a recorder whose take then landed on the next reading.
+
+Leaving, opening another reading, and recalculating are all **refused** while
+recording rather than reconciled — the same stance the backend takes with
+"already recording".
+
 ## Take
 
 One recording appended to a live session. Takes accumulate — each is transcribed

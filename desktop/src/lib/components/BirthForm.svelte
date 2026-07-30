@@ -5,6 +5,7 @@
   // into the reading view.
   import { open } from "@tauri-apps/plugin-dialog";
   import { build, getPreferences, setLastPlace } from "$lib/api";
+  import { openReading } from "$lib/session.svelte";
   import { app, isBusy, locales, notify, selected } from "$lib/state.svelte";
   import CalcOptions from "./CalcOptions.svelte";
   import PlacePicker from "./PlacePicker.svelte";
@@ -104,7 +105,7 @@
       // must not inherit stale selections
       selected.clear();
       app.hovered = null;
-      app.chart = chart;
+      openReading(chart);
       // Only worth announcing the routing when a transcript was actually
       // supplied; a bare chart with no transcript routes nothing.
       if (transcript.trim()) {
