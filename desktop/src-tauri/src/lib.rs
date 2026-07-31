@@ -5,42 +5,18 @@
 mod prefs;
 #[cfg(desktop)]
 mod record;
+mod session;
 
 use astro::chart::parse_time;
 use astro::contract::{ChartData, Excerpt};
-use astro::route::{Transcript, lexicon_for, next_ordinal, retag};
-#[cfg(desktop)]
-use astro::route::append_transcript;
+use astro::route::{next_ordinal, retag};
 use astro::{TranscriptSource, geo};
 use serde::{Deserialize, Serialize};
+use session::{Reading, Session};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
-
-/// Backend-held session: the built chart (so saving never round-trips the
-/// webview), the passages it was built with, and the live-recording session
-/// accumulated on top of them.
-#[derive(Default)]
-struct Inner {
-    /// The chart's excerpt list is authoritative — takes append to it and
-    /// curation (merge/correct) edits it in place.
-    chart: Option<ChartData>,
-    /// Total seconds recorded this session — offsets each new take's
-    /// timestamps so folio anchors run continuously.
-    session_secs: f64,
-    #[cfg(desktop)]
-    model: Option<PathBuf>,
-    #[cfg(desktop)]
-    recorder: Option<record::Recorder>,
-    /// `{readings_dir}/{name}_{date}/` when a readings folder is configured —
-    /// chart.json and transcriptions auto-save here through the session.
-    session_dir: Option<PathBuf>,
-    /// Suggested export name, `{name}_{date}.html` — set at build.
-    artifact_name: String,
-    /// Live takes persisted this session (numbers `take-{n}.jsonl`).
-    takes: usize,
-}
 
 /// Filesystem-safe name stem: lowercase, runs of anything non-alphanumeric
 /// collapse to one `_`. The library folder is `{slug}_{YYYY-MM-DD}`.
@@ -80,8 +56,18 @@ fn max_take_ordinal(dir: &Path) -> usize {
         .unwrap_or(0)
 }
 
+/// The backend's one piece of mutable state: the reading session. Every
+/// command that needs a reading reaches it through [`Session`]'s guard, so the
+/// "no chart has been built yet" refusal exists once (`session::NO_READING`)
+/// rather than in each command that remembered to check.
 #[derive(Default)]
-struct AppState(Mutex<Inner>);
+struct AppState(Mutex<Session>);
+
+impl AppState {
+    fn session(&self) -> std::sync::MutexGuard<'_, Session> {
+        self.0.lock().unwrap()
+    }
+}
 
 /// Just enough for the typeahead: the id round-trips to `geo::by_id` at
 /// build time — coordinates and zone stay backend-side.
@@ -352,13 +338,9 @@ async fn build(
         _ => None,
     };
 
-    let mut inner = state.0.lock().unwrap();
-    inner.session_secs = 0.0;
-    inner.takes = 0;
-    inner.session_dir = session_dir;
-    inner.artifact_name = format!("{stem}.html");
-    inner.chart = Some(chart.clone());
-    drop(inner);
+    state
+        .session()
+        .open(Reading::new(chart.clone(), session_dir, format!("{stem}.html")))?;
     Ok(chart)
 }
 
@@ -372,18 +354,12 @@ fn start_recording(state: State<'_, AppState>, model: String) -> Result<(), Stri
     if !model.exists() {
         return Err(format!("no model file at {}", model.display()));
     }
-    let mut inner = state.0.lock().unwrap();
-    if inner.recorder.is_some() {
-        return Err("already recording".to_string());
-    }
-    if inner.chart.is_none() {
-        return Err("no chart has been built yet".to_string());
-    }
     let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
     let out = std::env::temp_dir().join(format!("astro-take-{millis}.wav"));
-    inner.recorder = Some(record::start(out)?);
-    inner.model = Some(model);
-    Ok(())
+    // The session guards first and only then opens the device.
+    state.session().begin_take(model, || {
+        record::start(out).map(|r| Box::new(r) as Box<dyn session::Capture>)
+    })
 }
 
 /// Stop capturing, transcribe the take (progress on the shared event), and
@@ -395,75 +371,109 @@ async fn stop_recording(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ChartData, String> {
-    let (recorder, model, offset, locale) = {
-        let mut inner = state.0.lock().unwrap();
-        // Transcribe the take in the chart's own language.
-        let locale = inner
-            .chart
-            .as_ref()
-            .map(|c| astro::i18n::Locale::parse(&c.meta.locale))
-            .unwrap_or_default();
-        (
-            inner.recorder.take().ok_or("not recording")?,
-            inner.model.clone().ok_or("no model on record")?,
-            inner.session_secs,
-            locale,
-        )
-    };
-    let (wav, secs) = recorder.stop()?;
+    // Stopping only ends the capture: the take is in flight until its words
+    // land, and the session refuses to start another meanwhile.
+    let pending = state.session().end_take()?;
+    let (wav, model, locale) = (pending.wav.clone(), pending.model.clone(), pending.locale);
 
     let progress_app = app.clone();
-    let mut segments = tauri::async_runtime::spawn_blocking(move || {
+    let transcribed = tauri::async_runtime::spawn_blocking(move || {
         astro::transcribe::transcribe(&wav, &model, Some(locale.whisper_lang()), move |pct| {
             let _ = progress_app.emit("transcribe-progress", pct);
         })
     })
     .await
-    .map_err(|e| format!("transcription task failed: {e}"))??;
-    for seg in &mut segments {
-        seg.start += offset;
-    }
+    .map_err(|e| format!("transcription task failed: {e}"));
 
-    let mut guard = state.0.lock().unwrap();
-    let inner = &mut *guard;
-    inner.session_secs = offset + secs;
-    let chart = inner.chart.as_mut().ok_or("no chart has been built yet")?;
+    // However it failed, the take does not land — put the reading back so the
+    // astrologer can simply record again.
+    let segments = match transcribed.and_then(|r| r) {
+        Ok(segments) => segments,
+        Err(e) => {
+            state.session().abandon_take();
+            return Err(e);
+        }
+    };
 
-    // Route ONLY the new take and append, so earlier curation (merges,
-    // corrections) survives every stop.
-    let jsonl = astro::transcribe::to_jsonl(&segments);
-    let take = Transcript::from_segments(segments);
-    let warnings = append_transcript(chart, &take, &lexicon_for(chart)).warnings;
+    let mut guard = state.session();
+    let landed = guard.land_take(pending, segments)?;
+    let reading = guard.reading()?;
 
     // library auto-save: the take's transcription (session-offset anchors,
     // matching the folio) and the refreshed chart
-    if let Some(dir) = &inner.session_dir {
-        inner.takes += 1;
-        let path = dir.join(format!("take-{}.jsonl", inner.takes));
-        std::fs::write(&path, jsonl).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-        save_chart_json(dir, chart)?;
+    if let Some(dir) = &reading.dir {
+        let path = dir.join(&landed.filename);
+        std::fs::write(&path, &landed.jsonl)
+            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        save_chart_json(dir, &reading.chart)?;
     }
-    if !warnings.is_empty() {
-        let _ = app.emit("build-warnings", &warnings);
+    let chart = reading.chart.clone();
+    drop(guard);
+
+    if !landed.warnings.is_empty() {
+        let _ = app.emit("build-warnings", &landed.warnings);
     }
-    Ok(chart.clone())
+    Ok(chart)
 }
 
-/// The shared frame of every curation command: lock, require a chart,
-/// mutate, refresh the library's chart.json, return the updated clone for
-/// the webview.
+/// The shared frame of every curation command: require a reading, mutate its
+/// chart, refresh the library's chart.json, return the updated clone for the
+/// webview. Deliberately available mid-take — curating while the recorder runs
+/// is not refused, and the take appends to whatever it finds.
 fn with_chart(
     state: &State<'_, AppState>,
     mutate: impl FnOnce(&mut ChartData) -> Result<(), String>,
 ) -> Result<ChartData, String> {
-    let mut guard = state.0.lock().unwrap();
-    let inner = &mut *guard;
-    let chart = inner.chart.as_mut().ok_or("no chart has been built yet")?;
-    mutate(chart)?;
-    if let Some(dir) = &inner.session_dir {
-        save_chart_json(dir, chart)?;
+    let mut guard = state.session();
+    let reading = guard.reading_mut()?;
+    mutate(&mut reading.chart)?;
+    if let Some(dir) = &reading.dir {
+        save_chart_json(dir, &reading.chart)?;
     }
-    Ok(chart.clone())
+    Ok(reading.chart.clone())
+}
+
+/// Everything a reproject takes from the old chart. Only the geometry is
+/// recomputed, so the identity that produced it (name, language, birth seed),
+/// the routed passages, and the practitioner's branding all cross over
+/// untouched — and the seed crosses too, or the *next* recalculation would find
+/// nothing to recompute from.
+///
+/// Split out from the command so this can be tested: passages surviving a
+/// house-system swap is the whole point of a reproject, and `State` cannot be
+/// constructed in a test.
+#[derive(Debug)]
+struct Carried {
+    name: String,
+    locale: astro::i18n::Locale,
+    seed: astro::contract::BirthSeed,
+    excerpts: Vec<Excerpt>,
+    astrologer: Option<String>,
+    logo: Option<String>,
+}
+
+impl Carried {
+    fn from(old: &ChartData) -> Result<Carried, String> {
+        Ok(Carried {
+            name: old.meta.name.clone(),
+            locale: astro::i18n::Locale::parse(&old.meta.locale),
+            seed: old
+                .meta
+                .birth
+                .clone()
+                .ok_or("this reading has no saved birth data to recalculate from")?,
+            excerpts: old.excerpts.clone(),
+            astrologer: old.meta.astrologer.clone(),
+            logo: old.meta.logo.clone(),
+        })
+    }
+
+    fn onto(self, chart: &mut ChartData) {
+        chart.excerpts = self.excerpts;
+        chart.meta.astrologer = self.astrologer;
+        chart.meta.logo = self.logo;
+        chart.meta.birth = Some(self.seed);
+    }
 }
 
 /// Recompute the current chart's geometry under a new house system / zodiac,
@@ -478,45 +488,32 @@ fn reproject(
     zodiac: String,
     ayanamsa: Option<String>,
 ) -> Result<ChartData, String> {
-    let mut guard = state.0.lock().unwrap();
-    let inner = &mut *guard;
-    let old = inner.chart.as_ref().ok_or("no chart has been built yet")?;
-    let seed = old
-        .meta
-        .birth
-        .clone()
-        .ok_or("this reading has no saved birth data to recalculate from")?;
-    // Clone everything the recompute must preserve, releasing the borrow on
-    // `inner.chart` before we replace it below.
-    let name = old.meta.name.clone();
-    let locale = astro::i18n::Locale::parse(&old.meta.locale);
-    let excerpts = old.excerpts.clone();
-    let astrologer = old.meta.astrologer.clone();
-    let logo = old.meta.logo.clone();
+    let mut guard = state.session();
+    let carried = Carried::from(guard.chart()?)?;
 
-    let place = geo::by_id(seed.place_id).ok_or("the birth place is no longer in the gazetteer")?;
-    let date = seed.date.parse().map_err(|_| "the saved birth date is invalid".to_string())?;
+    let place =
+        geo::by_id(carried.seed.place_id).ok_or("the birth place is no longer in the gazetteer")?;
+    let date =
+        carried.seed.date.parse().map_err(|_| "the saved birth date is invalid".to_string())?;
     let input = resolve_input(
-        &name,
+        &carried.name,
         date,
-        &seed.time,
+        &carried.seed.time.clone(),
         place,
-        locale,
+        carried.locale,
         &house_system,
         &zodiac,
         ayanamsa.as_deref(),
     )?;
 
     let mut chart = astro::chart::compute_chart(&input)?;
-    chart.excerpts = excerpts;
-    chart.meta.astrologer = astrologer;
-    chart.meta.logo = logo;
-    chart.meta.birth = Some(seed);
+    carried.onto(&mut chart);
 
-    if let Some(dir) = &inner.session_dir {
-        save_chart_json(dir, &chart)?;
+    let chart = guard.resettle(chart)?.clone();
+    let reading = guard.reading()?;
+    if let Some(dir) = &reading.dir {
+        save_chart_json(dir, &reading.chart)?;
     }
-    inner.chart = Some(chart.clone());
     Ok(chart)
 }
 
@@ -808,13 +805,9 @@ fn load_chart(state: State<'_, AppState>, path: String) -> Result<ChartData, Str
         });
     let takes = dir.as_deref().map(max_take_ordinal).unwrap_or(0);
 
-    let mut inner = state.0.lock().unwrap();
-    inner.session_secs = 0.0;
-    inner.takes = takes;
-    inner.session_dir = dir;
-    inner.artifact_name = format!("{stem}.html");
-    inner.chart = Some(chart.clone());
-    drop(inner);
+    state
+        .session()
+        .open(Reading::reopened(chart.clone(), dir, format!("{stem}.html"), takes))?;
     Ok(chart)
 }
 
@@ -854,20 +847,20 @@ fn delete_reading(app: AppHandle, dir: String) -> Result<(), String> {
 /// default, matching the library folder convention.
 #[tauri::command]
 fn artifact_filename(state: State<'_, AppState>) -> Result<String, String> {
-    let inner = state.0.lock().unwrap();
-    if inner.chart.is_none() {
-        return Err("no chart has been built yet".to_string());
-    }
-    Ok(inner.artifact_name.clone())
+    Ok(state.session().reading()?.artifact_name.clone())
 }
 
-// async: rendering + disk write stay off the main thread
+// async: rendering + disk write stay off the main thread. Both exporters clone
+// the chart out of a scoped lock first — rendering under the lock would stall
+// every other command for the length of a disk write.
 #[tauri::command]
 async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<String, String> {
-    let guard = state.0.lock().unwrap();
-    let chart = guard.chart.as_ref().ok_or("no chart has been built yet")?;
-    astro::emit::write_artifact(chart, path.as_ref())?;
-    Ok(path)
+    let chart = state.session().chart()?.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        astro::emit::write_artifact(&chart, path.as_ref()).map(|()| path)
+    })
+    .await
+    .map_err(|e| format!("artifact task failed: {e}"))?
 }
 
 /// The PDF rendition; page size comes from preferences (A4
@@ -875,10 +868,7 @@ async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<Strin
 #[tauri::command]
 async fn save_pdf(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<String, String> {
     let size = astro::pdf::PageSize::from_pref(prefs::load(&app).page_size.as_deref())?;
-    let chart = {
-        let guard = state.0.lock().unwrap();
-        guard.chart.as_ref().ok_or("no chart has been built yet")?.clone()
-    };
+    let chart = state.session().chart()?.clone();
     tauri::async_runtime::spawn_blocking(move || {
         astro::pdf::write_pdf(&chart, size, path.as_ref()).map(|()| path)
     })
@@ -963,6 +953,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use astro::route::lexicon_for;
 
     fn chart_fixture() -> ChartData {
         let input = astro::chart::BirthInput {
@@ -1029,6 +1020,69 @@ mod tests {
         assert_eq!(back.excerpts[0].span, [0, "The sun in cancer.".len()]);
         // `Aspect::kind` is #[serde(skip)] — it defaults to "" on load.
         assert!(back.aspects.iter().all(|a| a.kind.is_empty()));
+    }
+
+    /// A reproject changes only the geometry. Everything else — the routed
+    /// passages, the practitioner's branding, and the birth seed that makes the
+    /// *next* recalculation possible — must cross onto the recomputed chart.
+    #[test]
+    fn a_reproject_carries_passages_branding_and_the_seed_onto_the_new_geometry() {
+        let mut old = chart_fixture();
+        old.meta.birth = Some(astro::contract::BirthSeed {
+            place_id: 2950159,
+            date: "1990-07-13".into(),
+            time: "14:30".into(),
+        });
+        old.meta.astrologer = Some("A. Practitioner".into());
+        old.meta.logo = Some("data:image/png;base64,AAAA".into());
+        old.excerpts = vec![ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"])];
+
+        let carried = Carried::from(&old).expect("a seeded chart can be recalculated");
+        assert_eq!(carried.name, old.meta.name);
+        assert_eq!(carried.locale, astro::i18n::Locale::En);
+
+        // The recomputed chart arrives with fresh geometry and nothing else.
+        let mut fresh = {
+            let mut input = astro::chart::BirthInput {
+                name: "T".into(),
+                date: "1990-07-13".parse().unwrap(),
+                time: "14:30:00".parse().unwrap(),
+                lat: 52.52,
+                lon: 13.405,
+                tz: chrono_tz::Europe::Berlin,
+                place: "Berlin".into(),
+                locale: astro::i18n::Locale::En,
+                house_system: astro::chart::systems::house_system("whole-sign"),
+                ayanamsa: None,
+            };
+            input.house_system = astro::chart::systems::house_system("placidus");
+            astro::chart::compute_chart(&input).unwrap()
+        };
+        assert!(fresh.excerpts.is_empty());
+        assert_ne!(fresh.house_cusps, old.house_cusps, "the geometry really changed");
+
+        carried.onto(&mut fresh);
+
+        assert_eq!(fresh.excerpts.len(), 1);
+        assert_eq!(fresh.excerpts[0].text, "The sun in cancer.");
+        assert_eq!(fresh.meta.astrologer.as_deref(), Some("A. Practitioner"));
+        assert_eq!(fresh.meta.logo.as_deref(), Some("data:image/png;base64,AAAA"));
+        assert!(fresh.meta.birth.is_some(), "still recalculable afterwards");
+        // The carried tags remain in the new chart's vocabulary — that is what
+        // makes carrying them legitimate rather than a leak.
+        assert!(fresh.validate().is_ok(), "{:?}", fresh.validate());
+    }
+
+    /// A chart with no birth seed (CLI output, or one saved before seeds
+    /// existed) simply cannot be recalculated, and says so.
+    #[test]
+    fn a_reproject_refuses_a_chart_with_no_birth_seed() {
+        let mut old = chart_fixture();
+        old.meta.birth = None;
+        assert_eq!(
+            Carried::from(&old).unwrap_err(),
+            "this reading has no saved birth data to recalculate from"
+        );
     }
 
     #[test]

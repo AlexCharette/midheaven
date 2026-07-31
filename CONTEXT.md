@@ -54,21 +54,32 @@ forever. Distinct from the PDF, which is a separate rendering of the same chart.
 
 The open working state: a reading the app currently holds, and possibly a live
 recorder capturing a take into it. Ten of the twenty-five backend commands
-require a session and say so only by failing with "no chart has been built yet".
+require a session; all ten refuse through one guard with one message
+(`session::NO_READING`, "no chart has been built yet").
 
-A session is **open** or **recording** or neither — never recording without a
-reading. It is modelled as one value in `desktop/src/lib/session.ts` precisely so
-that cannot drift: it used to be separate client facts, and leaving a reading
-mid-recording stranded a recorder whose take then landed on the next reading.
+A session is never recording without a reading. It is modelled as one value on
+**both** sides precisely so that cannot drift —
+`desktop/src/lib/session.ts` in the webview, `desktop/src-tauri/src/session.rs`
+in the backend. Each used to be separate facts: on the client, leaving a reading
+mid-recording stranded a recorder whose take then landed on the next reading; on
+the backend, a seven-field struct where every command re-checked the invariant
+for itself.
 
-Leaving, opening another reading, and recalculating are all **refused** while
-recording rather than reconciled — the same stance the backend takes with
-"already recording".
+Leaving, opening another reading, and recalculating are all **refused** while a
+take is in flight rather than reconciled.
 
 ## Take
 
 One recording appended to a live session. Takes accumulate — each is transcribed
 and routed on its own, then appended, so earlier curation survives.
+
+A take is **in flight** from the moment recording starts until its words land in
+the chart, which spans two phases: **recording**, while the capture runs, and
+**transcribing**, after it stops. The distinction is load-bearing — transcription
+takes real time, and a second take begun in that window would be handed the same
+session offset as the one still landing, so both takes' folio anchors would claim
+the same stretch of the recording. A take that fails to transcribe is
+**abandoned**: the reading stays open and never advances the session clock.
 
 ## Reproject
 
