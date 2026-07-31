@@ -5,6 +5,7 @@
 
 import type { ChartData } from "./types";
 import { ringAngles } from "./civil";
+import { norm360, positionOf, sweepOf } from "./derive";
 
 export type Pose = {
   asc: number;
@@ -60,5 +61,28 @@ export function poseOf(chart: ChartData, minutes: number): Pose {
     lons: Object.fromEntries(chart.planets.map((p) => [p.id, p.lon])),
     timeAngle,
     dateAngle,
+  };
+}
+
+/** The other direction: a chart to *render*, made of `target`'s identity and
+ * `pose`'s angles — planets, frame and cusps mid-glide; aspects, houses and
+ * labels discrete from the target.
+ *
+ * The derived fields ride on the chart, so they belong to the target's
+ * longitudes and are re-derived here for the tweened ones. Everything
+ * downstream then reads fields and needs no knowledge of the glide. This lived
+ * in the calculator view, which made eleven lines of chart arithmetic a
+ * component's business and left it untestable. */
+export function project(target: ChartData, pose: Pose): ChartData {
+  const cusps = target.houseCusps.map((c, i) => norm360(pose.cusps[i] ?? c));
+  return {
+    ...target,
+    axes: { asc: norm360(pose.asc), mc: norm360(pose.mc) },
+    houseCusps: cusps,
+    houseSweeps: cusps.map((c, i) => sweepOf(c, cusps[(i + 1) % cusps.length])),
+    planets: target.planets.map((p) => {
+      const lon = norm360(pose.lons[p.id] ?? p.lon);
+      return { ...p, lon, ...positionOf(lon) };
+    }),
   };
 }

@@ -12,7 +12,15 @@
   // Renders its own SVG, stacked over the Wheel by Calculator: viewBox
   // -120..840 vs the Wheel's -52..772, both centred on 360 — the Wheel is
   // scaled by 824/960 in CSS so one user unit is identical in both.
-  import { beginScrub, calc, endScrub, pose, setDraft } from "$lib/calc.svelte";
+  import {
+    beginScrub,
+    endScrub,
+    minutes as draftMinutes,
+    pending,
+    ringPose,
+    setMoment,
+    snapRings,
+  } from "$lib/preview.svelte";
   import {
     MINUTES_PER_DAY,
     MONTH_NAMES,
@@ -69,12 +77,12 @@
   const shown = $derived(
     draft !== null
       ? ringAngles(draft)
-      : { timeAngle: pose.current.timeAngle, dateAngle: pose.current.dateAngle },
+      : ringPose(),
   );
-  const live = $derived(held !== null || calc.pending);
+  const live = $derived(held !== null || pending());
 
   // ---- scale geometry, re-derived only when the displayed year changes ----
-  const year = $derived(fromDays(Math.floor((draft ?? calc.minutes) / MINUTES_PER_DAY)).y);
+  const year = $derived(fromDays(Math.floor((draft ?? draftMinutes()) / MINUTES_PER_DAY)).y);
   const days = $derived(daysInYear(year));
 
   // time ring: 5-minute graduation, hour ticks longest, 15-min mid
@@ -154,12 +162,12 @@
         ring === "time" ? -deg * (MINUTES_PER_DAY / 360) : (-deg / 360) * days * MINUTES_PER_DAY,
       onstart: () => {
         held = ring;
-        gestureStart = calc.minutes;
+        gestureStart = draftMinutes();
         accum = 0;
-        draft = calc.minutes;
+        draft = draftMinutes();
         beginScrub();
         // no seam at grab: park the pose's ring angles where the rings are
-        pose.snap({ ...pose.current, ...ringAngles(calc.minutes) });
+        snapRings(draftMinutes());
       },
       onmove: (minutes: number) => {
         if (draft === null) return;
@@ -169,10 +177,10 @@
           ring === "time"
             ? gestureStart + accum
             : gestureStart + Math.round(accum / MINUTES_PER_DAY) * MINUTES_PER_DAY;
-        setDraft(draft, "drag");
+        setMoment(draft, "drag");
       },
       onend: () => {
-        if (draft !== null) setDraft(draft, "drag");
+        if (draft !== null) setMoment(draft, "drag");
         held = null;
         draft = null;
         // release: houses and aspects, frozen through the gesture, recompute
@@ -183,16 +191,16 @@
   }
 
   // ---- keyboard: the rings as sliders (the fields stay the precision path) ----
-  const minutesOfDay = $derived(((calc.minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY);
+  const minutesOfDay = $derived(((draftMinutes() % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY);
   const doy = $derived.by(() => {
-    const { y, m, d } = fromDays(Math.floor(calc.minutes / MINUTES_PER_DAY));
+    const { y, m, d } = fromDays(Math.floor(draftMinutes() / MINUTES_PER_DAY));
     return dayOfYear(y, m, d);
   });
   const timeText = $derived(
     `${String(Math.floor(minutesOfDay / 60)).padStart(2, "0")}:${String(minutesOfDay % 60).padStart(2, "0")}`,
   );
   const dateText = $derived.by(() => {
-    const { m, d } = fromDays(Math.floor(calc.minutes / MINUTES_PER_DAY));
+    const { m, d } = fromDays(Math.floor(draftMinutes() / MINUTES_PER_DAY));
     return `${d} ${MONTH_NAMES[m - 1]}`;
   });
 
@@ -205,11 +213,11 @@
       if (dir === 0) return;
       e.preventDefault();
       if (ring === "time") {
-        setDraft(calc.minutes + dir * (e.shiftKey ? 60 : 5), "keyboard");
+        setMoment(draftMinutes() + dir * (e.shiftKey ? 60 : 5), "keyboard");
       } else if (e.shiftKey) {
-        setDraft(addMonths(calc.minutes, dir), "keyboard");
+        setMoment(addMonths(draftMinutes(), dir), "keyboard");
       } else {
-        setDraft(calc.minutes + dir * MINUTES_PER_DAY, "keyboard");
+        setMoment(draftMinutes() + dir * MINUTES_PER_DAY, "keyboard");
       }
     };
   }
