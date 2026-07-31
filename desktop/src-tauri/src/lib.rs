@@ -8,7 +8,7 @@ mod record;
 
 use astro::chart::parse_time;
 use astro::contract::{ChartData, Excerpt};
-use astro::route::{Transcript, index_transcript, lexicon_for, next_ordinal, retag};
+use astro::route::{Transcript, lexicon_for, next_ordinal, retag};
 #[cfg(desktop)]
 use astro::route::append_transcript;
 use astro::{TranscriptSource, geo};
@@ -304,50 +304,23 @@ async fn build(
     )
     .map_err(|e| e.to_string())?;
 
-    // Unlike `build_reading` (the CLI/TUI path), the desktop keeps the
-    // transcript at hand so the readings library can persist it verbatim.
-    // Only the audio arm reports progress; on mobile that arm is compiled out.
-    #[cfg(desktop)]
+    // The whole pipeline, on the blocking pool. `build_reading` hands back the
+    // transcript it routed from (`report.transcript`), which is what the
+    // readings library persists verbatim — the desktop used to fork this entire
+    // match for want of that one value.
     let progress_app = app.clone();
-    type Persisted = Option<(String, String)>; // (filename, contents) for the library
-    let (mut chart, transcript_file, warnings) = tauri::async_runtime::spawn_blocking(
-        move || -> Result<(ChartData, Persisted, Vec<String>), String> {
-            let (transcript, persisted): (Option<Transcript>, Persisted) = match source {
-                TranscriptSource::None => (None, None),
-                TranscriptSource::File(path) => {
-                    let raw = std::fs::read_to_string(&path)
-                        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("txt");
-                    (Some(Transcript::load(&raw)), Some((format!("transcript.{ext}"), raw)))
-                }
-                #[cfg(desktop)]
-                TranscriptSource::Audio { wav, model } => {
-                    let segments =
-                        astro::transcribe::transcribe(&wav, &model, Some(locale.whisper_lang()), move |pct| {
-                            let _ = progress_app.emit("transcribe-progress", pct);
-                        })?;
-                    let jsonl = astro::transcribe::to_jsonl(&segments);
-                    (
-                        Some(Transcript::from_segments(segments)),
-                        Some(("transcript.jsonl".to_string(), jsonl)),
-                    )
-                }
-            };
-            let (mut chart, mut warnings) = astro::chart::compute_chart_reporting(&input)?;
-            if let Some(t) = &transcript {
-                let router = lexicon_for(&chart);
-                warnings.extend(index_transcript(&mut chart, t, &router).warnings);
-            }
-            Ok((chart, persisted, warnings))
-        },
-    )
+    let (mut chart, report) = tauri::async_runtime::spawn_blocking(move || {
+        astro::build_reading(&input, source, move |pct| {
+            let _ = progress_app.emit("transcribe-progress", pct);
+        })
+    })
     .await
     .map_err(|e| format!("build task failed: {e}"))??;
 
     // Surface non-fatal warnings (DST-ambiguous birth time, Verify-gate
     // rejections) the pipeline used to write to stderr; the webview toasts them.
-    if !warnings.is_empty() {
-        let _ = app.emit("build-warnings", &warnings);
+    if !report.warnings.is_empty() {
+        let _ = app.emit("build-warnings", &report.warnings);
     }
 
     // Practitioner branding rides on the chart's meta (and thus into both
@@ -369,9 +342,9 @@ async fn build(
             let dir = PathBuf::from(root).join(&stem);
             std::fs::create_dir_all(&dir)
                 .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-            if let Some((name, contents)) = &transcript_file {
-                std::fs::write(dir.join(name), contents)
-                    .map_err(|e| format!("cannot write {name}: {e}"))?;
+            if let Some(t) = &report.transcript {
+                std::fs::write(dir.join(&t.filename), &t.contents)
+                    .map_err(|e| format!("cannot write {}: {e}", t.filename))?;
             }
             save_chart_json(&dir, &chart)?;
             Some(dir)
