@@ -83,16 +83,20 @@ pub fn compute_chart_reporting(input: &BirthInput) -> Result<(ChartData, Vec<Str
     let aspects = detect_aspects(&planets, loc);
     let asc = norm360(cusps.ascendant.to_degrees());
     planets.push(ascendant_point(asc, loc));
-    let chart = ChartData {
+    let mut chart = ChartData {
         meta: birth_meta(input),
         axes: Axes { asc, mc: norm360(cusps.mc.to_degrees()) },
         house_cusps: (0..12).map(|i| cusps.cusp_deg(i)).collect(),
+        house_sweeps: Vec::new(),
         planets,
         signs: sign_refs(loc),
         houses: house_refs(loc),
         aspects,
         excerpts: Vec::new(),
     };
+    // Derived fields last: they read the measured longitudes and cusps above,
+    // and every renderer reads them instead of re-deriving.
+    crate::derive::fill(&mut chart);
     Ok((chart, warnings))
 }
 
@@ -186,6 +190,7 @@ fn planet_positions(
                 name: loc.planet_name(id).to_string(),
                 lon: norm360(lon_rad.to_degrees()),
                 house: cusps.planet_in_house(lon_rad) as u8,
+                ..Default::default()
             })
         })
         .collect()
@@ -230,6 +235,7 @@ fn ascendant_point(asc_deg: f64, loc: Locale) -> Body {
         name: loc.planet_name("ascendant").to_string(),
         lon: asc_deg,
         house: 1,
+        ..Default::default()
     }
 }
 
@@ -360,6 +366,39 @@ mod tests {
         assert!(cs.meta.zodiac.starts_with("Sidereal"), "zodiac {}", cs.meta.zodiac);
         // Tropical charts record no ayanamsa.
         assert_eq!(ct.meta.ayanamsa, None);
+    }
+
+    /// Every renderer reads the derived position fields instead of deriving
+    /// them, so no chart may leave the compute stage without them filled — a
+    /// body left at the `Default` zeroes would render as 0° Aries.
+    #[test]
+    fn compute_fills_the_derived_fields() {
+        // Placidus so the cusps are uneven and the sweeps are not all 30°.
+        let mut input = birth("1990-07-13", "14:30:00", 52.52, 13.405, "Europe/Berlin");
+        input.house_system = HouseSystem::Placidus;
+        let chart = compute_chart(&input).unwrap();
+
+        assert_eq!(chart.house_sweeps.len(), 12);
+        let total: f64 = chart.house_sweeps.iter().sum();
+        assert!((total - 360.0).abs() < 1e-9, "sweeps should tile the circle, got {total}");
+        assert!(
+            chart.house_sweeps.iter().any(|s| (s - 30.0).abs() > 1e-6),
+            "Placidus houses should not all be 30° wide"
+        );
+
+        for p in &chart.planets {
+            let expect = crate::derive::position(crate::derive::Longitude::new(p.lon));
+            assert_eq!(
+                (p.sign, p.deg, p.min),
+                (expect.sign, expect.deg, expect.min),
+                "{} carries a position its longitude {} contradicts",
+                p.id,
+                p.lon
+            );
+        }
+        // Not every body sits at 0°/0' — i.e. the fields really were written.
+        assert!(chart.planets.iter().any(|p| p.deg != 0 || p.min != 0));
+        assert!(chart.validate().is_ok());
     }
 
     #[test]

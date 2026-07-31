@@ -47,6 +47,7 @@ mod tests {
             },
             axes: Axes { asc: 0.0, mc: 270.0 },
             house_cusps: (0..12).map(|i| i as f64 * 30.0).collect(),
+            house_sweeps: vec![30.0; 12],
             planets: vec![],
             signs: vec![],
             houses: vec![],

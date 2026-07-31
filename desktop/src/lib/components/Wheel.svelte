@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
-  import {
-    catOf, degInSign, norm360, planetById, relatedTo, signDensity, textGlyph,
-  } from "$lib/types";
+  import { catOf, planetById, relatedTo, signDensity, textGlyph } from "$lib/types";
+  import { norm360 } from "$lib/derive";
   import { focusedTag, peek, selected, toggle, unpeek } from "$lib/state.svelte";
   import { prefersReducedMotion } from "$lib/motion";
   import { onMount, type Snippet } from "svelte";
@@ -120,8 +119,7 @@
 
   const houseWedges = $derived(
     chart.houseCusps.map((c, i) => {
-      const next = chart.houseCusps[(i + 1) % 12];
-      const sweep = norm360(next - c) || 30; // equal cusps mean a full sign
+      const sweep = chart.houseSweeps[i]; // derived, incl. the coincident-cusp rule
       const [sx1, sy1] = pt(c, R.hubInner); // spokes converge at the centre
       const [sx2, sy2] = pt(c, R.gradIn);
       const [lx, ly] = pt(c + sweep / 2, R.houseLbl);
@@ -176,7 +174,7 @@
       const [dx, dy] = pt(p.lon, r - 21);
       const [t1x, t1y] = pt(p.lon, R.gradIn - 8);
       const [t2x, t2y] = pt(p.lon, R.gradIn);
-      return { p, gx, gy, dx, dy, tick: { x1: t1x, y1: t1y, x2: t2x, y2: t2y }, deg: degInSign(p.lon) };
+      return { p, gx, gy, dx, dy, tick: { x1: t1x, y1: t1y, x2: t2x, y2: t2y }, deg: p.deg };
     });
   });
 
@@ -194,8 +192,7 @@
       const n = Number(focusTag.split(":")[1]);
       const cusp = chart.houseCusps[n - 1];
       if (cusp === undefined) return null;
-      const sweep = norm360(chart.houseCusps[n % 12] - cusp) || 30;
-      return cusp + sweep / 2;
+      return cusp + chart.houseSweeps[n - 1] / 2;
     }
     if (c === "aspect") {
       const a = chart.aspects.find((x) => x.id === focusTag);

@@ -2,7 +2,7 @@
   import { fade, fly, slide } from "svelte/transition";
   import { expoOut } from "svelte/easing";
   import type { ChartData } from "$lib/types";
-  import { catOf, degInSign, planetById, relatedTo, signAt, textGlyph } from "$lib/types";
+  import { catOf, planetById, relatedTo, signOf, textGlyph } from "$lib/types";
   import { app, focusedTag, houseSuffix, peek, selected, toggle, unpeek } from "$lib/state.svelte";
   import { swapDuration } from "$lib/motion";
 
@@ -26,7 +26,7 @@
   // expanded — occupancy means a body stands in the sign/house, and a
   // selected filter must never hide itself.
   const occupied = $derived(
-    new Set(chart.planets.flatMap((p) => [signAt(chart, p.lon).id, `house:${p.house}`])),
+    new Set(chart.planets.flatMap((p) => [signOf(chart, p).id, `house:${p.house}`])),
   );
   let expanded = $state<Record<string, boolean>>({ signs: false, houses: false });
 
@@ -48,7 +48,7 @@
         tag: p.id,
         glyph: p.glyph,
         name: p.name,
-        detail: `${degInSign(p.lon)}° ${textGlyph(signAt(chart, p.lon).glyph)}`,
+        detail: `${p.deg}° ${textGlyph(signOf(chart, p).glyph)}`,
       })),
     },
     {

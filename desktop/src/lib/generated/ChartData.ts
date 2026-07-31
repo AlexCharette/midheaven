@@ -7,4 +7,10 @@ import type { HouseRef } from "./HouseRef";
 import type { Meta } from "./Meta";
 import type { Ref } from "./Ref";
 
-export type ChartData = { meta: Meta, axes: Axes, houseCusps: Array<number>, planets: Array<Body>, signs: Array<Ref>, houses: Array<HouseRef>, aspects: Array<Aspect>, excerpts: Array<Excerpt>, };
+export type ChartData = { meta: Meta, axes: Axes, houseCusps: Array<number>, 
+/**
+ * Derived: how wide each house is, cusp to next cusp — see
+ * [`crate::derive::sweep`]. Parallel to `house_cusps`. Absent from charts
+ * saved before the field existed; `derive::fill` restores it on load.
+ */
+houseSweeps: Array<number>, planets: Array<Body>, signs: Array<Ref>, houses: Array<HouseRef>, aspects: Array<Aspect>, excerpts: Array<Excerpt>, };

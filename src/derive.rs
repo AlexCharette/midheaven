@@ -20,6 +20,8 @@
 //! glyph-crowding policy, and their own arc construction (krilla has no arc
 //! primitive, so the PDF builds cubics where SVG writes an `A` command).
 
+use crate::contract::ChartData;
+
 /// An ecliptic longitude in degrees, normalized to `[0, 360)` by construction.
 ///
 /// The field is private so the invariant cannot be sidestepped: every way in
@@ -100,6 +102,29 @@ pub fn position(lon: Longitude) -> Position {
 pub fn sweep(cusp: Longitude, next: Longitude) -> f64 {
     let arc = cusp.arc_to(next);
     if arc == 0.0 { 30.0 } else { arc }
+}
+
+/// Fill every derived field on `chart` from the measured values it already
+/// carries — each body's longitude, and the cusp ring.
+///
+/// Authoritative rather than trusting: the fields are recomputed from `lon` and
+/// the cusps on every call, so a chart saved before the fields existed and a
+/// chart whose stored fields disagree with its longitudes both come out the
+/// same. That is why the desktop's `load_chart` calls this *before*
+/// `ChartData::validate` instead of validating what the file claimed — a
+/// hand-edited `chart.json` cannot state a position its longitude contradicts.
+///
+/// Idempotent, and the only writer of these fields.
+pub fn fill(chart: &mut ChartData) {
+    for body in &mut chart.planets {
+        let pos = position(Longitude::new(body.lon));
+        body.sign = pos.sign;
+        body.deg = pos.deg;
+        body.min = pos.min;
+    }
+    let cusps: Vec<Longitude> = chart.house_cusps.iter().map(|c| Longitude::new(*c)).collect();
+    let n = cusps.len();
+    chart.house_sweeps = (0..n).map(|i| sweep(cusps[i], cusps[(i + 1) % n])).collect();
 }
 
 #[cfg(test)]
@@ -241,6 +266,68 @@ mod tests {
             "window is {:.4}% of the circle, expected {:.4}%",
             share * 100.0,
             0.1 / 360.0 * 100.0
+        );
+    }
+
+    /// A `chart.json` exactly as saved before the derived fields existed: the
+    /// bodies carry no `sign`/`deg`/`min`, the chart no `houseSweeps`. This is
+    /// what the desktop's `load_chart` hands to [`fill`].
+    fn legacy_chart() -> ChartData {
+        serde_json::from_str(
+            r#"{
+              "meta": { "name": "T", "born": "b", "place": "p",
+                        "system": "Whole Sign", "zodiac": "Tropical" },
+              "axes": { "asc": 0.0, "mc": 270.0 },
+              "houseCusps": [0,30,60,90,120,150,180,210,240,270,300,330],
+              "planets": [
+                { "id": "planet:sun", "glyph": "x", "name": "Sun", "lon": 107.5, "house": 4 },
+                { "id": "planet:moon", "glyph": "x", "name": "Moon", "lon": 119.9999, "house": 4 }
+              ],
+              "signs": [], "houses": [], "aspects": [], "excerpts": []
+            }"#,
+        )
+        .expect("legacy chart should still deserialize")
+    }
+
+    #[test]
+    fn fill_derives_positions_and_sweeps_for_a_chart_saved_without_them() {
+        let mut chart = legacy_chart();
+        assert_eq!(chart.house_sweeps, Vec::<f64>::new(), "absent before filling");
+
+        fill(&mut chart);
+
+        assert_eq!((chart.planets[0].sign, chart.planets[0].deg, chart.planets[0].min), (3, 17, 30));
+        // The carry case: the renderers' copies printed a 30th degree here.
+        assert_eq!((chart.planets[1].sign, chart.planets[1].deg, chart.planets[1].min), (4, 0, 0));
+        assert_eq!(chart.house_sweeps, vec![30.0; 12]);
+    }
+
+    #[test]
+    fn fill_overrides_whatever_the_file_claimed() {
+        let mut chart = legacy_chart();
+        fill(&mut chart);
+        // A hand-edited file could state a position its longitude contradicts.
+        chart.planets[0].sign = 9;
+        chart.planets[0].deg = 29;
+        chart.planets[0].min = 59;
+        chart.house_sweeps = vec![1.0; 12];
+
+        fill(&mut chart);
+
+        assert_eq!((chart.planets[0].sign, chart.planets[0].deg, chart.planets[0].min), (3, 17, 30));
+        assert_eq!(chart.house_sweeps, vec![30.0; 12]);
+    }
+
+    #[test]
+    fn fill_is_idempotent() {
+        let mut once = legacy_chart();
+        fill(&mut once);
+        let mut twice = legacy_chart();
+        fill(&mut twice);
+        fill(&mut twice);
+        assert_eq!(
+            serde_json::to_string(&once).unwrap(),
+            serde_json::to_string(&twice).unwrap()
         );
     }
 

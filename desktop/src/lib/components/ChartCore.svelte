@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
-  import { catOf, degInSign, planetById, signAt, textGlyph } from "$lib/types";
+  import { catOf, planetById, signOf, textGlyph } from "$lib/types";
+  // A cusp is a longitude the chart carries, not a body, so it has no derived
+  // position to read — the one case in this file that still derives.
+  import { positionOf } from "$lib/derive";
   import { app, excerptsMatching, focusedTag, notify } from "$lib/state.svelte";
   import { updateChart, whyCannotRecalculate } from "$lib/session.svelte";
   import { reproject } from "$lib/api";
@@ -74,7 +77,7 @@
 
   // planets standing in a sign / tenanting a house — the read-out's "occupants"
   const planetsInSign = (signId: string) =>
-    chart.planets.filter((p) => signAt(chart, p.lon).id === signId);
+    chart.planets.filter((p) => signOf(chart, p).id === signId);
   const planetsInHouse = (n: number) => chart.planets.filter((p) => p.house === n);
 </script>
 
@@ -109,12 +112,12 @@
       {#if cat === "planet"}
         {@const p = planetById(chart, focusTag)}
         {#if p}
-          {@const s = signAt(chart, p.lon)}
+          {@const s = signOf(chart, p)}
           {@const aspects = chart.aspects.filter((a) => a.a === focusTag || a.b === focusTag)}
           <span class="glyph g-planet">{textGlyph(p.glyph)}</span>
           <p class="name">{p.name}</p>
           <p class="pos">
-            {degInSign(p.lon)}° <span class="astro g-sign">{textGlyph(s.glyph)}</span> {s.name}
+            {p.deg}° <span class="astro g-sign">{textGlyph(s.glyph)}</span> {s.name}
           </p>
           <p class="pos sub">House {roman(p.house)}</p>
           {#if aspects.length}
@@ -147,12 +150,12 @@
         {@const h = chart.houses.find((x) => x.id === focusTag)}
         {#if h}
           {@const n = Number(focusTag.split(":")[1])}
-          {@const cusp = chart.houseCusps[n - 1]}
-          {@const cs = signAt(chart, cusp)}
+          {@const cuspAt = positionOf(chart.houseCusps[n - 1])}
+          {@const cs = chart.signs[cuspAt.sign]}
           {@const occ = planetsInHouse(n)}
           <span class="glyph roman g-house">{h.label}</span>
           <p class="name">{h.name}</p>
-          <p class="pos sub">cusp {degInSign(cusp)}° <span class="astro g-sign">{textGlyph(cs.glyph)}</span></p>
+          <p class="pos sub">cusp {cuspAt.deg}° <span class="astro g-sign">{textGlyph(cs.glyph)}</span></p>
           <p class="occ">
             {#if occ.length}
               {#each occ as p (p.id)}<span class="astro g-planet" title={p.name}>{textGlyph(p.glyph)}</span>{/each}

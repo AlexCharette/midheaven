@@ -7,22 +7,16 @@ use super::fonts::{Face, Fonts, glyph_face};
 use super::palette::*;
 use super::primitives::hline;
 use super::text::{draw_str, draw_tracked, wrap};
-use crate::contract::{ChartData, Excerpt};
+use crate::contract::{Body, ChartData, Excerpt};
 use crate::i18n::Locale;
 use krilla::surface::Surface;
 
-/// `17°42' Cancer` — the template's fmtPos (U+2019 stands in for the
-/// minutes prime; Libre Baskerville has no U+2032).
-fn fmt_pos(chart: &ChartData, lon: f64) -> String {
-    let within = lon.rem_euclid(360.0) % 30.0;
-    let mut d = within.floor();
-    let mut m = ((within - d) * 60.0).round();
-    if m >= 60.0 {
-        d += 1.0;
-        m = 0.0;
-    }
-    let sign = &chart.signs[(lon.rem_euclid(360.0) / 30.0) as usize % 12];
-    format!("{d}\u{b0}{m:02}\u{2019} {}", sign.name)
+/// `17°42' Cancer` — the body's derived position, read from the contract rather
+/// than re-derived here (U+2019 stands in for the minutes prime; Libre
+/// Baskerville has no U+2032).
+fn fmt_pos(chart: &ChartData, body: &Body) -> String {
+    let sign = &chart.signs[body.sign as usize % 12];
+    format!("{}\u{b0}{:02}\u{2019} {}", body.deg, body.min, sign.name)
 }
 
 /// A line's painter, called with the line's top y.
@@ -158,7 +152,7 @@ pub(crate) fn build_flow<'c>(chart: &'c ChartData, fonts: &Fonts, frame: &Frame)
     for p in &chart.planets {
         let Some((glyph, gface, _)) = tag_chip(chart, &p.id) else { continue };
         let name: &'c str = &p.name;
-        let pos = fmt_pos(chart, p.lon);
+        let pos = fmt_pos(chart, p);
         let house: &'c str = &chart.houses[(p.house as usize).saturating_sub(1) % 12].label;
         flow.push(FlowLine {
             h: 17.0,

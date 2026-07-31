@@ -13,6 +13,11 @@ pub struct ChartData {
     pub axes: Axes,
     #[serde(rename = "houseCusps")]
     pub house_cusps: Vec<f64>,
+    /// Derived: how wide each house is, cusp to next cusp — see
+    /// [`crate::derive::sweep`]. Parallel to `house_cusps`. Absent from charts
+    /// saved before the field existed; `derive::fill` restores it on load.
+    #[serde(rename = "houseSweeps", default)]
+    pub house_sweeps: Vec<f64>,
     pub planets: Vec<Body>,
     pub signs: Vec<Ref>,
     pub houses: Vec<HouseRef>,
@@ -53,6 +58,7 @@ impl ChartData {
             ("signs", self.signs.len()),
             ("houses", self.houses.len()),
             ("house cusps", self.house_cusps.len()),
+            ("house sweeps", self.house_sweeps.len()),
         ] {
             if len != 12 {
                 return Err(format!("expected 12 {label}, found {len}"));
@@ -62,6 +68,15 @@ impl ChartData {
             check_id(&p.id, "planet")?;
             if !(1..=12).contains(&p.house) {
                 return Err(format!("planet {:?} has house {} outside 1..=12", p.id, p.house));
+            }
+            // The derived position indexes `signs` directly and is rendered as
+            // text; `derive::fill` guarantees the ranges, so a violation here
+            // means the fields were never filled.
+            if p.sign > 11 || p.deg > 29 || p.min > 59 {
+                return Err(format!(
+                    "planet {:?} has an out-of-range derived position {}/{}/{}",
+                    p.id, p.sign, p.deg, p.min
+                ));
             }
         }
         for s in &self.signs {
@@ -221,7 +236,10 @@ pub struct Axes {
     pub mc: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A chart body. `Default` exists so the compute stage can write the measured
+/// fields and leave the derived ones to `derive::fill`, its only writer:
+/// `Body { id, glyph, name, lon, house, ..Default::default() }`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Body {
     pub id: String,
@@ -229,6 +247,20 @@ pub struct Body {
     pub name: String,
     pub lon: f64,
     pub house: u8,
+    /// Derived from `lon` by [`crate::derive::position`]: the sign it falls in
+    /// (`0..=11`, indexing [`ChartData::signs`]) and how far into it. Every
+    /// renderer reads these instead of re-deriving them — the PDF, the artifact
+    /// and the desktop wheel each used to carry their own copy of the
+    /// arithmetic and had drifted. Absent from charts saved before the fields
+    /// existed; `derive::fill` restores them on load.
+    #[serde(default)]
+    pub sign: u8,
+    /// Whole degrees into the sign, `0..=29`.
+    #[serde(default)]
+    pub deg: u8,
+    /// Arcminutes, `0..=59`.
+    #[serde(default)]
+    pub min: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -314,12 +346,16 @@ mod tests {
             },
             axes: Axes { asc: 0.0, mc: 270.0 },
             house_cusps: (0..12).map(|i| i as f64 * 30.0).collect(),
+            house_sweeps: vec![30.0; 12],
             planets: vec![Body {
                 id: "planet:sun".into(),
                 glyph: "☉".into(),
                 name: "Sun".into(),
                 lon: 0.0,
                 house: 1,
+                sign: 0,
+                deg: 0,
+                min: 0,
             }],
             signs: (0..12)
                 .map(|i| Ref {

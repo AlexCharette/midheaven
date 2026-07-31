@@ -84,7 +84,21 @@ is. **Derived fields belong to the chart, not to the renderer** — they are
 computed once in `src/derive.rs` and ride on `ChartData`, because the PDF, the
 artifact and the desktop wheel each used to derive them separately and drifted.
 
+Concretely: a `Body` carries `sign`/`deg`/`min`, and a chart carries
+`houseSweeps`. `derive::fill` is their only writer — the compute stage calls it
+for a fresh chart, `load_chart` for one reloaded from disk. It recomputes rather
+than trusting, so a chart saved before the fields existed and a hand-edited one
+that claims a position its longitude contradicts both come out the same.
+
 The counterpart rule: anything genuinely specific to one rendering — radii,
 glyph-crowding policy, arc construction — is *not* a derived field and stays with
 its renderer. The desktop wheel is deliberately richer than paper; that is not
 drift.
+
+Two client cases cannot read the fields and derive through
+`desktop/src/lib/derive.ts`, the one deliberate mirror of `src/derive.rs`
+(pinned to the same cases by `derive.test.ts`): the **live scrub**, whose
+longitudes are tweened between previews so the backend's fields describe the
+target rather than the frame on screen, and **house cusps**, which are
+longitudes the chart carries rather than bodies and so have no derived position
+of their own.

@@ -23,6 +23,7 @@ export type { OptionDto } from "./generated/OptionDto";
 export type { PreviewInput } from "./generated/PreviewInput";
 export type { PreviewDto } from "./generated/PreviewDto";
 
+import type { Body } from "./generated/Body";
 import type { ChartData } from "./generated/ChartData";
 import type { Excerpt } from "./generated/Excerpt";
 
@@ -31,10 +32,12 @@ export const textGlyph = (g: string) => g + "\ufe0e";
 
 export const catOf = (tag: string) => tag.split(":")[0];
 
-export const norm360 = (x: number) => ((x % 360) + 360) % 360;
-export const degInSign = (lon: number) => Math.floor(norm360(lon) % 30);
-export const signAt = (chart: ChartData, lon: number) => chart.signs[Math.floor(norm360(lon) / 30)];
 export const planetById = (chart: ChartData, id: string) => chart.planets.find((p) => p.id === id);
+
+/** The sign a body stands in, read from its derived `sign` index rather than
+ * re-derived from `lon` — see `$lib/derive` for why the webview no longer owns
+ * that arithmetic. */
+export const signOf = (chart: ChartData, body: Body) => chart.signs[body.sign];
 
 /** Every taggable element as {tag, glyph, name}, encoding the one
  * per-category glyph convention (houses show their roman label). */
@@ -62,7 +65,7 @@ export function relatedTo(chart: ChartData, tag: string): Set<string> {
   if (cat === "planet") {
     const p = planetById(chart, tag);
     if (p) {
-      rel.add(signAt(chart, p.lon).id);
+      rel.add(signOf(chart, p).id);
       rel.add(`house:${p.house}`);
       for (const a of chart.aspects) {
         if (a.a === tag) { rel.add(a.id); rel.add(a.b); }
@@ -70,7 +73,7 @@ export function relatedTo(chart: ChartData, tag: string): Set<string> {
       }
     }
   } else if (cat === "sign") {
-    for (const p of chart.planets) if (signAt(chart, p.lon).id === tag) rel.add(p.id);
+    for (const p of chart.planets) if (signOf(chart, p).id === tag) rel.add(p.id);
   } else if (cat === "house") {
     const n = Number(tag.split(":")[1]);
     for (const p of chart.planets) if (p.house === n) rel.add(p.id);
@@ -87,9 +90,7 @@ export function relatedTo(chart: ChartData, tag: string): Set<string> {
  * it — so a talkative Sun lights up its own sign even when the words never
  * named the sign directly. */
 export function signDensity(chart: ChartData): number[] {
-  const planetSign = new Map(
-    chart.planets.map((p) => [p.id, Math.floor(norm360(p.lon) / 30)]),
-  );
+  const planetSign = new Map(chart.planets.map((p) => [p.id, p.sign]));
   const weight = new Array(12).fill(0);
   for (const ex of chart.excerpts) {
     const hit = new Set<number>();

@@ -812,8 +812,13 @@ fn load_chart(state: State<'_, AppState>, path: String) -> Result<ChartData, Str
     let path = PathBuf::from(path.trim());
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let chart: ChartData =
+    let mut chart: ChartData =
         serde_json::from_str(&raw).map_err(|e| format!("not a Midheaven chart.json: {e}"))?;
+    // Derived fields first: charts saved before they existed carry none, and a
+    // hand-edited file's copies are not to be trusted. Recomputing from the
+    // longitudes makes both cases identical and gives `validate` real values to
+    // check rather than whatever the file claimed.
+    astro::derive::fill(&mut chart);
     // The file is untrusted: enforce the structural/vocabulary invariants the
     // compute path guarantees but deserialization doesn't, before it can reach
     // curation, PDF export, or the emitted artifact.

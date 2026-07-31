@@ -10,7 +10,7 @@
   import { calc, pose, requestPreview, setDraft } from "$lib/calc.svelte";
   import { fromMinutes, nowMoment, parseDate, parseTime, setYear, toMinutes } from "$lib/civil";
   import type { ChartData } from "$lib/types";
-  import { norm360 } from "$lib/types";
+  import { norm360, positionOf, sweepOf } from "$lib/derive";
   import type { PlaceDto } from "$lib/types";
   import BirthForm from "./BirthForm.svelte";
   import CalcOptions from "./CalcOptions.svelte";
@@ -57,15 +57,25 @@
 
   // The wheel's chart: the target's identity with the pose's angles — planets,
   // frame, and cusps mid-glide; aspects/houses/labels discrete from the target.
+  //
+  // The derived fields (`sign`/`deg`/`min`, `houseSweeps`) belong to the target's
+  // longitudes, so they are re-derived for the tweened ones — this is the live
+  // scrub that `$lib/derive` exists for. Everything downstream reads the fields
+  // and so needs no knowledge of the glide.
   const displayed = $derived.by((): ChartData | null => {
     const t = calc.target;
     if (!t) return null;
     const cur = pose.current;
+    const cusps = t.houseCusps.map((c, i) => norm360(cur.cusps[i] ?? c));
     return {
       ...t,
       axes: { asc: norm360(cur.asc), mc: norm360(cur.mc) },
-      houseCusps: t.houseCusps.map((c, i) => norm360(cur.cusps[i] ?? c)),
-      planets: t.planets.map((p) => ({ ...p, lon: norm360(cur.lons[p.id] ?? p.lon) })),
+      houseCusps: cusps,
+      houseSweeps: cusps.map((c, i) => sweepOf(c, cusps[(i + 1) % cusps.length])),
+      planets: t.planets.map((p) => {
+        const lon = norm360(cur.lons[p.id] ?? p.lon);
+        return { ...p, lon, ...positionOf(lon) };
+      }),
     };
   });
 

@@ -103,10 +103,6 @@ impl Plate {
     }
 }
 
-fn norm360(x: f32) -> f32 {
-    x.rem_euclid(360.0)
-}
-
 /// Centered text at a wheel position (the SVG's text-anchor middle +
 /// dominant-baseline central).
 #[allow(clippy::too_many_arguments)]
@@ -180,9 +176,9 @@ pub fn draw(s: &mut Surface, fonts: &Fonts, chart: &ChartData, cx: f32, cy: f32,
     let mut spokes = PathBuilder::new();
     for (i, house) in chart.houses.iter().enumerate() {
         let c = cusps[i];
-        let next = cusps[(i + 1) % 12];
         p.seg(&mut spokes, c, R_HUB, R_GRAD_IN);
-        let sweep = if norm360(next - c) == 0.0 { 30.0 } else { norm360(next - c) };
+        // the derived sweep, including the coincident-cusp rule
+        let sweep = chart.house_sweeps[i] as f32;
         let (lx, ly) = p.pt(c + sweep / 2.0, R_HOUSE_LBL);
         label(s, fonts, Face::Regular, 11.0 * k, STEEL, lx, ly, &house.label);
     }
@@ -237,7 +233,7 @@ pub fn draw(s: &mut Surface, fonts: &Fonts, chart: &ChartData, cx: f32, cy: f32,
         let size = if face == Face::Regular { 13.0 } else { 22.0 };
         label(s, fonts, face, size * k, BRASS, gx, gy, &body.glyph);
         let (dx, dy) = p.pt(lon, r - 21.0);
-        let deg = format!("{}\u{b0}", (norm360(lon) % 30.0).floor());
+        let deg = format!("{}\u{b0}", body.deg);
         label(s, fonts, Face::Regular, 8.5 * k, INK3, dx, dy, &deg);
     }
 }
