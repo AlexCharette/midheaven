@@ -3,6 +3,7 @@
   import { getPreferences, listModels, openLicenses, setPreferences } from "$lib/api";
   import { ayanamsas, houseSystems, locales } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
+  import { reason } from "$lib/failure";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -71,7 +72,7 @@
     try {
       await openLicenses();
     } catch (e) {
-      error = String(e);
+      error = reason(e);
     }
   }
 
@@ -94,7 +95,7 @@
       notify("preferences kept");
       onclose();
     } catch (e) {
-      error = String(e);
+      error = reason(e);
     }
   }
 </script>

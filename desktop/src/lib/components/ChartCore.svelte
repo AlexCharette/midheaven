@@ -12,6 +12,7 @@
   import CalcOptions from "./CalcOptions.svelte";
   import { swapDuration } from "$lib/motion";
   import { fade } from "svelte/transition";
+  import { reason } from "$lib/failure";
 
   let { chart }: { chart: ChartData } = $props();
 
@@ -51,7 +52,7 @@
     try {
       updateChart(await reproject(houseSystem, zodiac, zodiac === "sidereal" ? ayanamsa : null));
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
       syncToChart();
     } finally {
       reprojecting = false;

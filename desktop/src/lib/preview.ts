@@ -10,6 +10,7 @@
 import type { ChartData, PlaceDto, PreviewInput } from "./types";
 import type { MoveSource } from "./chartPose.svelte";
 import { fromMinutes } from "./civil";
+import { reason } from "./failure";
 
 /** Everything a preview is computed from. The place is nullable because the
  * calculator opens before one is resolved. */
@@ -108,7 +109,7 @@ export function createPump(ports: Ports): Pump {
           ports.settle({ ok: true, chart, warnings, minutes, first, source: src });
           first = false;
         } catch (e) {
-          ports.settle({ ok: false, reason: String(e), minutes, source: src });
+          ports.settle({ ok: false, reason: reason(e), minutes, source: src });
         }
       }
       src = queued;

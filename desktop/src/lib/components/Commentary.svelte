@@ -8,6 +8,7 @@
   import { isBusy } from "$lib/busy.svelte";
   import { hoveredTag, isPinned, pinCount, toggle, touchesPins } from "$lib/focus.svelte";
   import { notify } from "$lib/toasts.svelte";
+  import { reason } from "$lib/failure";
 
   let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
 
@@ -30,7 +31,7 @@
       updateChart(await mergeUp(id));
       notify("two passages joined");
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
@@ -49,7 +50,7 @@
       updateChart(await correctExcerpt(id, draft));
       notify("passage amended — re-sectioned");
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
@@ -76,7 +77,7 @@
       updateChart(await deleteExcerpt(exId));
       notify("passage removed");
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
@@ -98,7 +99,7 @@
       updateChart(await addExcerpt(draftText, [...draftTags]));
       notify("passage added");
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 

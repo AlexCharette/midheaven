@@ -5,6 +5,7 @@
   import { during, isBusy } from "$lib/busy.svelte";
   import { notify } from "$lib/toasts.svelte";
   import type { ReadingEntry } from "$lib/types";
+  import { reason } from "$lib/failure";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -25,7 +26,7 @@
       readingsDir = (await getPreferences()).readings_dir;
       entries = await listReadings();
     } catch (e) {
-      err = String(e);
+      err = reason(e);
     } finally {
       loading = false;
     }
@@ -43,7 +44,7 @@
       const chart = await during("compute", () => loadChart(chartPath));
       if (installReading(chart)) notify(`opened ${chart.meta.name}'s reading`);
     } catch (e) {
-      err = String(e);
+      err = reason(e);
     }
   }
 

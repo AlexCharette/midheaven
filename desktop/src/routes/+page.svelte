@@ -30,6 +30,7 @@
   import IndexOfElements from "$lib/components/IndexOfElements.svelte";
   import Wheel from "$lib/components/Wheel.svelte";
   import { onMount } from "svelte";
+  import { reason } from "$lib/failure";
 
   const reading = $derived(openChart());
   // Which passages the hover and the pins add up to is the focus module's rule,
@@ -85,7 +86,7 @@
         recTimer = setInterval(() => recSecs++, 1000);
         notify("listening — speak the reading; stop to route it");
       } catch (e) {
-        notify(`${e}`, "error");
+        notify(reason(e), "error");
       }
       return;
     }
@@ -103,7 +104,7 @@
       updateChart(routed);
       notify(`${routed.excerpts.length} passages on the chart`);
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
@@ -118,7 +119,7 @@
       const written = await saveArtifact(path);
       notify(`wrote ${written} ☞ open it in a browser`);
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
@@ -133,7 +134,7 @@
       const written = await savePdf(path);
       notify(`wrote ${written}`);
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 

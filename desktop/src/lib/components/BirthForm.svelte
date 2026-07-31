@@ -14,6 +14,7 @@
   import PlacePicker from "./PlacePicker.svelte";
   import type { PlaceDto } from "$lib/types";
   import { onMount } from "svelte";
+  import { reason } from "$lib/failure";
 
   type Initial = Partial<{
     date: string;
@@ -122,7 +123,7 @@
       }
       setModelPath(model.trim());
     } catch (e) {
-      error = String(e);
+      error = reason(e);
     }
   }
 </script>

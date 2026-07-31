@@ -7,6 +7,7 @@
 // on this one.
 
 import { listAyanamsas, listHouseSystems, listLocales } from "./api";
+import { reason } from "./failure";
 import { notify } from "./toasts.svelte";
 import type { LocaleDto, OptionDto } from "./types";
 
@@ -25,7 +26,7 @@ export async function loadLocales() {
   try {
     locales.push(...(await listLocales()));
   } catch (e) {
-    notify(`${e}`, "error");
+    notify(reason(e), "error");
   }
 }
 
@@ -35,7 +36,7 @@ export async function loadCalcOptions() {
     if (houseSystems.length === 0) houseSystems.push(...(await listHouseSystems()));
     if (ayanamsas.length === 0) ayanamsas.push(...(await listAyanamsas()));
   } catch (e) {
-    notify(`${e}`, "error");
+    notify(reason(e), "error");
   }
 }
 
