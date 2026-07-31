@@ -20,7 +20,10 @@
     whyCannotLeave,
     whyCannotRecord,
   } from "$lib/session.svelte";
-  import { app, excerptsMatching, isBusy, loadCalcOptions, loadLocales, notify, selected, visibleExcerpts } from "$lib/state.svelte";
+  import { busy, during, isBusy, setProgress } from "$lib/busy.svelte";
+  import { clearPins, mode, resetFocus, setMode, visibleExcerpts } from "$lib/focus.svelte";
+  import { canRecord, loadCalcOptions, loadLocales, modelPath, setModelPath } from "$lib/options.svelte";
+  import { notify } from "$lib/toasts.svelte";
   import Calculator from "$lib/components/Calculator.svelte";
   import ChartCore from "$lib/components/ChartCore.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
@@ -28,18 +31,13 @@
   import Wheel from "$lib/components/Wheel.svelte";
   import { onMount } from "svelte";
 
-  // With nothing pinned, hovering an element previews just its passages;
-  // once anything is pinned the hover preview stops and the commentary tracks
-  // the pinned selection (empty selection = the whole reading).
-  const previewing = $derived(selected.size === 0 && app.hovered !== null);
   const reading = $derived(openChart());
-  const visible = $derived(
-    reading
-      ? previewing
-        ? excerptsMatching(reading, [app.hovered!], "any")
-        : visibleExcerpts(reading)
-      : [],
-  );
+  // Which passages the hover and the pins add up to is the focus module's rule,
+  // not this view's — the hover-preview half of it used to live here, apart from
+  // the pin rule it completes.
+  const visible = $derived(reading ? visibleExcerpts(reading) : []);
+  // A local binding so the template can narrow the discriminated phase.
+  const phase = $derived(busy());
 
   // transcription progress can arrive during a form build or a live take
   onMount(() => {
@@ -48,18 +46,16 @@
     loadLocales();
     loadCalcOptions();
     // A configured default model enables live transcription on ANY open chart,
-    // not only ones just built through the form (which sets app.model itself) —
+    // not only ones just built through the form (which sets the path itself) —
     // so a reading opened from the library can still be transcribed onto.
-    if (!app.model) {
+    if (!canRecord()) {
       getPreferences()
         .then((p) => {
-          if (!app.model && p.default_model) app.model = p.default_model;
+          if (!canRecord() && p.default_model) setModelPath(p.default_model);
         })
         .catch(() => {});
     }
-    const unlisten = onTranscribeProgress((pct) => {
-      if (isBusy()) app.busy = { kind: "transcribe", pct };
-    });
+    const unlisten = onTranscribeProgress(setProgress);
     // Warnings the pipeline used to write to stderr now surface as toasts.
     const unlistenWarn = onBuildWarnings((ws) => ws.forEach((w) => notify(w)));
     return () => {
@@ -83,7 +79,7 @@
     if (!isRecording()) {
       try {
         // The phase turns only after the backend confirms a recorder is up.
-        await startRecording(app.model);
+        await startRecording(modelPath());
         if (!takeBegan()) return;
         recSecs = 0;
         recTimer = setInterval(() => recSecs++, 1000);
@@ -99,16 +95,15 @@
     // footer should show progress, not a stop button for a recorder that has
     // already ended. A failed transcription therefore keeps the chart it had.
     takeEnded(null);
-    app.busy = { kind: "compute" };
     notify("routing the recording…");
     try {
-      const routed = await stopRecording();
+      // `transcribe` rather than `compute`: the backend reports whole-percent
+      // progress through `setProgress`, which only lands in that phase.
+      const routed = await during("transcribe", stopRecording);
       updateChart(routed);
       notify(`${routed.excerpts.length} passages on the chart`);
     } catch (e) {
       notify(`${e}`, "error");
-    } finally {
-      app.busy = { kind: "idle" };
     }
   }
 
@@ -148,8 +143,7 @@
   // this is the backstop, and it surfaces the refusal rather than failing quietly.
   function back() {
     if (!leaveReading()) return;
-    app.hovered = null;
-    selected.clear();
+    resetFocus();
   }
 </script>
 
@@ -171,11 +165,11 @@
       <div class="toolbar">
         <span class="apparatus-text">passages touching</span>
         <span class="segmented">
-          <button aria-pressed={app.mode === "any"} onclick={() => (app.mode = "any")}>any</button>
-          <button aria-pressed={app.mode === "all"} onclick={() => (app.mode = "all")}>all</button>
+          <button aria-pressed={mode() === "any"} onclick={() => setMode("any")}>any</button>
+          <button aria-pressed={mode() === "all"} onclick={() => setMode("all")}>all</button>
         </span>
         <span class="apparatus-text">of the selection ·</span>
-        <button class="ghost" onclick={() => selected.clear()}>clear</button>
+        <button class="ghost" onclick={clearPins}>clear</button>
         <span class="count apparatus-text">{visible.length} of {reading.excerpts.length} passages</span>
       </div>
 
@@ -192,7 +186,7 @@
       title={whyCannotLeave() ?? undefined}>← new reading</button
     >
     <span class="foot-actions">
-      {#if app.model}
+      {#if canRecord()}
         <button
           class="frame-btn rec"
           class:on={isRecording()}
@@ -201,8 +195,8 @@
         >
           {#if isRecording()}
             <span class="dot" aria-hidden="true"></span> stop transcribing · {mmss(recSecs)}
-          {:else if app.busy.kind === "transcribe"}
-            transcribing… {app.busy.pct}%
+          {:else if phase.kind === "transcribe"}
+            transcribing… {phase.pct}%
           {:else}
             ◉ begin transcribing
           {/if}

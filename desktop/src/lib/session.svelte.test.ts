@@ -2,13 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { ChartData } from "./types";
 
 // `session.svelte.ts` holds one module-level `$state`, so it is a singleton:
-// each test re-imports it fresh, together with `state.svelte.ts` so both halves
+// each test re-imports it fresh, together with `toasts.svelte.ts` so both halves
 // share the same module instance and `toasts` reflects this session's refusals.
 async function fresh() {
   vi.resetModules();
   const session = await import("./session.svelte");
-  const state = await import("./state.svelte");
-  return { session, toasts: state.toasts };
+  const toastModule = await import("./toasts.svelte");
+  return { session, toasts: toastModule.toasts };
 }
 
 const chart = (name: string) => ({ meta: { name }, excerpts: [] }) as unknown as ChartData;

@@ -2,8 +2,10 @@
   import { fade, fly, slide } from "svelte/transition";
   import { expoOut } from "svelte/easing";
   import type { ChartData } from "$lib/types";
-  import { catOf, planetById, relatedTo, signOf, textGlyph } from "$lib/types";
-  import { app, focusedTag, houseSuffix, peek, selected, toggle, unpeek } from "$lib/state.svelte";
+  import { catOf, planetById, signOf, textGlyph } from "$lib/types";
+  import { occupiedTags, relatedTo } from "$lib/focus";
+  import { focusedTag, isPinned, peek, toggle, unpeek } from "$lib/focus.svelte";
+  import { houseSuffix } from "$lib/options.svelte";
   import { swapDuration } from "$lib/motion";
 
   let { chart }: { chart: ChartData } = $props();
@@ -22,13 +24,16 @@
   const suffix = $derived(houseSuffix(chart.meta.locale ?? "en"));
 
   // Relevance rule (canonical prose lives in templates/reading.html beside
-  // syncRelevance; keep the two in step): visible = occupied ∪ selected ∪
-  // expanded — occupancy means a body stands in the sign/house, and a
-  // selected filter must never hide itself.
-  const occupied = $derived(
-    new Set(chart.planets.flatMap((p) => [signOf(chart, p).id, `house:${p.house}`])),
-  );
+  // syncRelevance; keep the two in step): visible = occupied ∪ pinned ∪
+  // expanded — occupancy means a body stands in the sign/house, and a pinned
+  // filter must never hide itself.
+  const occupied = $derived(occupiedTags(chart));
   let expanded = $state<Record<string, boolean>>({ signs: false, houses: false });
+
+  // This fold is nobody else's business, so it is local state rather than a
+  // field on a shared object. Folded by default so the orrery leads; opening
+  // it reveals the full keyboard-accessible mirror.
+  let open = $state(false);
 
   interface Entry {
     tag: string;
@@ -82,10 +87,10 @@
   <button
     type="button"
     class="rubric index-summary"
-    class:open={app.indexOpen}
-    aria-expanded={app.indexOpen}
+    class:open={open}
+    aria-expanded={open}
     aria-controls="index-body"
-    onclick={() => (app.indexOpen = !app.indexOpen)}
+    onclick={() => (open = !open)}
   >
     <span class="head-group">
       <span class="lbl">Index of Elements</span>
@@ -94,12 +99,12 @@
       </span>
     </span>
   </button>
-  {#if app.indexOpen}
+  {#if open}
     <div class="index" id="index-body" transition:slide={{ duration: swapDuration(), easing: expoOut }}>
     {#each columns as col (col.head)}
       {@const filtering = col.filterable && !expanded[col.head]}
       {@const shown = filtering
-        ? col.entries.filter((e) => occupied.has(e.tag) || selected.has(e.tag))
+        ? col.entries.filter((e) => occupied.has(e.tag) || isPinned(e.tag))
         : col.entries}
       {@const hidden = col.entries.length - shown.length}
       <div class="band">
@@ -110,7 +115,7 @@
               class="entry"
               class:focus={focusTag === e.tag}
               class:rel={related.has(e.tag)}
-              aria-pressed={selected.has(e.tag)}
+              aria-pressed={isPinned(e.tag)}
               onclick={() => toggle(e.tag)}
               onmouseenter={() => peek(e.tag)}
               onmouseleave={unpeek}

@@ -4,7 +4,9 @@
   // A cusp is a longitude the chart carries, not a body, so it has no derived
   // position to read — the one case in this file that still derives.
   import { positionOf } from "$lib/derive";
-  import { app, excerptsMatching, focusedTag, notify } from "$lib/state.svelte";
+  import { passageCount } from "$lib/focus";
+  import { focusedTag } from "$lib/focus.svelte";
+  import { notify } from "$lib/toasts.svelte";
   import { updateChart, whyCannotRecalculate } from "$lib/session.svelte";
   import { reproject } from "$lib/api";
   import CalcOptions from "./CalcOptions.svelte";
@@ -62,7 +64,7 @@
   const focusTag = $derived(focusedTag());
   const cat = $derived(focusTag ? catOf(focusTag) : "");
   const count = $derived(
-    focusTag ? excerptsMatching(chart, [focusTag], "any").length : 0,
+    focusTag ? passageCount(chart, focusTag) : 0,
   );
   const passages = (n: number) => `${n} ${n === 1 ? "passage" : "passages"}`;
 

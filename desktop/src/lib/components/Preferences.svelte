@@ -1,7 +1,8 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { getPreferences, listModels, openLicenses, setPreferences } from "$lib/api";
-  import { ayanamsas, houseSystems, locales, notify } from "$lib/state.svelte";
+  import { ayanamsas, houseSystems, locales } from "$lib/options.svelte";
+  import { notify } from "$lib/toasts.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 

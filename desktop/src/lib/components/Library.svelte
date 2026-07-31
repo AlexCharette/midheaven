@@ -2,7 +2,8 @@
   import { ask, open } from "@tauri-apps/plugin-dialog";
   import { deleteReading, getPreferences, listReadings, loadChart } from "$lib/api";
   import { openReading as installReading, whyCannotOpenAnother } from "$lib/session.svelte";
-  import { app, isBusy, notify } from "$lib/state.svelte";
+  import { during, isBusy } from "$lib/busy.svelte";
+  import { notify } from "$lib/toasts.svelte";
   import type { ReadingEntry } from "$lib/types";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -38,14 +39,11 @@
   async function openReading(chartPath: string) {
     if (isBusy() || whyCannotOpenAnother()) return;
     err = "";
-    app.busy = { kind: "compute" };
     try {
-      const chart = await loadChart(chartPath);
+      const chart = await during("compute", () => loadChart(chartPath));
       if (installReading(chart)) notify(`opened ${chart.meta.name}'s reading`);
     } catch (e) {
       err = String(e);
-    } finally {
-      app.busy = { kind: "idle" };
     }
   }
 

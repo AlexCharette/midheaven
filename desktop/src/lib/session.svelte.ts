@@ -6,11 +6,11 @@
 //
 // Readers are functions rather than fields because reading a rune inside a
 // function still tracks the dependency in a template or `$derived` — the
-// convention `isBusy()` in `state.svelte.ts` already follows.
+// convention `isBusy()` in `busy.svelte.ts` already follows.
 
 import * as machine from "./session";
 import type { Session, Transition } from "./session";
-import { notify } from "./state.svelte";
+import { notify } from "./toasts.svelte";
 import type { ChartData } from "./types";
 
 const store = $state({ value: machine.IDLE as Session });

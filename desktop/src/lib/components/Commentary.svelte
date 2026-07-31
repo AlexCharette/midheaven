@@ -5,7 +5,9 @@
   import type { ChartData, Excerpt } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
   import { updateChart } from "$lib/session.svelte";
-  import { app, isBusy, notify, selected, toggle } from "$lib/state.svelte";
+  import { isBusy } from "$lib/busy.svelte";
+  import { hoveredTag, isPinned, pinCount, toggle, touchesPins } from "$lib/focus.svelte";
+  import { notify } from "$lib/toasts.svelte";
 
   let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
 
@@ -16,7 +18,7 @@
   // unambiguous when nothing filters the list — no selection and no hover
   // preview. amend/remove/add are id-based and safe under any filter, so they
   // stay available whenever the app isn't busy.
-  const mergeable = $derived(selected.size === 0 && app.hovered === null && !isBusy());
+  const mergeable = $derived(pinCount() === 0 && hoveredTag() === null && !isBusy());
   const editable = $derived(!isBusy());
 
   let editing = $state<string | null>(null);
@@ -126,7 +128,7 @@
   </div>
 {/if}
 {#each visible as ex, i (ex.id)}
-  {@const pinned = selected.size > 0 && ex.tags.some((t) => selected.has(t))}
+  {@const pinned = touchesPins(ex)}
   <article class="passage" class:pinned>
     <div class="folio">
       {#if pinned}<span class="pin-mark astro" title="tied to the pinned selection">☞</span>{/if}
@@ -170,7 +172,7 @@
       {#each ex.tags as tag, i (tag)}
         {@const el = lookup.get(tag)}
         {#if i > 0}<span class="sep"> · </span>{/if}
-        {@render refButton(tag, el?.glyph ?? "", el?.name ?? tag, selected.has(tag), () => toggle(tag))}
+        {@render refButton(tag, el?.glyph ?? "", el?.name ?? tag, isPinned(tag), () => toggle(tag))}
       {/each}
     </div>
   </article>

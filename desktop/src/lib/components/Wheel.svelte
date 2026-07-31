@@ -1,15 +1,18 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
-  import { catOf, planetById, relatedTo, signDensity, textGlyph } from "$lib/types";
+  import { catOf, planetById, textGlyph } from "$lib/types";
   import { norm360 } from "$lib/derive";
-  import { focusedTag, peek, selected, toggle, unpeek } from "$lib/state.svelte";
+  import { relatedTo, signDensity } from "$lib/focus";
+  import { focusedTag, isPinned, peek, toggle, unpeek } from "$lib/focus.svelte";
   import { prefersReducedMotion } from "$lib/motion";
   import { onMount, type Snippet } from "svelte";
 
-  // `interactive` off (the live calculator) mutes the pin/preview contract:
-  // ring drags around the plate must not flicker `app.hovered` or leak pins
-  // into `selected` for the next reading. `scrubbing` hides the derived
-  // apparatus (houses, aspect chords) while a ring is being dragged.
+  // `interactive` off (the live calculator) takes the plate out of the shared
+  // focus entirely — it neither reads it nor writes it, because there it is a
+  // display of a moment rather than an index of a reading. It used to mute only
+  // the writes, which read as a workaround for the coupling rather than a
+  // statement about the plate. `scrubbing` hides the derived apparatus (houses,
+  // aspect chords) while a ring is being dragged.
   let {
     chart,
     interactive = true,
@@ -33,7 +36,7 @@
   // preview and light up its relations, click/Enter to pin it. A pin locks the
   // focus (hover stops flipping it); otherwise the hovered tag drives the
   // illumination and the selector pointer.
-  const focusTag = $derived(focusedTag());
+  const focusTag = $derived(interactive ? focusedTag() : null);
   const related = $derived(focusTag ? relatedTo(chart, focusTag) : new Set<string>());
   const pinKey = (tag: string) => (e: KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -229,7 +232,7 @@
          set together: both "button"/0 when interactive, both absent when not) -->
     <g
       class={cls}
-      class:sel={selected.has(id)}
+      class:sel={interactive && isPinned(id)}
       class:focus={focusTag === id}
       class:rel={related.has(id)}
       role={interactive ? "button" : undefined}

@@ -3,7 +3,7 @@
   // "sidereal opts into an ayanamsa" rule, previously duplicated between the
   // birth form and the reading view's caption. Two skins: the form's italic
   // gutter grid and the cartouche's small-caps line.
-  import { ayanamsas, houseSystems } from "$lib/state.svelte";
+  import { ayanamsas, houseSystems } from "$lib/options.svelte";
 
   let {
     houseSystem = $bindable("whole-sign"),
