@@ -18,6 +18,8 @@
 //! stage owns it. [`derive`] is the same kind of module for behaviour rather
 //! than data: the longitude arithmetic every renderer would otherwise
 //! re-derive, computed once so its results can ride on `ChartData` fields.
+//! [`plate`] is the third of that kind: the engraved wheel's geometry, stated
+//! once for the three renditions that draw it.
 
 pub mod chart;
 pub mod contract;
@@ -26,6 +28,7 @@ pub mod emit;
 pub mod geo;
 pub mod i18n;
 pub mod pdf;
+pub mod plate;
 pub mod route;
 pub mod transcribe;
 

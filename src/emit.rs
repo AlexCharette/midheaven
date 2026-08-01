@@ -5,16 +5,31 @@
 use crate::contract::ChartData;
 
 const TEMPLATE: &str = include_str!("../templates/reading.html");
-const PLACEHOLDER: &str = "/*__DATA__*/null";
+const DATA: &str = "/*__DATA__*/null";
+/// The plate geometry, substituted the same way the chart is. The template used
+/// to carry its own copy of the radii and tick classes, kept in step with
+/// `src/pdf/wheel.rs` by a comment; now it is emitted from
+/// [`crate::plate::PLATE`] by the same binary that draws the paper rendition,
+/// so the two cannot disagree.
+const PLATE: &str = "/*__PLATE__*/null";
 
 pub fn emit(data: &ChartData) -> Result<String, String> {
-    let json = serde_json::to_string(data).map_err(|e| e.to_string())?;
-    // `</script>` inside a JSON string would terminate the script block early.
-    let json = json.replace("</", "<\\/");
-    match TEMPLATE.matches(PLACEHOLDER).count() {
-        1 => Ok(TEMPLATE.replacen(PLACEHOLDER, &json, 1)),
-        n => Err(format!("template must contain exactly one `{PLACEHOLDER}` placeholder, found {n}")),
+    let chart = serde_json::to_string(data).map_err(|e| e.to_string())?;
+    let plate = serde_json::to_string(&crate::plate::PLATE).map_err(|e| e.to_string())?;
+    let mut out = TEMPLATE.to_string();
+    for (placeholder, json) in [(DATA, chart), (PLATE, plate)] {
+        // `</script>` inside a JSON string would terminate the script block early.
+        let json = json.replace("</", "<\\/");
+        match out.matches(placeholder).count() {
+            1 => out = out.replacen(placeholder, &json, 1),
+            n => {
+                return Err(format!(
+                    "template must contain exactly one `{placeholder}` placeholder, found {n}"
+                ));
+            }
+        }
     }
+    Ok(out)
 }
 
 /// Render the artifact and write it — the emit-then-write idiom shared by
@@ -56,7 +71,11 @@ mod tests {
         };
         let html = emit(&data).unwrap();
         assert!(html.contains("const DATA = {"));
-        assert!(!html.contains(PLACEHOLDER));
+        assert!(!html.contains(DATA), "the chart placeholder must be filled");
+        assert!(!html.contains(PLATE), "the plate placeholder must be filled");
+        // The plate rides in the artifact, so the viewer needs no copy of it.
+        assert!(html.contains("\"decadeLen\":12"), "the emitted plate carries its tick classes");
+        assert!(html.contains("\"houseLabel\":112"), "and its radii");
         // No external references: nothing may be fetched at view time.
         // (The SVG namespace URI is an identifier, not a request.)
         for needle in ["src=", "href=", "url(", "@import", "fetch(", "XMLHttpRequest"] {

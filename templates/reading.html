@@ -337,6 +337,10 @@
 
 <script>
 const DATA = /*__DATA__*/null;
+// The engraved plate's geometry, emitted from src/plate.rs by the same binary
+// that renders the PDF. This file used to carry its own copy of the radii, the
+// tick classes and the de-crowding rule, and named the PDF as its mirror.
+const PLATE = /*__PLATE__*/null;
 
 (function () {
   if (!DATA) { document.body.innerHTML = '<p style="padding:2rem">No chart data embedded.</p>'; return; }
@@ -486,9 +490,7 @@ const DATA = /*__DATA__*/null;
   // ---------- wheel ----------
   const wheel = document.getElementById('wheel');
   const taggable = [];            // svg nodes carrying data-tag
-  // canonical radii — mirrored by desktop/src/lib/components/Wheel.svelte
-  // and src/pdf/wheel.rs; change here first, then both mirrors
-  const R = { outer: 348, bandOut: 344, signIn: 306, gradIn: 294, planet: 260, wedgeOut: 230, chord: 222, hub: 92, houseLbl: 112 };
+  const R = PLATE.radii;
 
   // engraved concentric rings (pathLength lets CSS draw them in)
   [R.outer, R.bandOut, R.signIn, R.gradIn, R.wedgeOut, R.hub, R.hub - 4].forEach((r, i) =>
@@ -500,8 +502,9 @@ const DATA = /*__DATA__*/null;
   // graduation band: 1° / 5° / 10° ticks between gradIn and signIn
   const grads = el('g', { class: 'fade-mid' }, wheel);
   for (let d = 0; d < 360; d++) {
-    const len = d % 10 === 0 ? 12 : d % 5 === 0 ? 8 : 4.5;
-    const w = d % 10 === 0 ? 0.9 : d % 5 === 0 ? 0.7 : 0.45;
+    const t = PLATE.ticks;
+    const len = d % 10 === 0 ? t.decadeLen : d % 5 === 0 ? t.fiveLen : t.unitLen;
+    const w = d % 10 === 0 ? t.decadeWidth : d % 5 === 0 ? t.fiveWidth : t.unitWidth;
     const [x1, y1] = pt(d, R.signIn), [x2, y2] = pt(d, R.signIn - len);
     el('line', { x1, y1, x2, y2, class: 'grad', 'stroke-width': w }, grads);
   }
@@ -530,7 +533,7 @@ const DATA = /*__DATA__*/null;
     svgTitle(band, `${s.name} — ${s.element}`);
     band.addEventListener('click', () => toggle(s.id));
     taggable.push(band);
-    const [gx, gy] = pt(lon + 15, 325);
+    const [gx, gy] = pt(lon + 15, R.signGlyph);
     el('text', {
       x: gx, y: gy, class: 'sign-glyph', 'text-anchor': 'middle', 'dominant-baseline': 'central',
     }, bands).textContent = textGlyph(s.glyph);
@@ -562,7 +565,7 @@ const DATA = /*__DATA__*/null;
    [DATA.axes.asc + 180, 'DC'], [DATA.axes.mc + 180, 'IC']].forEach(([lon, label]) => {
     const [x1, y1] = pt(lon, R.hub), [x2, y2] = pt(lon, R.outer);
     el('line', { x1, y1, x2, y2, class: 'axis fade-mid' }, wheel);
-    const [tx, ty] = pt(lon, R.outer + 13);
+    const [tx, ty] = pt(lon, R.outer + PLATE.axisLabelGap);
     el('text', {
       x: tx, y: ty, class: 'axis-label fade-mid', 'text-anchor': 'middle', 'dominant-baseline': 'central',
     }, wheel).textContent = label;
@@ -586,15 +589,16 @@ const DATA = /*__DATA__*/null;
   const byLon = [...DATA.planets].sort((a, b) => a.lon - b.lon);
   let prevLon = null, prevR = null;
   const radiusFor = lon => {
-    const crowded = prevLon !== null && Math.min(Math.abs(lon - prevLon), 360 - Math.abs(lon - prevLon)) < 8;
-    const r = crowded ? Math.max(prevR - 27, 176) : R.planet;
+    const c = PLATE.crowding;
+    const crowded = prevLon !== null && Math.min(Math.abs(lon - prevLon), 360 - Math.abs(lon - prevLon)) < c.thresholdDeg;
+    const r = crowded ? Math.max(prevR - c.step, c.floor) : R.planet;
     prevLon = lon; prevR = r;
     return r;
   };
   byLon.forEach((p, i) => {
     const r = radiusFor(p.lon);
     const g = el('g', { class: 'planet', 'data-tag': p.id, style: `--d: ${(0.55 + i * 0.045).toFixed(3)}s` }, wheel);
-    const [x1, y1] = pt(p.lon, R.gradIn - 8), [x2, y2] = pt(p.lon, R.gradIn);
+    const [x1, y1] = pt(p.lon, R.gradIn - PLATE.bodyTickLen), [x2, y2] = pt(p.lon, R.gradIn);
     el('line', { x1, y1, x2, y2, class: 'tick' }, g);
     const [gx, gy] = pt(p.lon, r);
     el('circle', { cx: gx, cy: gy, r: 15, class: 'halo' }, g);
@@ -603,7 +607,7 @@ const DATA = /*__DATA__*/null;
     }, g);
     t.textContent = textGlyph(p.glyph);
     if (p.glyph.length > 1) t.setAttribute('font-size', '13');
-    const [dx, dy] = pt(p.lon, r - 21);
+    const [dx, dy] = pt(p.lon, r - PLATE.degreeLabelDrop);
     el('text', {
       x: dx, y: dy, class: 'deg', 'text-anchor': 'middle', 'dominant-baseline': 'central',
     }, g).textContent = `${p.deg}°`;

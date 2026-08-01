@@ -101,10 +101,10 @@ for a fresh chart, `load_chart` for one reloaded from disk. It recomputes rather
 than trusting, so a chart saved before the fields existed and a hand-edited one
 that claims a position its longitude contradicts both come out the same.
 
-The counterpart rule: anything genuinely specific to one rendering — radii,
-glyph-crowding policy, arc construction — is *not* a derived field and stays with
-its renderer. The desktop wheel is deliberately richer than paper; that is not
-drift.
+The counterpart rule: anything specific to one rendering — arc construction,
+type sizes, colour — is *not* a derived field and stays with its renderer. The
+geometry the renditions share is not a derived field either, but it is not
+theirs to each restate: see **Plate**.
 
 Two client cases cannot read the fields and derive through
 `desktop/src/lib/derive.ts`, the one deliberate mirror of `src/derive.rs`
@@ -113,3 +113,21 @@ longitudes are tweened between previews so the backend's fields describe the
 target rather than the frame on screen, and **house cusps**, which are
 longitudes the chart carries rather than bodies and so have no derived position
 of their own.
+
+## Plate
+
+The engraved wheel's geometry — where its rings sit, how its graduations are
+classed, when crowded bodies step inward. Stated once in `src/plate.rs` and read
+by all three renditions: the PDF directly, the artifact through a `/*__PLATE__*/`
+substitution beside the chart, the desktop through the generated
+`plate.ts`.
+
+Distinct from a **derived field**, which belongs to a *chart*. A plate value
+belongs to the *drawing* and is the same for every chart.
+
+A rendition may **depart** from the plate — the orrery is deliberately richer
+than paper, so its house labels clear a core medallion the others do not draw.
+A departure is an override written next to its reason; everything not overridden
+cannot drift. What stays with the renderer regardless: arc construction (the PDF
+builds cubics where SVG writes an `A`), type sizes (points on paper against CSS
+pixels), and colour.
