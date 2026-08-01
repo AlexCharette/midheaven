@@ -6,6 +6,7 @@
   import { occupiedTags, relatedTo } from "$lib/focus";
   import { focusedTag, isPinned, peek, toggle, unpeek } from "$lib/focus.svelte";
   import { houseSuffix } from "$lib/options.svelte";
+  import { fmt, t } from "$lib/chrome.svelte";
   import { swapDuration } from "$lib/motion";
 
   let { chart }: { chart: ChartData } = $props();
@@ -42,13 +43,16 @@
     detail: string;
   }
   interface Column {
+    /** The key the fold state is stored under — not shown; `label` is. */
     head: string;
+    label: string;
     entries: Entry[];
     filterable?: boolean;
   }
   const columns: Column[] = $derived([
     {
       head: "planets",
+      label: t().bands[0],
       entries: chart.planets.map((p) => ({
         tag: p.id,
         glyph: p.glyph,
@@ -58,11 +62,13 @@
     },
     {
       head: "signs",
+      label: t().bands[1],
       filterable: true,
       entries: chart.signs.map((s) => ({ tag: s.id, glyph: s.glyph, name: s.name, detail: "" })),
     },
     {
       head: "houses",
+      label: t().bands[2],
       filterable: true,
       entries: chart.houses.map((h) => ({
         tag: h.id,
@@ -73,6 +79,7 @@
     },
     {
       head: "aspects",
+      label: t().bands[3],
       entries: chart.aspects.map((a) => ({
         tag: a.id,
         glyph: a.glyph,
@@ -93,7 +100,7 @@
     onclick={() => (open = !open)}
   >
     <span class="head-group">
-      <span class="lbl">Index of Elements</span>
+      <span class="lbl">{t().indexOfElements}</span>
       <span class="caret" aria-hidden="true">
         <svg width="11" height="7" viewBox="0 0 11 7"><path d="M1 1.2 L5.5 5.5 L10 1.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
@@ -108,7 +115,7 @@
         : col.entries}
       {@const hidden = col.entries.length - shown.length}
       <div class="band">
-        <h3>{col.head}</h3>
+        <h3>{col.label}</h3>
         <div class="entries">
           {#each shown as e (e.tag)}
             <button
@@ -130,9 +137,9 @@
             </button>
           {/each}
           {#if filtering && hidden > 0}
-            <button class="more" onclick={() => (expanded[col.head] = true)}>· {hidden} more</button>
+            <button class="more" onclick={() => (expanded[col.head] = true)}>{fmt(t().more, { n: hidden })}</button>
           {:else if col.filterable && expanded[col.head]}
-            <button class="more" onclick={() => (expanded[col.head] = false)}>· fewer</button>
+            <button class="more" onclick={() => (expanded[col.head] = false)}>{t().fewer}</button>
           {/if}
         </div>
       </div>

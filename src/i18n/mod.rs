@@ -149,6 +149,13 @@ impl Locale {
         self.table().plate_title
     }
 
+    /// The desktop app's chrome. Follows the person's language (the
+    /// `default_locale` preference), not the reading's — an astrologer writing
+    /// an English reading still wants their own buttons.
+    pub fn app(self) -> &'static AppChrome {
+        &self.table().app
+    }
+
     pub fn pdf(self) -> &'static PdfChrome {
         &self.table().pdf
     }
@@ -269,6 +276,8 @@ pub struct LocaleTable {
     pub plate_title: PlateTitle,
     /// How this language writes the PDF plate's figure caption.
     pub figure_caption: FigureCaption,
+    /// The desktop app's own window furniture.
+    pub app: AppChrome,
     pub pdf: PdfChrome,
     pub artifact: ArtifactChrome,
 }
@@ -329,6 +338,48 @@ pub struct PdfChrome {
     pub prepared_by: &'static str,
     pub index_of_elements: &'static str,
     pub commentary: &'static str,
+}
+
+/// Everything in the desktop app's own window that is not chart data.
+///
+/// The core localizes element names, the PDF has [`PdfChrome`] and the artifact
+/// [`ArtifactChrome`] — and the window that produces both was English-only, with
+/// eleven of these strings already written in `ArtifactChrome` and one of them
+/// character-for-character identical.
+///
+/// This covers the reading view. The forms and the preferences panel are still
+/// English literals in their components: translating them is authoring copy in
+/// a language, not moving it, and every string here is one that already had a
+/// Russian counterpart. Their fields belong here when someone can write them.
+///
+/// Counts are format strings with a fixed noun, matching what the artifact
+/// already ships — neither rendition inflects a Russian plural by its count.
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+pub struct AppChrome {
+    pub index_of_elements: &'static str,
+    /// Column heads of the index, in order: planets, signs, houses, aspects.
+    pub bands: [&'static str; 4],
+    pub commentary: &'static str,
+    pub passages_touching: &'static str,
+    pub any: &'static str,
+    pub all: &'static str,
+    pub any_title: &'static str,
+    pub all_title: &'static str,
+    pub of_selection: &'static str,
+    pub clear: &'static str,
+    /// `{shown}` of `{total}` passages.
+    pub count: &'static str,
+    /// `{n}` passages — a bare count, for the hub read-out and the library.
+    pub passages: &'static str,
+    pub fewer: &'static str,
+    /// `{n}` more.
+    pub more: &'static str,
+    pub wheel_aria: &'static str,
+    pub empty_none_routed: &'static str,
+    /// `{word}` is [`any`](Self::any) or [`all`](Self::all).
+    pub empty_no_match: &'static str,
 }
 
 /// Everything on the emitted artifact's page that is not chart data.
@@ -467,6 +518,66 @@ mod tests {
         let (headline, beneath) = Locale::Ru.plate_title().render("Мира Холт");
         assert_eq!(headline, "Натальная карта");
         assert_eq!(beneath, Some("Мира Холт"));
+    }
+
+    /// The window's own chrome, like the artifact's, must be complete for every
+    /// language or a Russian reading renders inside an English frame.
+    #[test]
+    fn every_locale_ships_complete_app_chrome() {
+        for loc in Locale::ALL {
+            let a = loc.app();
+            let code = loc.code();
+            for (field, value) in [
+                ("indexOfElements", a.index_of_elements),
+                ("commentary", a.commentary),
+                ("passagesTouching", a.passages_touching),
+                ("any", a.any),
+                ("all", a.all),
+                ("anyTitle", a.any_title),
+                ("allTitle", a.all_title),
+                ("ofSelection", a.of_selection),
+                ("clear", a.clear),
+                ("count", a.count),
+                ("passages", a.passages),
+                ("fewer", a.fewer),
+                ("more", a.more),
+                ("wheelAria", a.wheel_aria),
+                ("emptyNoneRouted", a.empty_none_routed),
+                ("emptyNoMatch", a.empty_no_match),
+            ] {
+                assert!(!value.trim().is_empty(), "{code}: blank {field}");
+            }
+            assert!(a.bands.iter().all(|b| !b.trim().is_empty()), "{code}: blank band head");
+            assert!(a.count.contains("{shown}") && a.count.contains("{total}"), "{code}: count");
+            assert!(a.passages.contains("{n}"), "{code}: passages");
+            assert!(a.more.contains("{n}"), "{code}: more");
+            assert!(a.empty_no_match.contains("{word}"), "{code}: emptyNoMatch");
+        }
+    }
+
+    /// The app and the artifact say the same things about the same reading, so
+    /// where they share a string it should be the same string.
+    #[test]
+    fn the_app_and_the_artifact_agree_where_they_overlap() {
+        for loc in Locale::ALL {
+            let (app, art) = (loc.app(), loc.artifact());
+            let code = loc.code();
+            for (field, a, b) in [
+                ("indexOfElements", app.index_of_elements, art.index_of_elements),
+                ("commentary", app.commentary, art.commentary),
+                ("passagesTouching", app.passages_touching, art.passages_touching),
+                ("any", app.any, art.any),
+                ("all", app.all, art.all),
+                ("ofSelection", app.of_selection, art.of_selection),
+                ("clear", app.clear, art.clear),
+                ("count", app.count, art.count),
+                ("fewer", app.fewer, art.fewer),
+                ("more", app.more, art.more),
+                ("wheelAria", app.wheel_aria, art.wheel_aria),
+            ] {
+                assert_eq!(a, b, "{code}: the two renditions disagree on {field}");
+            }
+        }
     }
 
     /// The figure caption was the last locale value living as a `match` in this

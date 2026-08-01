@@ -25,6 +25,7 @@
   import { canRecord, loadCalcOptions, loadLocales, modelPath, setModelPath } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
   import { TROPICAL } from "$lib/types";
+  import { fmt, loadChrome, t } from "$lib/chrome.svelte";
   import Calculator from "$lib/components/Calculator.svelte";
   import ChartCore from "$lib/components/ChartCore.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
@@ -47,6 +48,7 @@
     // backend once; the form and preferences selectors read it from state.
     loadLocales();
     loadCalcOptions();
+    loadChrome();
     // A configured default model enables live transcription on ANY open chart,
     // not only ones just built through the form (which sets the path itself) —
     // so a reading opened from the library can still be transcribed onto.
@@ -103,7 +105,7 @@
       // progress through `setProgress`, which only lands in that phase.
       const routed = await during("transcribe", stopRecording);
       updateChart(routed);
-      notify(`${routed.excerpts.length} passages on the chart`);
+      notify(fmt(t().passages, { n: routed.excerpts.length }));
     } catch (e) {
       notify(reason(e), "error");
     }
@@ -165,14 +167,14 @@
 
     <section>
       <div class="toolbar">
-        <span class="apparatus-text">passages touching</span>
+        <span class="apparatus-text">{t().passagesTouching}</span>
         <span class="segmented">
-          <button aria-pressed={mode() === "any"} onclick={() => setMode("any")}>any</button>
-          <button aria-pressed={mode() === "all"} onclick={() => setMode("all")}>all</button>
+          <button aria-pressed={mode() === "any"} onclick={() => setMode("any")} title={t().anyTitle}>{t().any}</button>
+          <button aria-pressed={mode() === "all"} onclick={() => setMode("all")} title={t().allTitle}>{t().all}</button>
         </span>
-        <span class="apparatus-text">of the selection ·</span>
-        <button class="ghost" onclick={clearPins}>clear</button>
-        <span class="count apparatus-text">{visible.length} of {reading.excerpts.length} passages</span>
+        <span class="apparatus-text">{t().ofSelection}</span>
+        <button class="ghost" onclick={clearPins}>{t().clear}</button>
+        <span class="count apparatus-text">{fmt(t().count, { shown: visible.length, total: reading.excerpts.length })}</span>
       </div>
 
       <IndexOfElements chart={reading} />

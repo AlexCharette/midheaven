@@ -8,6 +8,7 @@
   import { isBusy } from "$lib/busy.svelte";
   import { hoveredTag, isPinned, pinCount, toggle, touchesPins } from "$lib/focus.svelte";
   import { notify } from "$lib/toasts.svelte";
+  import { fmt, t } from "$lib/chrome.svelte";
   import { reason } from "$lib/failure";
 
   let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
@@ -115,7 +116,7 @@
   </button>
 {/snippet}
 
-<h2 class="rubric">Commentary</h2>
+<h2 class="rubric">{t().commentary}</h2>
 {#if visible.length === 0}
   <div class="empty-plate">
     <span class="mark" aria-hidden="true">✶</span>

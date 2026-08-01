@@ -7,6 +7,7 @@
   import { axisLongitudes, crowdedRadii, densityLength, focusLongitude } from "$lib/orrery";
   import { focusedTag, isPinned, peek, toggle, unpeek } from "$lib/focus.svelte";
   import { prefersReducedMotion } from "$lib/motion";
+  import { t } from "$lib/chrome.svelte";
   import { onMount, type Snippet } from "svelte";
 
   // `interactive` off (the live calculator) takes the plate out of the shared
@@ -191,7 +192,7 @@
   class:settled
   class:passive={!interactive}
   class:scrubbing
-  aria-label="Natal chart wheel; the index of elements offers the same filters"
+  aria-label={t().wheelAria}
 >
   <!-- every clickable element on the plate shares one interactive contract:
        pin on click/Enter, preview on hover/focus, and the sel/focus/rel

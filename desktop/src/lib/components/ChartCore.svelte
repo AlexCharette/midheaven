@@ -8,6 +8,7 @@
   import { focusedTag } from "$lib/focus.svelte";
   import { defaults } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
+  import { fmt, t } from "$lib/chrome.svelte";
   import { applyRecalculation, whyCannotRecalculate } from "$lib/session.svelte";
   import { during, isBusy } from "$lib/busy.svelte";
   import { reproject } from "$lib/api";
@@ -55,7 +56,7 @@
   const count = $derived(
     focusTag ? passageCount(chart, focusTag) : 0,
   );
-  const passages = (n: number) => `${n} ${n === 1 ? "passage" : "passages"}`;
+  const passages = (n: number) => fmt(t().passages, { n });
 
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
   const planetGlyph = (id: string) => planetById(chart, id)?.glyph ?? "";

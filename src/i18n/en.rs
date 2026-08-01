@@ -3,7 +3,7 @@
 //! lists) so English output never shifts — the tests in `super` guard it.
 
 use super::{
-    ArtifactChrome, AspectEntry, Entry, FigureCaption, HouseEntry, LocaleTable, PdfChrome,
+    AppChrome, ArtifactChrome, AspectEntry, Entry, FigureCaption, HouseEntry, LocaleTable, PdfChrome,
     PlateTitle,
 };
 
@@ -20,6 +20,25 @@ pub static TABLE: LocaleTable = LocaleTable {
     endonym: "English",
     house_suffix: " House",
     plate_title: PlateTitle::Inline("{name}'s birth chart"),
+    app: AppChrome {
+        index_of_elements: "Index of Elements",
+        bands: ["planets", "signs", "houses", "aspects"],
+        commentary: "Commentary",
+        passages_touching: "passages touching",
+        any: "any",
+        all: "all",
+        any_title: "Passages touching any selected element",
+        all_title: "Only passages touching every selected element",
+        of_selection: "of the selection \u{b7}",
+        clear: "clear",
+        count: "{shown} of {total} passages",
+        passages: "{n} passages",
+        fewer: "\u{b7} fewer",
+        more: "\u{b7} {n} more",
+        wheel_aria: "Natal chart wheel; the index of elements offers the same filters",
+        empty_none_routed: "No passages are filed under this chart yet.",
+        empty_no_match: "No passage touches {word} of the selected elements.",
+    },
     figure_caption: FigureCaption {
         template: "Fig. I. \u{2014} The natal figure of {name}, calculated for {born}{place}. \
                    {system} houses upon the {zodiac} zodiac.",

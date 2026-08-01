@@ -15,6 +15,7 @@
   import PlacePicker from "./PlacePicker.svelte";
   import type { PlaceDto } from "$lib/types";
   import { onMount } from "svelte";
+  import { basename } from "$lib/files";
   import { reason } from "$lib/failure";
 
   type Initial = Partial<{
@@ -55,9 +56,6 @@
   let ayanamsa = $state(initial?.ayanamsa ?? "");
   let error = $state("");
 
-  // the model is picked as a file but read as a name — the path is backend
-  // detail, the basename is what a person recognizes
-  const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
   // the preferred model / default language prefill untouched fields; the
   // calculator's `initial` values were seeded above, so they win

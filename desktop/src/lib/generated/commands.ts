@@ -10,6 +10,7 @@ export type CommandName =
   | "list_house_systems"
   | "list_ayanamsas"
   | "calculation_defaults"
+  | "app_chrome"
   | "build"
   | "reproject"
   | "preview"

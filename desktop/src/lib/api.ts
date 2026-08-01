@@ -19,6 +19,7 @@ import { listen } from "@tauri-apps/api/event";
 import { reason } from "./failure";
 import type { CommandName } from "./generated/commands";
 import type {
+  AppChrome,
   BirthForm,
   CalculationDefaults,
   ChartData,
@@ -65,6 +66,10 @@ export const listAyanamsas = () => call<OptionDto[]>("list_ayanamsas");
  * three codes are written. */
 export const calculationDefaults = () =>
   call<CalculationDefaults>("calculation_defaults");
+
+/** The app's own window furniture, in the person's language — the reading
+ * view's share of it; the forms are still English in their components. */
+export const appChrome = () => call<AppChrome>("app_chrome");
 
 export const build = (form: BirthForm) => call<ChartData>("build", { form });
 

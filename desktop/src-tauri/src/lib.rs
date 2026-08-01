@@ -83,6 +83,19 @@ fn list_locales() -> Vec<LocaleDto> {
         .collect()
 }
 
+/// The app's own window furniture, in the person's language.
+///
+/// The core has localized element names since the beginning, the PDF and the
+/// artifact have had chrome tables for a while, and the window that produces
+/// both was English-only. This serves the reading view's share of it; the forms
+/// are still English in their components.
+#[tauri::command]
+fn app_chrome(app: AppHandle) -> &'static astro::i18n::AppChrome {
+    // The person's language, not the reading's: an astrologer writing an
+    // English reading still wants their own buttons.
+    astro::i18n::Locale::parse(prefs::load(&app).default_locale.as_deref().unwrap_or("en")).app()
+}
+
 /// The calculation a form starts from when nothing has been chosen and nothing
 /// is preferred — served so the webview stops restating the three codes.
 #[derive(Serialize)]
@@ -839,6 +852,7 @@ macro_rules! commands {
             list_house_systems,
             list_ayanamsas,
             calculation_defaults,
+            app_chrome,
             build,
             reproject,
             preview,

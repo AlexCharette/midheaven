@@ -4,6 +4,7 @@
   import { ayanamsas, defaults, houseSystems, locales } from "$lib/options.svelte";
   import { SIDEREAL, TROPICAL } from "$lib/types";
   import { notify } from "$lib/toasts.svelte";
+  import { basename } from "$lib/files";
   import { reason } from "$lib/failure";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -24,7 +25,6 @@
   // save so keeping preferences never erases it.
   let lastPlaceId = $state<number | null>(null);
 
-  const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
   async function refreshModels() {
     const found = modelsDir.trim() ? await listModels(modelsDir) : [];
