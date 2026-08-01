@@ -119,11 +119,28 @@ pub struct Calculation {
     pub ayanamsa: Option<Ayanamsa>,
 }
 
-/// Whether a zodiac code means sidereal. The one home for the comparison — it
-/// was written four ways across two languages, two of them neither trimming nor
-/// ignoring case.
-pub fn is_sidereal(zodiac: &str) -> bool {
-    zodiac.trim().eq_ignore_ascii_case("sidereal")
+/// The two zodiacs. Unlike the house systems and ayanamsas there is no table to
+/// look up — there are two of them — but they are still wire codes, and a code
+/// the app does not know still has to be refused rather than guessed at.
+pub const ZODIACS: &[&str] = &["tropical", "sidereal"];
+
+/// Whether a zodiac code means sidereal.
+///
+/// Refuses anything that is neither, the same stance [`house_system`] and
+/// [`ayanamsa`] take. It used to return a bare `bool`, which meant an unknown
+/// code was silently tropical here — and its one other caller then wrote
+/// `!is_sidereal(z) && z != "tropical"` to catch that, a comparison that
+/// trimmed and case-folded on one side and not the other, so `" Tropical "` was
+/// refused while `" Sidereal "` passed.
+pub fn is_sidereal(zodiac: &str) -> Result<bool, String> {
+    let code = zodiac.trim();
+    if code.eq_ignore_ascii_case("sidereal") {
+        Ok(true)
+    } else if code.eq_ignore_ascii_case("tropical") {
+        Ok(false)
+    } else {
+        Err(format!("unknown zodiac {code:?}"))
+    }
 }
 
 /// The three-tier rule, once: what was `asked` for, else what is `preferred`,
@@ -145,7 +162,7 @@ pub fn resolve(asked: Codes, preferred: Codes) -> Result<Calculation, String> {
             preferred.house_system,
             DEFAULTS.house_system,
         ))?,
-        ayanamsa: if is_sidereal(zodiac) {
+        ayanamsa: if is_sidereal(zodiac)? {
             Some(ayanamsa(pick(asked.ayanamsa, preferred.ayanamsa, DEFAULTS.ayanamsa))?)
         } else {
             None
@@ -192,16 +209,38 @@ mod tests {
         assert!(house_system(DEFAULTS.house_system.unwrap()).is_ok());
         assert!(ayanamsa(DEFAULTS.ayanamsa.unwrap()).is_ok());
         assert_eq!(house_system(DEFAULTS.house_system.unwrap()).unwrap(), DEFAULT_HOUSE_SYSTEM);
-        assert!(!is_sidereal(DEFAULTS.zodiac.unwrap()));
+        assert!(!is_sidereal(DEFAULTS.zodiac.unwrap()).unwrap());
+    }
+
+    /// Both codes are read the same way. The asymmetry this replaced accepted
+    /// `" Sidereal "` and refused `" Tropical "`.
+    #[test]
+    fn either_zodiac_is_recognized_however_it_arrives() {
+        for spelling in ["sidereal", "  Sidereal  ", "SIDEREAL"] {
+            assert!(is_sidereal(spelling).unwrap(), "{spelling:?} is sidereal");
+        }
+        for spelling in ["tropical", "  Tropical  ", "TROPICAL"] {
+            assert!(!is_sidereal(spelling).unwrap(), "{spelling:?} is not sidereal");
+        }
     }
 
     #[test]
-    fn sidereal_is_recognized_however_it_arrives() {
-        assert!(is_sidereal("sidereal"));
-        assert!(is_sidereal("  Sidereal  "));
-        assert!(is_sidereal("SIDEREAL"));
-        assert!(!is_sidereal("tropical"));
-        assert!(!is_sidereal(""));
+    fn an_unknown_zodiac_is_refused_rather_than_read_as_tropical() {
+        for bad in ["", "  ", "nonsense", "siderial"] {
+            assert!(is_sidereal(bad).is_err(), "{bad:?} should be refused");
+        }
+        assert!(is_sidereal("bogus").unwrap_err().contains("bogus"));
+        // And it refuses the whole calculation, as an unknown house system does.
+        let err = resolve(Codes::new(None, Some("bogus"), None), Codes::default()).unwrap_err();
+        assert!(err.contains("bogus"), "{err}");
+    }
+
+    #[test]
+    fn the_two_zodiac_codes_are_the_ones_the_resolver_accepts() {
+        for code in ZODIACS {
+            assert!(is_sidereal(code).is_ok(), "{code:?}");
+        }
+        assert!(ZODIACS.contains(&DEFAULTS.zodiac.unwrap()));
     }
 
     #[test]

@@ -90,15 +90,16 @@ export function takeEnded(chart: ChartData | null): boolean {
   return apply(machine.recordingStopped(store.value, chart));
 }
 
-/** A command returned an updated chart for the reading already open — curation,
- * or a completed recalculation. Keeps the phase, so curating mid-take does not
- * end the take. */
 /** Apply a recalculated chart. Unlike `updateChart` this is refused mid-take,
  * because a reproject is a round trip and a take can begin while it is out. */
 export function applyRecalculation(chart: ChartData): boolean {
   return apply(machine.recalculated(store.value, chart));
 }
 
+/** A command returned an updated chart for the reading already open — curation:
+ * a merge, an amendment, a filing, a deletion. Keeps the phase, so curating
+ * mid-take does not end the take. A completed *recalculation* goes through
+ * `applyRecalculation`, which is refused mid-take. */
 export function updateChart(chart: ChartData): boolean {
   return apply(machine.chartReplaced(store.value, chart));
 }

@@ -131,7 +131,6 @@ impl Locale {
         }
     }
 
-    /// The persona used when no name is given.
     /// A chart holder's display name: what was given, or the locale's anonymous
     /// persona when nothing was. The one home for the blank-name rule — the CLI
     /// and `birth_at_place` each used to state it.
@@ -140,11 +139,11 @@ impl Locale {
         if name.is_empty() { self.anonymous() } else { name }
     }
 
+    /// The persona used when no name is given.
     pub fn anonymous(self) -> &'static str {
         self.table().anonymous
     }
 
-    /// Fixed PDF chrome for this locale.
     /// The emitted artifact's chrome. No English fallback: a locale with a
     /// table has a complete one, and `parse` already sent anything unknown to
     /// English before it got here.
@@ -164,6 +163,7 @@ impl Locale {
         &self.table().app
     }
 
+    /// Fixed PDF chrome for this locale.
     pub fn pdf(self) -> &'static PdfChrome {
         &self.table().pdf
     }
@@ -416,8 +416,9 @@ pub struct AppChrome {
 /// It used to be a `UI = { en, ru }` object inside `templates/reading.html`,
 /// parallel to this module rather than derived from it: adding a language meant
 /// editing a Rust table *and* an HTML template, and the two had already drifted
-/// (see [`ArtifactChrome::birth_chart_of`]). `emit` now substitutes this beside
-/// the chart, so the template holds no strings of its own.
+/// — the PDF's title line said "The Nativity of" where the artifact's said "The
+/// Birth Chart of" (since resolved; see [`PlateTitle`]). `emit` now substitutes
+/// this beside the chart, so the template holds no strings of its own.
 ///
 /// The three fields ending in a placeholder are format strings; the viewer
 /// substitutes `{…}` by name.

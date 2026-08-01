@@ -20,13 +20,16 @@ import { createChartPose, type MoveSource } from "./chartPose.svelte";
 import { poseOf, project } from "./pose";
 import { createPump, requestFor, type Draft, type Outcome } from "./preview";
 
-// The calculation codes come from `options`, which serves what the backend
-// states — they are not written here. `Calculator` re-seeds them from
-// preferences at mount.
+// The calculation codes are not written here and not guessed: blank means "not
+// chosen", which is exactly what the backend's ladder does with a blank code.
+// `Calculator` seeds them from preferences at mount if there are any, and
+// `options()` shows the backend's default for whatever is still unstated.
 const draft = $state<Draft>({
   minutes: 0,
   place: null,
-  ...optionDefaults(),
+  houseSystem: "",
+  zodiac: "",
+  ayanamsa: "",
   lang: "en",
 });
 
@@ -91,12 +94,21 @@ const pump = createPump({
 /** The drafted civil instant, in minutes. */
 export const minutes = (): number => draft.minutes;
 export const place = (): PlaceDto | null => draft.place;
-export const options = () => ({
-  houseSystem: draft.houseSystem,
-  zodiac: draft.zodiac,
-  ayanamsa: draft.ayanamsa,
-  lang: draft.lang,
-});
+/** The calculation the selectors show.
+ *
+ * The draft holds what was *chosen*; blank means nothing was, and the backend's
+ * default stands in — the same reading of a blank code that `Codes::new` gives
+ * it on the other side of the wire. So the selectors show the real default as
+ * soon as it arrives, and the draft never carries a second copy of it. */
+export const options = () => {
+  const d = optionDefaults();
+  return {
+    houseSystem: draft.houseSystem || d.houseSystem,
+    zodiac: draft.zodiac || d.zodiac,
+    ayanamsa: draft.ayanamsa || d.ayanamsa,
+    lang: draft.lang,
+  };
+};
 export const isSeeded = (): boolean => draft.minutes !== 0;
 
 export const pending = (): boolean => result.pending;

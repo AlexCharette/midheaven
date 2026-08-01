@@ -142,13 +142,20 @@ Chosen as wire codes (`whole-sign`, `tropical`, `lahiri`), resolved to types by
 One ladder, one home for the three default codes. There were four ladders in two
 languages — the build command's, the preview command's with no preference tier,
 and two on the frontend gated on different conditions — and the codes appeared
-64 times across the core, the CLI, the command layer and four components. The
-webview reads them from `calculation_defaults` rather than restating them.
+64 times across the core, the CLI, the command layer and four components.
 
-An unknown code is **refused**, not defaulted. It used to become Whole Sign in
-silence, so a typo, a stale preference and a real choice were the same input:
-the chart came back claiming `whole-sign`, the reading view's selector snapped
-to match, and nothing was said.
+The webview holds **no copy of the codes**: it reads them from
+`calculation_defaults`, and until that answers its own are **blank**. A blank
+code means *not stated*, which is what `Codes::new` already does with one — so
+the first frame asks for the backend's defaults by saying nothing, rather than by
+naming them and hoping the two agree. What a selector *shows* for an unstated
+code is the served default, resolved at the read.
+
+An unknown code is **refused**, not defaulted — house system, ayanamsa and
+zodiac alike. Each used to become the historical default in silence, so a typo, a
+stale preference and a real choice were the same input: the chart came back
+claiming `whole-sign`, the reading view's selector snapped to match, and nothing
+was said.
 
 ## Plate title
 

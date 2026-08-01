@@ -9,7 +9,6 @@
 import { calculationDefaults, listAyanamsas, listHouseSystems, listLocales } from "./api";
 import { reason } from "./failure";
 import { notify } from "./toasts.svelte";
-import { TROPICAL } from "./types";
 import type { CalculationDefaults, LocaleDto, OptionDto } from "./types";
 
 /** Reading languages offered in the UI (`list_locales`): endonym labels for the
@@ -33,16 +32,15 @@ export async function loadLocales() {
 
 /** The calculation a form starts from when nothing has been chosen.
  *
- * Served by the backend rather than restated here: these three codes used to be
- * written out in five places on this side and five more in Rust, so
- * `chart::systems::DEFAULTS` is now the only one. The initial values below are
- * what a form shows for the instant before `loadCalcOptions` answers. */
-const fallback: CalculationDefaults = {
-  houseSystem: "whole-sign",
-  zodiac: TROPICAL,
-  ayanamsa: "lahiri",
-};
-const calcDefaults = $state({ value: fallback });
+ * Served by the backend rather than restated here: `chart::systems::DEFAULTS` is
+ * the only place the three codes are written. Before `loadCalcOptions` answers
+ * they are *blank*, not guessed — a blank code means "not stated", which is what
+ * the backend's ladder already does with one (`Codes::new` filters empties, and
+ * `a_blank_choice_is_no_choice` pins it). So the first frame asks for the
+ * backend's defaults by saying nothing, rather than by naming them and hoping
+ * the two agree. */
+const unstated: CalculationDefaults = { houseSystem: "", zodiac: "", ayanamsa: "" };
+const calcDefaults = $state({ value: unstated });
 
 export const defaults = (): CalculationDefaults => calcDefaults.value;
 

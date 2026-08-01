@@ -695,7 +695,13 @@ fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), Stri
     // The calculation preferences were the four this never checked, so a
     // nonsense value persisted and then quietly became Whole Sign on every
     // build. Resolving them here refuses at the point a person can still see
-    // what they typed. Sidereal so the ayanamsa is checked too.
+    // what they typed.
+    //
+    // The ladder only consults an ayanamsa under a sidereal zodiac, so this asks
+    // for sidereal to have it checked, then checks the stored zodiac on its own.
+    // Both go through `systems` — the hand-written comparison this replaced
+    // trimmed and case-folded on one side only, so `" Tropical "` was refused
+    // while `" Sidereal "` passed.
     systems::resolve(
         systems::Codes::default(),
         systems::Codes::new(
@@ -705,9 +711,7 @@ fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), Stri
         ),
     )?;
     if let Some(z) = &prefs.default_zodiac {
-        if !systems::is_sidereal(z) && z != "tropical" {
-            return Err(format!("unknown zodiac {z:?}"));
-        }
+        systems::is_sidereal(z)?;
     }
     for (label, dir) in [("models folder", &prefs.models_dir), ("readings folder", &prefs.readings_dir)] {
         if let Some(d) = dir {
