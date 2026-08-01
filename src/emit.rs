@@ -12,12 +12,18 @@ const DATA: &str = "/*__DATA__*/null";
 /// [`crate::plate::PLATE`] by the same binary that draws the paper rendition,
 /// so the two cannot disagree.
 const PLATE: &str = "/*__PLATE__*/null";
+/// The viewer's own furniture, in the reading's language. Substituted the same
+/// way, from `i18n` — the template used to carry a `UI = { en, ru }` table
+/// parallel to the Rust one, so adding a language meant editing both.
+const CHROME: &str = "/*__CHROME__*/null";
 
 pub fn emit(data: &ChartData) -> Result<String, String> {
     let chart = serde_json::to_string(data).map_err(|e| e.to_string())?;
     let plate = serde_json::to_string(&crate::plate::PLATE).map_err(|e| e.to_string())?;
+    let chrome = crate::i18n::Locale::parse(&data.meta.locale).artifact();
+    let chrome = serde_json::to_string(chrome).map_err(|e| e.to_string())?;
     let mut out = TEMPLATE.to_string();
-    for (placeholder, json) in [(DATA, chart), (PLATE, plate)] {
+    for (placeholder, json) in [(DATA, chart), (PLATE, plate), (CHROME, chrome)] {
         // `</script>` inside a JSON string would terminate the script block early.
         let json = json.replace("</", "<\\/");
         match out.matches(placeholder).count() {
@@ -73,6 +79,7 @@ mod tests {
         assert!(html.contains("const DATA = {"));
         assert!(!html.contains(DATA), "the chart placeholder must be filled");
         assert!(!html.contains(PLATE), "the plate placeholder must be filled");
+        assert!(!html.contains(CHROME), "the chrome placeholder must be filled");
         // The plate rides in the artifact, so the viewer needs no copy of it.
         assert!(html.contains("\"decadeLen\":12"), "the emitted plate carries its tick classes");
         assert!(html.contains("\"houseLabel\":112"), "and its radii");

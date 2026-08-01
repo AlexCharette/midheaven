@@ -9,14 +9,14 @@
 // restated four times — once as the canonical `excerptsMatching`, once in
 // `+page.svelte` for the hover preview, once in `ChartCore` for the hub count,
 // and once in `Commentary` as an inline `.some(t => selected.has(t))`. Each
-// restatement was the same contract rule spelled differently, so a change to it
-// had four places to reach.
+// restatement was the same rule spelled differently, so a change to it had four
+// places to reach.
 
 import type { ChartData, Excerpt } from "./types";
 import { catOf, planetById, signOf } from "./types";
 
 /** How a multi-tag selection filters: `any` = the passage touches one of the
- * tags, `all` = it touches every one. Mirrors `contract::Mode`. */
+ * tags, `all` = it touches every one. */
 export type Mode = "any" | "all";
 
 /** What the reading is pointing at.
@@ -63,9 +63,14 @@ export const withMode = (f: Focus, mode: Mode): Focus => ({ ...f, mode });
 
 // ---- what the focus selects ----
 
-/** The contract's `Excerpt::matches` semantics, mirrored (as the artifact
- * mirrors them too): an empty tag list shows everything; `any` = intersection,
- * `all` = superset. The one home for this rule on the client. */
+/** An empty tag list shows everything; `any` = the passage touches one of the
+ * tags, `all` = it touches every one.
+ *
+ * The one home for this rule in the app. The emitted artifact states it a second
+ * time (`matches` in `templates/reading.html`) because it is a standalone file
+ * that cannot import this one — that copy is the only other, and it says so.
+ * Rust used to carry a third in `contract.rs`, documented as the shared one and
+ * called by nobody. */
 export function matching(chart: ChartData, tags: string[], mode: Mode): Excerpt[] {
   if (tags.length === 0) return chart.excerpts;
   const has = (ex: Excerpt) => (t: string) => ex.tags.includes(t);

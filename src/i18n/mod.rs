@@ -137,6 +137,13 @@ impl Locale {
     }
 
     /// Fixed PDF chrome for this locale.
+    /// The emitted artifact's chrome. No English fallback: a locale with a
+    /// table has a complete one, and `parse` already sent anything unknown to
+    /// English before it got here.
+    pub fn artifact(self) -> &'static ArtifactChrome {
+        &self.table().artifact
+    }
+
     pub fn pdf(self) -> &'static PdfChrome {
         &self.table().pdf
     }
@@ -219,6 +226,7 @@ pub struct LocaleTable {
     /// lets a viewer show the bare ordinal without re-encoding the mapping.
     pub house_suffix: &'static str,
     pub pdf: PdfChrome,
+    pub artifact: ArtifactChrome,
 }
 
 /// A named element and the words that route to it.
@@ -241,8 +249,10 @@ pub struct AspectEntry {
     pub match_words: &'static [&'static str],
 }
 
-/// Fixed rubrics rendered into the PDF (the artifact's chrome lives in the
-/// template instead — see `templates/reading.html`).
+/// Fixed rubrics rendered into the PDF. The artifact's own furniture is
+/// [`ArtifactChrome`]; the two are separate because the renditions differ (the
+/// artifact has filter controls and empty states, paper has neither), but both
+/// live here.
 pub struct PdfChrome {
     /// Title line before the holder's name.
     pub nativity_of: &'static str,
@@ -250,6 +260,53 @@ pub struct PdfChrome {
     pub prepared_by: &'static str,
     pub index_of_elements: &'static str,
     pub commentary: &'static str,
+}
+
+/// Everything on the emitted artifact's page that is not chart data.
+///
+/// It used to be a `UI = { en, ru }` object inside `templates/reading.html`,
+/// parallel to this module rather than derived from it: adding a language meant
+/// editing a Rust table *and* an HTML template, and the two had already drifted
+/// (see [`ArtifactChrome::birth_chart_of`]). `emit` now substitutes this beside
+/// the chart, so the template holds no strings of its own.
+///
+/// The three fields ending in a placeholder are format strings; the viewer
+/// substitutes `{…}` by name.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactChrome {
+    /// Browser tab title, after the holder's name.
+    pub natal_reading: &'static str,
+    /// The line above the holder's name.
+    ///
+    /// The PDF words this differently — [`PdfChrome::nativity_of`] is "The
+    /// Nativity of" against "The Birth Chart of" here. That divergence dates
+    /// from when the two lived in separate files and nobody could see both at
+    /// once; kept as it shipped rather than silently rewording either
+    /// rendition's copy, but it is now visible in one place.
+    pub birth_chart_of: &'static str,
+    pub index_of_elements: &'static str,
+    /// Column heads of the index, in order: planets, signs, houses, aspects.
+    pub bands: [&'static str; 4],
+    pub passages_touching: &'static str,
+    pub any: &'static str,
+    pub all: &'static str,
+    pub any_title: &'static str,
+    pub all_title: &'static str,
+    pub of_selection: &'static str,
+    pub clear: &'static str,
+    pub commentary: &'static str,
+    pub prepared_by: &'static str,
+    pub wheel_aria: &'static str,
+    /// `{shown}` of `{total}` passages.
+    pub count: &'static str,
+    pub no_passages_routed: &'static str,
+    pub empty_none_routed: &'static str,
+    /// `{word}` is [`any`](Self::any) or [`all`](Self::all).
+    pub empty_no_match: &'static str,
+    pub fewer: &'static str,
+    /// `{n}` more.
+    pub more: &'static str,
 }
 
 fn entry(table: &'static [Entry], slug: &str) -> Option<&'static Entry> {
@@ -267,6 +324,69 @@ fn aspect(table: &'static [AspectEntry], kind: &str) -> Option<&'static AspectEn
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every locale must ship complete artifact chrome. This was a `UI` object
+    /// in an HTML template with no check at all — a language could be added to
+    /// Rust and the artifact would silently render English furniture around its
+    /// data. Now the table will not compile without it, and this pins the
+    /// strings against being left blank.
+    #[test]
+    fn every_locale_ships_complete_artifact_chrome() {
+        for loc in Locale::ALL {
+            let a = loc.artifact();
+            let singles = [
+                ("natalReading", a.natal_reading),
+                ("birthChartOf", a.birth_chart_of),
+                ("indexOfElements", a.index_of_elements),
+                ("passagesTouching", a.passages_touching),
+                ("any", a.any),
+                ("all", a.all),
+                ("anyTitle", a.any_title),
+                ("allTitle", a.all_title),
+                ("ofSelection", a.of_selection),
+                ("clear", a.clear),
+                ("commentary", a.commentary),
+                ("preparedBy", a.prepared_by),
+                ("wheelAria", a.wheel_aria),
+                ("count", a.count),
+                ("noPassagesRouted", a.no_passages_routed),
+                ("emptyNoneRouted", a.empty_none_routed),
+                ("emptyNoMatch", a.empty_no_match),
+                ("fewer", a.fewer),
+                ("more", a.more),
+            ];
+            for (field, value) in singles {
+                assert!(!value.trim().is_empty(), "{:?} has an empty {field}", loc.code());
+            }
+            assert!(
+                a.bands.iter().all(|b| !b.trim().is_empty()),
+                "{:?} has a blank index column head",
+                loc.code()
+            );
+        }
+    }
+
+    /// The chrome's format strings carry the placeholders the viewer
+    /// substitutes. A typo here renders a literal `{shown}` on the page.
+    #[test]
+    fn the_chrome_format_strings_carry_their_placeholders() {
+        for loc in Locale::ALL {
+            let a = loc.artifact();
+            let code = loc.code();
+            assert!(a.count.contains("{shown}") && a.count.contains("{total}"), "{code}: count");
+            assert!(a.empty_no_match.contains("{word}"), "{code}: emptyNoMatch");
+            assert!(a.more.contains("{n}"), "{code}: more");
+            // And no other field pretends to take one.
+            for (field, value) in [
+                ("natalReading", a.natal_reading),
+                ("birthChartOf", a.birth_chart_of),
+                ("clear", a.clear),
+                ("fewer", a.fewer),
+            ] {
+                assert!(!value.contains('{'), "{code}: {field} has a stray placeholder");
+            }
+        }
+    }
 
     #[test]
     fn parse_is_lenient_and_defaults_to_english() {

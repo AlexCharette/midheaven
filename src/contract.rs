@@ -131,13 +131,14 @@ pub struct Segment {
     pub text: String,
 }
 
-/// Filter match mode for excerpt selections, shared by every viewer
-/// (the HTML template implements the same semantics in JS).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Mode {
-    Any,
-    All,
-}
+// The excerpt filter mode and `Excerpt::matches` used to live here, documented
+// as "shared by every viewer". They were shared by none: both viewers are
+// JavaScript and implement it themselves — `desktop/src/lib/focus.ts`'s
+// `matching` for the app, and `templates/reading.html`'s `matches` for the
+// artifact — and nothing in Rust ever filtered a passage, because the PDF prints
+// them all. A third statement of a rule, in the module whose job is to be the
+// shared contract, that no caller could reach. Deleting it concentrated nothing,
+// which is what made it safe to delete.
 
 impl Excerpt {
     /// Merge a later passage into this one: the span extends to cover both,
@@ -150,18 +151,6 @@ impl Excerpt {
         tags.sort();
         tags.dedup();
         self.tags = tags;
-    }
-
-    /// An empty selection matches everything; Any = the excerpt touches any
-    /// selected tag; All = it touches every one.
-    pub fn matches(&self, selected: &BTreeSet<String>, mode: Mode) -> bool {
-        if selected.is_empty() {
-            return true;
-        }
-        match mode {
-            Mode::Any => selected.iter().any(|t| self.tags.contains(t)),
-            Mode::All => selected.iter().all(|t| self.tags.contains(t)),
-        }
     }
 }
 

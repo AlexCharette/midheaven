@@ -341,6 +341,11 @@ const DATA = /*__DATA__*/null;
 // that renders the PDF. This file used to carry its own copy of the radii, the
 // tick classes and the de-crowding rule, and named the PDF as its mirror.
 const PLATE = /*__PLATE__*/null;
+// The viewer's own furniture, in the reading's language, emitted from
+// src/i18n. This file used to carry a `UI = { en, ru }` table parallel to the
+// Rust one, so adding a language meant editing both — and the two had already
+// drifted on the title line.
+const CHROME = /*__CHROME__*/null;
 
 (function () {
   if (!DATA) { document.body.innerHTML = '<p style="padding:2rem">No chart data embedded.</p>'; return; }
@@ -394,59 +399,14 @@ const PLATE = /*__PLATE__*/null;
   };
 
   // ---------- localized chrome ----------
-  // Element names/glyphs arrive already localized in DATA; only the viewer's
-  // own chrome (labels, controls, empty states) lives here, keyed by
-  // DATA.meta.locale. Adding a language = adding a block. en must stay
-  // byte-identical to the original strings.
-  const UI = {
-    en: {
-      natalReading: 'Natal Reading',
-      birthChartOf: 'The Birth Chart of',
-      indexOfElements: 'Index of Elements',
-      bands: ['planets', 'signs', 'houses', 'aspects'],
-      passagesTouching: 'passages touching',
-      any: 'any', all: 'all',
-      anyTitle: 'Passages touching any selected element',
-      allTitle: 'Only passages touching every selected element',
-      ofSelection: 'of the selection ·',
-      clear: 'clear',
-      commentary: 'Commentary',
-      preparedBy: 'prepared by',
-      houseSuffix: ' House',
-      wheelAria: 'Natal chart wheel; the index of elements offers the same filters',
-      count: (v, t) => `${v} of ${t} passages`,
-      noPassagesRouted: 'no passages routed',
-      emptyNoneRouted: 'No transcript passages were routed to this chart.',
-      emptyNoMatch: word =>
-        `No passage touches ${word} of the selected elements — clear the selection to see everything.`,
-      fewer: '· fewer',
-      more: n => `· ${n} more`,
-    },
-    ru: {
-      natalReading: 'Натальный разбор',
-      birthChartOf: 'Натальная карта',
-      indexOfElements: 'Указатель элементов',
-      bands: ['планеты', 'знаки', 'дома', 'аспекты'],
-      passagesTouching: 'фрагменты, затрагивающие',
-      any: 'любой', all: 'все',
-      anyTitle: 'Фрагменты, затрагивающие любой выбранный элемент',
-      allTitle: 'Только фрагменты, затрагивающие все выбранные элементы',
-      ofSelection: 'из выбранного ·',
-      clear: 'сбросить',
-      commentary: 'Комментарий',
-      preparedBy: 'подготовил',
-      houseSuffix: ' дом',
-      wheelAria: 'Колесо натальной карты; указатель элементов даёт те же фильтры',
-      count: (v, t) => `${v} из ${t} фрагментов`,
-      noPassagesRouted: 'нет отнесённых фрагментов',
-      emptyNoneRouted: 'Ни один фрагмент транскрипта не отнесён к этой карте.',
-      emptyNoMatch: word =>
-        `Ни один фрагмент не затрагивает ${word} выбранных элементов — сбросьте выбор, чтобы увидеть всё.`,
-      fewer: '· свернуть',
-      more: n => `· ещё ${n}`,
-    },
-  };
-  const T = UI[DATA.meta.locale] || UI.en;
+  // Element names and glyphs arrive already localized in DATA; the viewer's own
+  // labels, controls and empty states arrive in CHROME, from the same i18n
+  // tables the PDF reads. Adding a language means adding a table in Rust and
+  // nothing here.
+  const T = CHROME;
+  // The three chrome strings that take values are format strings; `{name}` is
+  // replaced by `vals.name`.
+  const fmt = (s, vals) => s.replace(/\{(\w+)\}/g, (_, k) => vals[k]);
 
   // ---------- title plate & caption ----------
   const m = DATA.meta;
@@ -680,7 +640,7 @@ const PLATE = /*__PLATE__*/null;
         b.textContent = T.fewer;
         b.style.display = '';
       } else if (hidden[cat] > 0) {
-        b.textContent = T.more(hidden[cat]);
+        b.textContent = fmt(T.more, { n: hidden[cat] });
         b.style.display = '';
       } else {
         b.style.display = 'none';
@@ -692,6 +652,11 @@ const PLATE = /*__PLATE__*/null;
   const catOf = tag => tag.split(':')[0];
   const excerptsHost = document.getElementById('excerpts');
 
+  // The passage filter. The app states the same rule in
+  // `desktop/src/lib/focus.ts` as `matching`; this artifact is a standalone
+  // file and cannot import it, so the two are deliberate mirrors — keep them in
+  // step. Same semantics: an empty selection shows everything, `any` is an
+  // intersection, `all` a superset.
   const matches = ex => {
     if (selected.size === 0) return true;
     const t = new Set(ex.tags);
@@ -704,11 +669,11 @@ const PLATE = /*__PLATE__*/null;
     const visible = DATA.excerpts.filter(matches);
     document.getElementById('count').textContent =
       DATA.excerpts.length === 0 ? T.noPassagesRouted
-        : T.count(visible.length, DATA.excerpts.length);
+        : fmt(T.count, { shown: visible.length, total: DATA.excerpts.length });
     excerptsHost.innerHTML = visible.length === 0
       ? `<p class="empty">${DATA.excerpts.length === 0
           ? T.emptyNoneRouted
-          : T.emptyNoMatch(mode === 'all' ? T.all : T.any)}</p>`
+          : fmt(T.emptyNoMatch, { word: mode === 'all' ? T.all : T.any })}</p>`
       : '';
     for (const ex of visible) {
       const art = document.createElement('article');

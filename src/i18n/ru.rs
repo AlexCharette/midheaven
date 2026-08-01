@@ -3,7 +3,7 @@
 //! the router matches whole words, not stems. Native-speaker review welcome —
 //! extending a term list never changes ids or geometry, only what routes.
 
-use super::{AspectEntry, Entry, HouseEntry, LocaleTable, PdfChrome};
+use super::{ArtifactChrome, AspectEntry, Entry, HouseEntry, LocaleTable, PdfChrome};
 
 pub static TABLE: LocaleTable = LocaleTable {
     planets: PLANETS,
@@ -22,6 +22,28 @@ pub static TABLE: LocaleTable = LocaleTable {
         prepared_by: "Подготовил",
         index_of_elements: "Указатель элементов",
         commentary: "Комментарий",
+    },
+    artifact: ArtifactChrome {
+        natal_reading: "Натальный разбор",
+        birth_chart_of: "Натальная карта",
+        index_of_elements: "Указатель элементов",
+        bands: ["планеты", "знаки", "дома", "аспекты"],
+        passages_touching: "фрагменты, затрагивающие",
+        any: "любой",
+        all: "все",
+        any_title: "Фрагменты, затрагивающие любой выбранный элемент",
+        all_title: "Только фрагменты, затрагивающие все выбранные элементы",
+        of_selection: "из выбранного \u{b7}",
+        clear: "сбросить",
+        commentary: "Комментарий",
+        prepared_by: "подготовил",
+        wheel_aria: "Колесо натальной карты; указатель элементов даёт те же фильтры",
+        count: "{shown} из {total} фрагментов",
+        no_passages_routed: "нет отнесённых фрагментов",
+        empty_none_routed: "Ни один фрагмент транскрипта не отнесён к этой карте.",
+        empty_no_match: "Ни один фрагмент не затрагивает {word} выбранных элементов \u{2014} сбросьте выбор, чтобы увидеть всё.",
+        fewer: "\u{b7} свернуть",
+        more: "\u{b7} ещё {n}",
     },
 };
 

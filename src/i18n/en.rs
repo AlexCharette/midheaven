@@ -2,7 +2,7 @@
 //! hardcoded values (`chart::catalog` names, the old `route::lexicon` term
 //! lists) so English output never shifts — the tests in `super` guard it.
 
-use super::{AspectEntry, Entry, HouseEntry, LocaleTable, PdfChrome};
+use super::{ArtifactChrome, AspectEntry, Entry, HouseEntry, LocaleTable, PdfChrome};
 
 pub static TABLE: LocaleTable = LocaleTable {
     planets: PLANETS,
@@ -21,6 +21,28 @@ pub static TABLE: LocaleTable = LocaleTable {
         prepared_by: "Prepared by",
         index_of_elements: "Index of Elements",
         commentary: "Commentary",
+    },
+    artifact: ArtifactChrome {
+        natal_reading: "Natal Reading",
+        birth_chart_of: "The Birth Chart of",
+        index_of_elements: "Index of Elements",
+        bands: ["planets", "signs", "houses", "aspects"],
+        passages_touching: "passages touching",
+        any: "any",
+        all: "all",
+        any_title: "Passages touching any selected element",
+        all_title: "Only passages touching every selected element",
+        of_selection: "of the selection \u{b7}",
+        clear: "clear",
+        commentary: "Commentary",
+        prepared_by: "prepared by",
+        wheel_aria: "Natal chart wheel; the index of elements offers the same filters",
+        count: "{shown} of {total} passages",
+        no_passages_routed: "no passages routed",
+        empty_none_routed: "No transcript passages were routed to this chart.",
+        empty_no_match: "No passage touches {word} of the selected elements \u{2014} clear the selection to see everything.",
+        fewer: "\u{b7} fewer",
+        more: "\u{b7} {n} more",
     },
 };
 
