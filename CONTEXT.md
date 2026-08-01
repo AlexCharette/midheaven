@@ -149,3 +149,19 @@ An unknown code is **refused**, not defaulted. It used to become Whole Sign in
 silence, so a typo, a stale preference and a real choice were the same input:
 the chart came back claiming `whole-sign`, the reading view's selector snapped
 to match, and nothing was said.
+
+## Plate title
+
+How a chart's plate is headed, shared by the PDF and the artifact — one string,
+one wording, both renditions. They used to word it differently ("The Nativity
+of" against "The Birth Chart of") because each lived in a separate file.
+
+Its **shape** is part of it, not only its words. English takes a possessive, so
+the holder's name sits inside the headline and the plate has one line: *Mira
+Holt's birth chart*. Russian cannot — a possessive there needs the name declined
+into the genitive, which no format string can do — so it keeps a line above the
+name and lets the name stand undeclined beneath: *Натальная карта* / *Мира Холт*.
+
+`i18n::PlateTitle` is therefore a choice (`Inline` or `Above`) rather than a
+string, and `render(name)` hands a rendition its headline plus the name to set
+beneath, or `None` when the headline already carries it.

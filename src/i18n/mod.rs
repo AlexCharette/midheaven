@@ -144,6 +144,11 @@ impl Locale {
         &self.table().artifact
     }
 
+    /// How to title a chart's plate in this language.
+    pub fn plate_title(self) -> PlateTitle {
+        self.table().plate_title
+    }
+
     pub fn pdf(self) -> &'static PdfChrome {
         &self.table().pdf
     }
@@ -225,8 +230,37 @@ pub struct LocaleTable {
     /// The trailing word shared by every house name (`" House"`, `" дом"`) —
     /// lets a viewer show the bare ordinal without re-encoding the mapping.
     pub house_suffix: &'static str,
+    /// How this language titles a chart's plate — shared by both renditions.
+    pub plate_title: PlateTitle,
     pub pdf: PdfChrome,
     pub artifact: ArtifactChrome,
+}
+
+/// How a language titles a chart's plate. The *shape* differs, not only the
+/// words, which is why this is a choice and not a string.
+///
+/// English takes a possessive, so the holder's name is inside the phrase and the
+/// plate has one line. Russian cannot: a possessive there requires declining the
+/// name into the genitive, which no format string can do, so it keeps the line
+/// above the name and lets the name stand undeclined beneath it.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlateTitle {
+    /// One line, with `{name}` substituted into it. No separate name follows.
+    Inline(&'static str),
+    /// A line set above the name, which the rendition sets separately.
+    Above(&'static str),
+}
+
+impl PlateTitle {
+    /// The plate's headline for a holder, and the name to set beneath it —
+    /// `None` when the headline already contains it.
+    pub fn render(self, name: &str) -> (String, Option<&str>) {
+        match self {
+            PlateTitle::Inline(fmt) => (fmt.replace("{name}", name), None),
+            PlateTitle::Above(line) => (line.to_string(), Some(name)),
+        }
+    }
 }
 
 /// A named element and the words that route to it.
@@ -254,8 +288,6 @@ pub struct AspectEntry {
 /// artifact has filter controls and empty states, paper has neither), but both
 /// live here.
 pub struct PdfChrome {
-    /// Title line before the holder's name.
-    pub nativity_of: &'static str,
     /// Branding line before the astrologer's name (rendered uppercase).
     pub prepared_by: &'static str,
     pub index_of_elements: &'static str,
@@ -277,14 +309,6 @@ pub struct PdfChrome {
 pub struct ArtifactChrome {
     /// Browser tab title, after the holder's name.
     pub natal_reading: &'static str,
-    /// The line above the holder's name.
-    ///
-    /// The PDF words this differently — [`PdfChrome::nativity_of`] is "The
-    /// Nativity of" against "The Birth Chart of" here. That divergence dates
-    /// from when the two lived in separate files and nobody could see both at
-    /// once; kept as it shipped rather than silently rewording either
-    /// rendition's copy, but it is now visible in one place.
-    pub birth_chart_of: &'static str,
     pub index_of_elements: &'static str,
     /// Column heads of the index, in order: planets, signs, houses, aspects.
     pub bands: [&'static str; 4],
@@ -336,7 +360,6 @@ mod tests {
             let a = loc.artifact();
             let singles = [
                 ("natalReading", a.natal_reading),
-                ("birthChartOf", a.birth_chart_of),
                 ("indexOfElements", a.index_of_elements),
                 ("passagesTouching", a.passages_touching),
                 ("any", a.any),
@@ -363,7 +386,50 @@ mod tests {
                 "{:?} has a blank index column head",
                 loc.code()
             );
+            let (headline, _) = loc.plate_title().render("Mira Holt");
+            assert!(!headline.trim().is_empty(), "{:?} has a blank plate title", loc.code());
         }
+    }
+
+    /// The two shapes a plate title takes. English's possessive puts the
+    /// holder's name inside the headline; Russian's cannot, because the name
+    /// would have to be declined into the genitive, so it sets the name
+    /// separately beneath an unchanging line.
+    #[test]
+    fn a_plate_title_either_carries_the_name_or_hands_it_back() {
+        for loc in Locale::ALL {
+            let (headline, beneath) = loc.plate_title().render("Mira Holt");
+            match beneath {
+                None => assert!(
+                    headline.contains("Mira Holt"),
+                    "{:?} sets no name beneath, so the headline must carry it: {headline:?}",
+                    loc.code()
+                ),
+                Some(name) => {
+                    assert_eq!(name, "Mira Holt");
+                    assert!(
+                        !headline.contains("Mira Holt"),
+                        "{:?} sets the name beneath, so the headline must not repeat it",
+                        loc.code()
+                    );
+                }
+            }
+            assert!(!headline.contains('{'), "{:?} left a placeholder unfilled", loc.code());
+        }
+    }
+
+    #[test]
+    fn english_titles_a_plate_with_a_possessive() {
+        let (headline, beneath) = Locale::En.plate_title().render("Mira Holt");
+        assert_eq!(headline, "Mira Holt's birth chart");
+        assert_eq!(beneath, None, "one line, so nothing is set beneath it");
+    }
+
+    #[test]
+    fn russian_keeps_the_name_undeclined_beneath_its_title() {
+        let (headline, beneath) = Locale::Ru.plate_title().render("Мира Холт");
+        assert_eq!(headline, "Натальная карта");
+        assert_eq!(beneath, Some("Мира Холт"));
     }
 
     /// The chrome's format strings carry the placeholders the viewer
@@ -379,7 +445,6 @@ mod tests {
             // And no other field pretends to take one.
             for (field, value) in [
                 ("natalReading", a.natal_reading),
-                ("birthChartOf", a.birth_chart_of),
                 ("clear", a.clear),
                 ("fewer", a.fewer),
             ] {

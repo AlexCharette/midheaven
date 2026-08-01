@@ -20,8 +20,18 @@ const CHROME: &str = "/*__CHROME__*/null";
 pub fn emit(data: &ChartData) -> Result<String, String> {
     let chart = serde_json::to_string(data).map_err(|e| e.to_string())?;
     let plate = serde_json::to_string(&crate::plate::PLATE).map_err(|e| e.to_string())?;
-    let chrome = crate::i18n::Locale::parse(&data.meta.locale).artifact();
-    let chrome = serde_json::to_string(chrome).map_err(|e| e.to_string())?;
+    let loc = crate::i18n::Locale::parse(&data.meta.locale);
+    // The plate title is shared with the PDF, so it lives beside the chrome
+    // rather than inside it, and is flattened in for the viewer.
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Chrome<'a> {
+        #[serde(flatten)]
+        artifact: &'a crate::i18n::ArtifactChrome,
+        plate_title: crate::i18n::PlateTitle,
+    }
+    let chrome = Chrome { artifact: loc.artifact(), plate_title: loc.plate_title() };
+    let chrome = serde_json::to_string(&chrome).map_err(|e| e.to_string())?;
     let mut out = TEMPLATE.to_string();
     for (placeholder, json) in [(DATA, chart), (PLATE, plate), (CHROME, chrome)] {
         // `</script>` inside a JSON string would terminate the script block early.

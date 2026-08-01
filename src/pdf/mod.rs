@@ -239,6 +239,7 @@ fn render_title_page(
     let mut s = page.surface();
     paper(&mut s, w, h);
     let mut y = frame.margin + TOP_PAD;
+    let hero: String;
 
     // ornament: the practitioner's mark when present, the compass otherwise
     match logo_image(&chart.meta.logo) {
@@ -253,10 +254,20 @@ fn render_title_page(
     }
     y += ORNAMENT_ADVANCE;
 
-    center_str(&mut s, fonts, Face::Italic, SUPERTITLE_SIZE, INK2, cx, y + SUPERTITLE_BASELINE, loc.pdf().nativity_of);
-    y += SUPERTITLE_ADVANCE;
+    // The plate's headline. English puts the holder's name inside it ("Mira
+    // Holt's birth chart") and sets nothing beneath; Russian sets a line above
+    // the name, because a possessive there would need the name declined into
+    // the genitive and a format string cannot do that.
+    let (headline, beneath) = loc.plate_title().render(&chart.meta.name);
+    if let Some(name) = beneath {
+        center_str(&mut s, fonts, Face::Italic, SUPERTITLE_SIZE, INK2, cx, y + SUPERTITLE_BASELINE, &headline);
+        y += SUPERTITLE_ADVANCE;
+        hero = name.to_uppercase();
+    } else {
+        hero = headline.to_uppercase();
+    }
 
-    let name = chart.meta.name.to_uppercase();
+    let name = hero;
     let nsize = fitted_name_size(fonts, &name, cw);
     let tracking = |sz: f32| sz * NAME_TRACKING_RATIO;
     let nw = fonts.width(Face::Regular, nsize, tracking(nsize), &name);
