@@ -51,5 +51,8 @@ cpal = "0.18.1"
 hound = "3.5.1"
 
 [dev-dependencies]
-chrono-tz = "0.10.4"
+# The core crate's shared test fixtures. Not a third declaration for its own
+# sake — dev-dependencies are inactive in a normal build, so `testing` reaches
+# the tests and nothing else.
+astro = { path = "../..", features = ["testing"] }
 

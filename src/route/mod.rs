@@ -161,7 +161,7 @@ pub(crate) fn test_vocab(tags: &[&str]) -> std::collections::BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{Aspect, Excerpt, HouseRef, Meta, Ref};
+    use crate::contract::Excerpt;
 
     /// The seam's second adapter: emits exactly the spans it was given, so a
     /// test can check the composition — gate, merge, numbering, filing — without
@@ -180,67 +180,14 @@ mod tests {
         RawExcerpt { span, tags: tags.iter().map(|s| s.to_string()).collect() }
     }
 
-    /// A chart with a vocabulary and nothing else — routing needs the ids, not
-    /// the geometry.
+    /// The shared minimal chart — routing needs its vocabulary, not its
+    /// astronomy.
     fn chart() -> ChartData {
-        ChartData {
-            meta: Meta {
-                name: "T".into(),
-                born: "b".into(),
-                place: "p".into(),
-                system: "Whole Sign".into(),
-                zodiac: "Tropical".into(),
-                house_system: "whole-sign".into(),
-                ayanamsa: None,
-                locale: "en".into(),
-                astrologer: None,
-                logo: None,
-                birth: None,
-            },
-            axes: crate::contract::Axes { asc: 0.0, mc: 270.0 },
-            house_cusps: (0..12).map(|i| i as f64 * 30.0).collect(),
-            house_sweeps: vec![30.0; 12],
-            planets: vec![crate::contract::Body {
-                id: "planet:sun".into(),
-                glyph: "x".into(),
-                name: "Sun".into(),
-                lon: 0.0,
-                house: 1,
-                ..Default::default()
-            }],
-            signs: (0..12)
-                .map(|i| Ref {
-                    id: format!("sign:s{i}"),
-                    glyph: "x".into(),
-                    name: "S".into(),
-                    element: "fire".into(),
-                })
-                .collect(),
-            houses: (0..12)
-                .map(|i| HouseRef { id: format!("house:{}", i + 1), label: "I".into(), name: "H".into() })
-                .collect(),
-            aspects: vec![Aspect {
-                id: "aspect:sun-moon".into(),
-                glyph: "x".into(),
-                name: "Trine".into(),
-                a: "planet:sun".into(),
-                b: "planet:moon".into(),
-                nature: "harmonious".into(),
-                orb: 0.0,
-                kind: "",
-            }],
-            excerpts: vec![],
-        }
+        crate::fixtures::minimal_chart()
     }
 
     fn existing(id: &str) -> Excerpt {
-        Excerpt {
-            id: id.into(),
-            time: String::new(),
-            span: [0, 0],
-            text: "already here".into(),
-            tags: vec!["planet:sun".into()],
-        }
+        crate::fixtures::excerpt(id, "already here", &["planet:sun"])
     }
 
     const WORDS: &str = "Aaaa bbbb. Cccc dddd. Eeee ffff.";

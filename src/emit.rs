@@ -58,33 +58,10 @@ pub fn write_artifact(data: &ChartData, path: &std::path::Path) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::*;
 
     #[test]
     fn emitted_html_is_self_contained() {
-        let data = ChartData {
-            meta: Meta {
-                name: "T".into(),
-                born: "b".into(),
-                place: "p".into(),
-                system: "Whole Sign".into(),
-                zodiac: "Tropical".into(),
-                house_system: "whole-sign".into(),
-                ayanamsa: None,
-                locale: "en".into(),
-                astrologer: None,
-                logo: None,
-                birth: None,
-            },
-            axes: Axes { asc: 0.0, mc: 270.0 },
-            house_cusps: (0..12).map(|i| i as f64 * 30.0).collect(),
-            house_sweeps: vec![30.0; 12],
-            planets: vec![],
-            signs: vec![],
-            houses: vec![],
-            aspects: vec![],
-            excerpts: vec![],
-        };
+        let data = crate::fixtures::minimal_chart();
         let html = emit(&data).unwrap();
         assert!(html.contains("const DATA = {"));
         assert!(!html.contains(DATA), "the chart placeholder must be filled");

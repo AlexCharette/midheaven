@@ -940,19 +940,7 @@ mod tests {
     use astro::route::{Filing, route_into};
 
     fn chart_fixture() -> ChartData {
-        let input = astro::chart::BirthInput {
-            name: "T".into(),
-            date: "1990-07-13".parse().unwrap(),
-            time: "14:30:00".parse().unwrap(),
-            lat: 52.52,
-            lon: 13.405,
-            tz: chrono_tz::Europe::Berlin,
-            place: "Berlin".into(),
-            locale: astro::i18n::Locale::En,
-            house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
-            ayanamsa: None,
-        };
-        astro::chart::compute_chart(&input).unwrap()
+        astro::fixtures::berlin_chart()
     }
 
     fn ex(id: &str, text: &str, tags: &[&str]) -> Excerpt {
@@ -1006,19 +994,8 @@ mod tests {
 
         // The recomputed chart arrives with fresh geometry and nothing else.
         let mut fresh = {
-            let mut input = astro::chart::BirthInput {
-                name: "T".into(),
-                date: "1990-07-13".parse().unwrap(),
-                time: "14:30:00".parse().unwrap(),
-                lat: 52.52,
-                lon: 13.405,
-                tz: chrono_tz::Europe::Berlin,
-                place: "Berlin".into(),
-                locale: astro::i18n::Locale::En,
-                house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
-                ayanamsa: None,
-            };
-            input.house_system = astro::chart::systems::house_system("placidus").unwrap();
+            let mut input = astro::fixtures::berlin();
+            input.house_system = systems::house_system("placidus").unwrap();
             astro::chart::compute_chart(&input).unwrap()
         };
         assert!(fresh.excerpts.is_empty());

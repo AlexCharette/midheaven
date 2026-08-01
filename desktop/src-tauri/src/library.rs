@@ -241,19 +241,7 @@ mod tests {
     }
 
     fn chart(name: &str) -> ChartData {
-        let input = astro::chart::BirthInput {
-            name: name.into(),
-            date: "1990-07-13".parse().unwrap(),
-            time: "14:30:00".parse().unwrap(),
-            lat: 52.52,
-            lon: 13.405,
-            tz: chrono_tz::Europe::Berlin,
-            place: "Berlin".into(),
-            locale: astro::i18n::Locale::En,
-            house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
-            ayanamsa: None,
-        };
-        astro::chart::compute_chart(&input).unwrap()
+        astro::chart::compute_chart(&astro::fixtures::named(name)).unwrap()
     }
 
     fn on(date: &str) -> chrono::NaiveDate {

@@ -316,69 +316,12 @@ pub struct Excerpt {
 mod tests {
     use super::*;
 
-    /// A minimal but structurally valid chart: 12 signs/houses/cusps, one
-    /// planet, one aspect, one excerpt tagged from the vocabulary.
+    /// The shared minimal chart plus one passage, so the vocabulary check has
+    /// something to check. Every assertion below mutates a copy of it.
     fn valid_chart() -> ChartData {
-        ChartData {
-            meta: Meta {
-                name: "T".into(),
-                born: "b".into(),
-                place: "p".into(),
-                system: "Whole Sign".into(),
-                zodiac: "Tropical".into(),
-                house_system: "whole-sign".into(),
-                ayanamsa: None,
-                locale: "en".into(),
-                astrologer: None,
-                logo: None,
-                birth: None,
-            },
-            axes: Axes { asc: 0.0, mc: 270.0 },
-            house_cusps: (0..12).map(|i| i as f64 * 30.0).collect(),
-            house_sweeps: vec![30.0; 12],
-            planets: vec![Body {
-                id: "planet:sun".into(),
-                glyph: "☉".into(),
-                name: "Sun".into(),
-                lon: 0.0,
-                house: 1,
-                sign: 0,
-                deg: 0,
-                min: 0,
-            }],
-            signs: (0..12)
-                .map(|i| Ref {
-                    id: format!("sign:s{i}"),
-                    glyph: "x".into(),
-                    name: "S".into(),
-                    element: "fire".into(),
-                })
-                .collect(),
-            houses: (0..12)
-                .map(|i| HouseRef {
-                    id: format!("house:{}", i + 1),
-                    label: "I".into(),
-                    name: "H".into(),
-                })
-                .collect(),
-            aspects: vec![Aspect {
-                id: "aspect:sun-moon".into(),
-                glyph: "△".into(),
-                name: "Trine".into(),
-                a: "planet:sun".into(),
-                b: "planet:moon".into(),
-                nature: "harmonious".into(),
-                orb: 0.0,
-                kind: "",
-            }],
-            excerpts: vec![Excerpt {
-                id: "x1".into(),
-                time: String::new(),
-                span: [0, 0],
-                text: "hi".into(),
-                tags: vec!["planet:sun".into()],
-            }],
-        }
+        let mut chart = crate::fixtures::minimal_chart();
+        chart.excerpts = vec![crate::fixtures::excerpt("x1", "hi", &["planet:sun"])];
+        chart
     }
 
     #[test]

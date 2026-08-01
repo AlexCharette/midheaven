@@ -25,6 +25,8 @@ pub mod chart;
 pub mod contract;
 pub mod derive;
 pub mod emit;
+#[cfg(any(test, feature = "testing"))]
+pub mod fixtures;
 pub mod geo;
 pub mod i18n;
 pub mod pdf;

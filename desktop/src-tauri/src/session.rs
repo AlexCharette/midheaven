@@ -305,19 +305,7 @@ mod tests {
     }
 
     fn chart() -> ChartData {
-        let input = astro::chart::BirthInput {
-            name: "T".into(),
-            date: "1990-07-13".parse().unwrap(),
-            time: "14:30:00".parse().unwrap(),
-            lat: 52.52,
-            lon: 13.405,
-            tz: chrono_tz::Europe::Berlin,
-            place: "Berlin".into(),
-            locale: astro::i18n::Locale::En,
-            house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
-            ayanamsa: None,
-        };
-        astro::chart::compute_chart(&input).unwrap()
+        astro::fixtures::berlin_chart()
     }
 
     fn open() -> Session {

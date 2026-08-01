@@ -1,7 +1,8 @@
 //! End-to-end pipeline test through the public library API — the same path
 //! the CLI (and the future TUI) drives: compute → route → verify → emit.
 
-use astro::chart::{BirthInput, compute_chart};
+use astro::chart::compute_chart;
+use astro::fixtures;
 use astro::emit::emit;
 use astro::i18n::Locale;
 use astro::route::{Filing, LexiconRouter, Transcript, route_into_with};
@@ -9,18 +10,7 @@ use astro::{TranscriptSource, build_reading};
 
 #[test]
 fn transcript_to_artifact() {
-    let input = BirthInput {
-        name: "Integration".into(),
-        date: "1990-07-13".parse().unwrap(),
-        time: "14:30:00".parse().unwrap(),
-        lat: 52.52,
-        lon: 13.405,
-        tz: "Europe/Berlin".parse().unwrap(),
-        place: "Berlin, Germany".into(),
-        locale: Locale::En,
-        house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
-        ayanamsa: None,
-    };
+    let input = fixtures::named("Integration");
     let mut chart = compute_chart(&input).expect("chart computes");
 
     let raw = std::fs::read_to_string(concat!(
@@ -82,18 +72,7 @@ fn transcript_to_artifact() {
 /// reading, and the library has no transcript file to write.
 #[test]
 fn a_chart_only_build_archives_no_transcript() {
-    let input = BirthInput {
-        name: "No Words".into(),
-        date: "1990-07-13".parse().unwrap(),
-        time: "14:30:00".parse().unwrap(),
-        lat: 52.52,
-        lon: 13.405,
-        tz: "Europe/Berlin".parse().unwrap(),
-        place: "Berlin, Germany".into(),
-        locale: Locale::En,
-        house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
-        ayanamsa: None,
-    };
+    let input = fixtures::named("No Words");
     let (chart, report) =
         build_reading(&input, TranscriptSource::None, |_| {}).expect("build_reading");
     assert!(chart.excerpts.is_empty());
@@ -111,18 +90,7 @@ fn a_text_transcript_keeps_its_extension() {
     let words = "The sun sits in cancer. It rules the tenth house.";
     std::fs::write(&path, words).expect("write transcript");
 
-    let input = BirthInput {
-        name: "Plain Text".into(),
-        date: "1990-07-13".parse().unwrap(),
-        time: "14:30:00".parse().unwrap(),
-        lat: 52.52,
-        lon: 13.405,
-        tz: "Europe/Berlin".parse().unwrap(),
-        place: "Berlin, Germany".into(),
-        locale: Locale::En,
-        house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
-        ayanamsa: None,
-    };
+    let input = fixtures::named("Plain Text");
     let (chart, report) = build_reading(&input, TranscriptSource::File(path), |_| {})
         .expect("build_reading");
 

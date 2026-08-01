@@ -375,19 +375,7 @@ mod tests {
     use crate::contract::Excerpt;
 
     fn chart_fixture() -> ChartData {
-        let input = crate::chart::BirthInput {
-            name: "Mira Holt".into(),
-            date: "1990-07-13".parse().unwrap(),
-            time: "14:30:00".parse().unwrap(),
-            lat: 52.52,
-            lon: 13.405,
-            tz: chrono_tz::Europe::Berlin,
-            place: "Berlin, Germany".into(),
-            locale: crate::i18n::Locale::En,
-            house_system: xalen_houses::HouseSystem::WholeSign,
-            ayanamsa: None,
-        };
-        let mut chart = crate::chart::compute_chart(&input).unwrap();
+        let mut chart = crate::fixtures::berlin_chart();
         chart.excerpts.push(Excerpt {
             id: "x1".into(),
             time: "00:00:12".into(),
@@ -444,18 +432,9 @@ mod tests {
     #[test]
     fn renders_a_russian_reading() {
         // A ru chart must render without error and produce a well-formed PDF.
-        let input = crate::chart::BirthInput {
-            name: "Мира Холт".into(),
-            date: "1990-07-13".parse().unwrap(),
-            time: "14:30:00".parse().unwrap(),
-            lat: 52.52,
-            lon: 13.405,
-            tz: chrono_tz::Europe::Berlin,
-            place: "Берлин, Германия".into(),
-            locale: Locale::Ru,
-            house_system: xalen_houses::HouseSystem::WholeSign,
-            ayanamsa: None,
-        };
+        let mut input = crate::fixtures::named("Мира Холт");
+        input.place = "Берлин, Германия".into();
+        input.locale = Locale::Ru;
         let mut chart = crate::chart::compute_chart(&input).unwrap();
         chart.excerpts.push(Excerpt {
             id: "x1".into(),
