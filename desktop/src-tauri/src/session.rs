@@ -30,7 +30,7 @@
 //! a fake that yields a known duration.
 
 use astro::contract::{ChartData, Segment};
-use astro::route::{append_transcript, lexicon_for};
+use astro::route::{Filing, route_into};
 use std::path::PathBuf;
 
 /// The one refusal, in one place. Every command that needs a reading and has
@@ -272,8 +272,8 @@ impl Session {
         let Session::Transcribing { mut reading } = std::mem::take(self) else {
             unreachable!("checked Transcribing above");
         };
-        let router = lexicon_for(&reading.chart);
-        let warnings = append_transcript(&mut reading.chart, &take, &router).warnings;
+        // Append, not replace, so earlier curation survives every take.
+        let warnings = route_into(&mut reading.chart, &take, Filing::Append).warnings;
         reading.secs = pending.offset + pending.secs;
         reading.takes += 1;
         let filename = format!("take-{}.jsonl", reading.takes);

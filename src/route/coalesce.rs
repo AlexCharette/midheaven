@@ -9,7 +9,10 @@ use crate::contract::Excerpt;
 /// Merge runs of consecutive excerpts whose neighboring tag sets intersect.
 /// A merged excerpt is one verbatim transcript slice from the first span's
 /// start to the last span's end (untagged connective sentences included), its
-/// tags the sorted union, its time anchor the first passage's. Ids renumber.
+/// tags the sorted union, its time anchor the first passage's.
+///
+/// Ids are left alone — merging changes how many passages there are, so only the
+/// filing step downstream knows what to number them from.
 pub fn coalesce(excerpts: Vec<Excerpt>, transcript: &Transcript) -> Vec<Excerpt> {
     let mut out: Vec<Excerpt> = Vec::new();
     let mut prev_tags: Vec<String> = Vec::new();
@@ -29,7 +32,6 @@ pub fn coalesce(excerpts: Vec<Excerpt>, transcript: &Transcript) -> Vec<Excerpt>
     for ex in &mut out {
         ex.text = transcript.text[ex.span[0]..ex.span[1]].to_string();
     }
-    super::renumber(&mut out, 1);
     out
 }
 
@@ -76,8 +78,10 @@ mod tests {
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].tags, vec!["planet:sun", "sign:cancer"]);
         assert_eq!(merged[1].tags, vec!["sign:cancer"]);
-        // ids renumber
-        assert_eq!(merged[1].id, "x2");
+        // Ids are not this stage's business — merging is why nothing upstream
+        // can know how many passages there will be, so the filing step numbers
+        // them. Whatever came in is left alone here.
+        assert_eq!(merged[1].id, "x3");
     }
 
     #[test]

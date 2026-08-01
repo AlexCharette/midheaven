@@ -991,7 +991,7 @@ fn export_bindings_command_names() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use astro::route::lexicon_for;
+    use astro::route::{Filing, route_into};
 
     fn chart_fixture() -> ChartData {
         let input = astro::chart::BirthInput {
@@ -1213,8 +1213,7 @@ mod tests {
             start: 0.0,
             text: "The moon in pisces.".into(),
         }]);
-        let router = lexicon_for(&chart);
-        astro::route::append_transcript(&mut chart, &take, &router);
+        route_into(&mut chart, &take, Filing::Append);
         let mut ids: Vec<&str> = chart.excerpts.iter().map(|e| e.id.as_str()).collect();
         let before = ids.len();
         ids.sort();

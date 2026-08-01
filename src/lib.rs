@@ -213,8 +213,7 @@ fn route_into_chart(
     let (mut chart, mut warnings) = chart::compute_chart_reporting(input)?;
     let mut n_routed = 0;
     if let Some(transcript) = transcript {
-        let router = route::lexicon_for(&chart);
-        let report = route::index_transcript(&mut chart, &transcript, &router);
+        let report = route::route_into(&mut chart, &transcript, route::Filing::Fresh);
         n_routed = report.n_routed;
         warnings.extend(report.warnings);
     }

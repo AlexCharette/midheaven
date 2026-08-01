@@ -7,7 +7,8 @@ use std::collections::BTreeSet;
 
 /// Reject any excerpt whose text is not a verbatim slice of the transcript or
 /// whose tags fall outside the chart vocabulary. Returns the accepted excerpts
-/// (with ids and time anchors assigned) alongside a warning per rejected span
+/// (time anchors assigned, ids left empty for the filing step) with a warning
+/// per rejected span
 /// — the provenance chain surfaced to the caller rather than stderr, so every
 /// frontend can decide how to show it.
 pub fn verify_gate(
@@ -32,7 +33,7 @@ pub fn verify_gate(
             continue;
         }
         out.push(Excerpt {
-            id: format!("x{}", out.len() + 1),
+            id: String::new(), // numbered once the passages have settled
             time: transcript.time_at(s),
             span: [s, e],
             text: text.to_string(),

@@ -4,7 +4,7 @@
 use astro::chart::{BirthInput, compute_chart};
 use astro::emit::emit;
 use astro::i18n::Locale;
-use astro::route::{LexiconRouter, Transcript, index_transcript};
+use astro::route::{Filing, LexiconRouter, Transcript, route_into_with};
 use astro::{TranscriptSource, build_reading};
 
 #[test]
@@ -32,7 +32,7 @@ fn transcript_to_artifact() {
 
     let vocab = chart.vocab();
     let router = LexiconRouter::new(&vocab, &chart.aspects, Locale::En);
-    index_transcript(&mut chart, &transcript, &router);
+    route_into_with(&mut chart, &transcript, &router, Filing::Fresh);
 
     // Nine routed sentences coalesce into five passages (consecutive
     // passages sharing a tag merge); spot-check known tags.
