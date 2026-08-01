@@ -132,10 +132,33 @@ fn places() -> &'static [Place] {
     })
 }
 
+/// Row positions by GeoNames id, sorted for binary search.
+///
+/// The rows themselves are population-descending, which is the order every
+/// *search* wants and the worst possible order for an id lookup: `by_id` was a
+/// linear scan, so its cost fell on whoever's birthplace is small enough to sit
+/// near the end of 235k rows. It is not a rare path — `preview` resolves the
+/// place on every round of a live scrub, for a place id that cannot change
+/// during one, and a full scan measured about as expensive as the ephemeris it
+/// precedes (376µs against 387µs).
+///
+/// Two `u32` per row is ~1.9 MB beside a gazetteer already tens of megabytes
+/// wide, and it is built from `places()` so the two can never disagree.
+fn by_id_index() -> &'static [(u32, u32)] {
+    static INDEX: OnceLock<Vec<(u32, u32)>> = OnceLock::new();
+    INDEX.get_or_init(|| {
+        let mut index: Vec<(u32, u32)> =
+            places().iter().enumerate().map(|(row, p)| (p.id, row as u32)).collect();
+        index.sort_unstable_by_key(|(id, _)| *id);
+        index
+    })
+}
+
 /// Force the one-time decompress/parse of the embedded gazetteer now, so an
 /// interactive caller can front-load it instead of paying on the first search.
 pub fn warm() {
     let _ = places();
+    let _ = by_id_index();
 }
 
 /// Split "city, qualifier, qualifier" into a lowercase city token + qualifiers.
@@ -204,8 +227,12 @@ pub fn resolve(query: &str) -> Resolution {
     }
 }
 
+/// The place with this GeoNames id. The id is the stable handle every frontend
+/// round-trips a place by, so this is the hot lookup, not the search.
 pub fn by_id(id: u32) -> Option<&'static Place> {
-    places().iter().find(|p| p.id == id)
+    let index = by_id_index();
+    let at = index.binary_search_by_key(&id, |(id, _)| *id).ok()?;
+    places().get(index[at].1 as usize)
 }
 
 #[cfg(test)]
@@ -252,6 +279,49 @@ mod tests {
     #[test]
     fn unknown_place_is_not_found() {
         assert!(matches!(resolve("xqzzyplugh"), Resolution::NotFound));
+    }
+
+    /// The index must answer exactly what a scan over the rows would, or a
+    /// place id round-tripped from a saved chart resolves to the wrong city.
+    #[test]
+    fn by_id_agrees_with_a_scan_over_every_row() {
+        let rows = places();
+        for p in rows {
+            let found = by_id(p.id).expect("every row is findable by its own id");
+            assert_eq!(found.id, p.id);
+            // Same row, not merely an equal id.
+            assert!(std::ptr::eq(found, p), "id {} resolved to a different row", p.id);
+        }
+        assert!(rows.len() > 200_000, "suspiciously small gazetteer: {}", rows.len());
+    }
+
+    /// Binary search needs one row per id; a duplicate would make `by_id`
+    /// return an arbitrary one of them.
+    #[test]
+    fn geonames_ids_are_unique_across_the_dataset() {
+        let index = by_id_index();
+        assert_eq!(index.len(), places().len());
+        let duplicate = index.windows(2).find(|w| w[0].0 == w[1].0);
+        assert!(duplicate.is_none(), "duplicate geonames id: {duplicate:?}");
+    }
+
+    #[test]
+    fn an_absent_id_is_none() {
+        assert!(by_id(u32::MAX).is_none());
+        assert!(by_id(0).is_none());
+    }
+
+    /// The lookup must not depend on how populous the place is — that was the
+    /// whole defect. A village and a capital resolve in the same number of
+    /// comparisons, so compare against the row a scan finds rather than timing.
+    #[test]
+    fn a_place_at_the_far_end_of_the_ordering_resolves_like_one_at_the_front() {
+        let rows = places();
+        let first = &rows[0];
+        let last = &rows[rows.len() - 1];
+        assert!(last.pop <= first.pop, "rows should be population-descending");
+        assert!(std::ptr::eq(by_id(first.id).unwrap(), first));
+        assert!(std::ptr::eq(by_id(last.id).unwrap(), last));
     }
 
     /// Every distinct timezone string in the embedded dataset must parse as a
