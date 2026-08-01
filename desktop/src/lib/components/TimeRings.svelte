@@ -24,12 +24,15 @@
   import {
     MINUTES_PER_DAY,
     MONTH_NAMES,
-    addMonths,
     dayOfYear,
     daysInMonth,
     daysInYear,
     fromDays,
+    fromMinutes,
     ringAngles,
+    ringDetent,
+    ringDragMinutes,
+    ringStep,
   } from "$lib/civil";
   import { ringDrag } from "$lib/ringDrag";
 
@@ -158,8 +161,7 @@
       svg: () => svgEl,
       // the ring follows the finger: rotation is −angle, so a clockwise drag
       // (positive degrees) winds the moment BACK
-      degToMinutes: (deg: number) =>
-        ring === "time" ? -deg * (MINUTES_PER_DAY / 360) : (-deg / 360) * days * MINUTES_PER_DAY,
+      degToMinutes: (deg: number) => ringDragMinutes(ring, deg, days),
       onstart: () => {
         held = ring;
         gestureStart = draftMinutes();
@@ -172,11 +174,7 @@
       onmove: (minutes: number) => {
         if (draft === null) return;
         accum += minutes;
-        // date ring: whole-day detents keep the time of day fixed
-        draft =
-          ring === "time"
-            ? gestureStart + accum
-            : gestureStart + Math.round(accum / MINUTES_PER_DAY) * MINUTES_PER_DAY;
+        draft = ringDetent(ring, gestureStart, accum);
         setMoment(draft, "drag");
       },
       onend: () => {
@@ -196,9 +194,8 @@
     const { y, m, d } = fromDays(Math.floor(draftMinutes() / MINUTES_PER_DAY));
     return dayOfYear(y, m, d);
   });
-  const timeText = $derived(
-    `${String(Math.floor(minutesOfDay / 60)).padStart(2, "0")}:${String(minutesOfDay % 60).padStart(2, "0")}`,
-  );
+  // The canonical HH:MM formatter, not a third hand-rolled zero-pad.
+  const timeText = $derived(fromMinutes(draftMinutes()).time);
   const dateText = $derived.by(() => {
     const { m, d } = fromDays(Math.floor(draftMinutes() / MINUTES_PER_DAY));
     return `${d} ${MONTH_NAMES[m - 1]}`;
@@ -212,13 +209,7 @@
         : 0;
       if (dir === 0) return;
       e.preventDefault();
-      if (ring === "time") {
-        setMoment(draftMinutes() + dir * (e.shiftKey ? 60 : 5), "keyboard");
-      } else if (e.shiftKey) {
-        setMoment(addMonths(draftMinutes(), dir), "keyboard");
-      } else {
-        setMoment(draftMinutes() + dir * MINUTES_PER_DAY, "keyboard");
-      }
+      setMoment(ringStep(ring, draftMinutes(), dir, e.shiftKey), "keyboard");
     };
   }
 </script>

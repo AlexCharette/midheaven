@@ -4,6 +4,7 @@
   import { norm360 } from "$lib/derive";
   import { PLATE } from "$lib/generated/plate";
   import { relatedTo, signDensity } from "$lib/focus";
+  import { axisLongitudes, crowdedRadii, densityLength, focusLongitude } from "$lib/orrery";
   import { focusedTag, isPinned, peek, toggle, unpeek } from "$lib/focus.svelte";
   import { prefersReducedMotion } from "$lib/motion";
   import { onMount, type Snippet } from "svelte";
@@ -119,7 +120,7 @@
       const lon = i * 30;
       const [gx, gy] = pt(lon + 15, R.signGlyph);
       const w = density[i];
-      const len = w > 0 ? Math.sqrt(w / maxDensity) * (R.passOut - R.passIn) : 0;
+      const len = densityLength(w, maxDensity, R.passOut - R.passIn);
       const bar = w > 0 ? sector(lon + 5, lon + 25, R.passIn, R.passIn + len) : "";
       return { s, d: sector(lon, lon + 30, R.signIn, R.bandOut), gx, gy, bar, w };
     }),
@@ -142,12 +143,7 @@
   );
 
   const axes = $derived(
-    [
-      { lon: chart.axes.asc, label: "AC" },
-      { lon: chart.axes.mc, label: "MC" },
-      { lon: chart.axes.asc + 180, label: "DC" },
-      { lon: chart.axes.mc + 180, label: "IC" },
-    ].map(({ lon, label }) => {
+    axisLongitudes(chart).map(({ lon, label }) => {
       const [x1, y1] = pt(lon, R.hubInner); // the AC–DC / MC–IC cross meets at centre
       const [x2, y2] = pt(lon, R.outer);
       const [tx, ty] = pt(lon, R.outer + PLATE.axisLabelGap);
@@ -166,19 +162,10 @@
 
   const planets = $derived.by(() => {
     const byLon = [...chart.planets].sort((a, b) => a.lon - b.lon);
-    let prevLon: number | null = null;
-    let prevR = R.planet;
-    return byLon.map((p) => {
-      const gap = prevLon === null ? 999 : Math.min(Math.abs(p.lon - prevLon), 360 - Math.abs(p.lon - prevLon));
-      // DEPARTURE: the spec steps at its threshold; this ramps in over the
-      // 3° above it, so a body closing on another during a live scrub slides
-      // inward rather than popping. A static chart renders identically — the
-      // ramp only differs in the band the other two renditions never see mid-move.
-      const c = PLATE.crowding;
-      const f = Math.max(0, Math.min(1, (c.thresholdDeg + 3 - gap) / 3));
-      const r = f > 0 ? Math.max(prevR - c.step * f, c.floor) : R.planet;
-      prevLon = p.lon;
-      prevR = r;
+    // The de-crowding rule, with the orrery's ramp — see `$lib/orrery`.
+    const radii = crowdedRadii(byLon.map((p) => p.lon));
+    return byLon.map((p, i) => {
+      const r = radii[i];
       const [gx, gy] = pt(p.lon, r);
       const [dx, dy] = pt(p.lon, r - PLATE.degreeLabelDrop);
       const [t1x, t1y] = pt(p.lon, R.gradIn - PLATE.bodyTickLen);
@@ -187,31 +174,8 @@
     });
   });
 
-  // The longitude the selector pointer aims at — the focused element's own
-  // position, a sign/house midpoint, or an aspect's angular bisector.
-  const focusLon = $derived.by(() => {
-    if (!focusTag) return null;
-    const c = catOf(focusTag);
-    if (c === "planet") return planetById(chart, focusTag)?.lon ?? null;
-    if (c === "sign") {
-      const i = chart.signs.findIndex((s) => s.id === focusTag);
-      return i < 0 ? null : i * 30 + 15;
-    }
-    if (c === "house") {
-      const n = Number(focusTag.split(":")[1]);
-      const cusp = chart.houseCusps[n - 1];
-      if (cusp === undefined) return null;
-      return cusp + chart.houseSweeps[n - 1] / 2;
-    }
-    if (c === "aspect") {
-      const a = chart.aspects.find((x) => x.id === focusTag);
-      if (!a) return null;
-      const la = lonOf(a.a);
-      const diff = (((lonOf(a.b) - la + 540) % 360) - 180) / 2;
-      return la + diff;
-    }
-    return null;
-  });
+  // The longitude the selector pointer aims at, per category — see `$lib/orrery`.
+  const focusLon = $derived(focusTag ? focusLongitude(chart, focusTag) : null);
   // Rotate a north-pointing index clockwise onto the focused longitude.
   const pointerDeg = $derived.by(() => {
     if (focusLon === null) return 0;
