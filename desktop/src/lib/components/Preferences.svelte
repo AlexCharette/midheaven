@@ -1,7 +1,7 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { getPreferences, listModels, openLicenses, setPreferences } from "$lib/api";
-  import { ayanamsas, houseSystems, locales } from "$lib/options.svelte";
+  import { ayanamsas, defaults, houseSystems, locales } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
   import { reason } from "$lib/failure";
 
@@ -14,9 +14,9 @@
   let logo = $state("");
   let pageSize = $state("a4");
   let defaultLocale = $state("en");
-  let defaultHouseSystem = $state("whole-sign");
-  let defaultZodiac = $state("tropical");
-  let defaultAyanamsa = $state("lahiri");
+  let defaultHouseSystem = $state(defaults().houseSystem);
+  let defaultZodiac = $state(defaults().zodiac);
+  let defaultAyanamsa = $state(defaults().ayanamsa);
   let models = $state<string[]>([]);
   let error = $state("");
   // Not a pane field — the calculator's remembered place, carried through the
@@ -40,9 +40,9 @@
       logo = p.logo ?? "";
       pageSize = p.page_size ?? "a4";
       defaultLocale = p.default_locale ?? "en";
-      defaultHouseSystem = p.default_house_system ?? "whole-sign";
-      defaultZodiac = p.default_zodiac ?? "tropical";
-      defaultAyanamsa = p.default_ayanamsa ?? "lahiri";
+      defaultHouseSystem = p.default_house_system ?? defaults().houseSystem;
+      defaultZodiac = p.default_zodiac ?? defaults().zodiac;
+      defaultAyanamsa = p.default_ayanamsa ?? defaults().ayanamsa;
       lastPlaceId = p.last_place_id;
       refreshModels();
     });
@@ -87,9 +87,12 @@
         logo: logo || null,
         page_size: pageSize === "a4" ? null : pageSize,
         default_locale: defaultLocale === "en" ? null : defaultLocale,
-        default_house_system: defaultHouseSystem === "whole-sign" ? null : defaultHouseSystem,
-        default_zodiac: defaultZodiac === "tropical" ? null : defaultZodiac,
-        default_ayanamsa: defaultAyanamsa === "lahiri" ? null : defaultAyanamsa,
+        // A choice equal to the default is stored as absent, so the default
+        // can change later without every saved preference pinning the old one.
+        default_house_system:
+          defaultHouseSystem === defaults().houseSystem ? null : defaultHouseSystem,
+        default_zodiac: defaultZodiac === defaults().zodiac ? null : defaultZodiac,
+        default_ayanamsa: defaultAyanamsa === defaults().ayanamsa ? null : defaultAyanamsa,
         last_place_id: lastPlaceId,
       });
       notify("preferences kept");

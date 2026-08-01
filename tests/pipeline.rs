@@ -18,7 +18,7 @@ fn transcript_to_artifact() {
         tz: "Europe/Berlin".parse().unwrap(),
         place: "Berlin, Germany".into(),
         locale: Locale::En,
-        house_system: astro::chart::systems::house_system("whole-sign"),
+        house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
         ayanamsa: None,
     };
     let mut chart = compute_chart(&input).expect("chart computes");
@@ -91,7 +91,7 @@ fn a_chart_only_build_archives_no_transcript() {
         tz: "Europe/Berlin".parse().unwrap(),
         place: "Berlin, Germany".into(),
         locale: Locale::En,
-        house_system: astro::chart::systems::house_system("whole-sign"),
+        house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
         ayanamsa: None,
     };
     let (chart, report) =
@@ -120,7 +120,7 @@ fn a_text_transcript_keeps_its_extension() {
         tz: "Europe/Berlin".parse().unwrap(),
         place: "Berlin, Germany".into(),
         locale: Locale::En,
-        house_system: astro::chart::systems::house_system("whole-sign"),
+        house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
         ayanamsa: None,
     };
     let (chart, report) = build_reading(&input, TranscriptSource::File(path), |_| {})

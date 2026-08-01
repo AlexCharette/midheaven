@@ -6,6 +6,7 @@
   import { positionOf } from "$lib/derive";
   import { passageCount } from "$lib/focus";
   import { focusedTag } from "$lib/focus.svelte";
+  import { defaults } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
   import { updateChart, whyCannotRecalculate } from "$lib/session.svelte";
   import { reproject } from "$lib/api";
@@ -21,9 +22,9 @@
   // Live calculation controls. They mirror the chart's current codes and
   // re-sync whenever the chart changes (a reproject or a reopen), so the line
   // always reflects the active calculation.
-  let houseSystem = $state("whole-sign");
-  let zodiac = $state("tropical");
-  let ayanamsa = $state("lahiri");
+  let houseSystem = $state(defaults().houseSystem);
+  let zodiac = $state(defaults().zodiac);
+  let ayanamsa = $state(defaults().ayanamsa);
   let reprojecting = $state(false);
   $effect(() => {
     syncToChart();
@@ -33,9 +34,9 @@
   // re-sync `$effect` above: on success the chart is replaced and that effect
   // fires, on failure it does not, so the error path has to do it here.
   function syncToChart() {
-    houseSystem = chart.meta.house_system || "whole-sign";
-    zodiac = chart.meta.ayanamsa ? "sidereal" : "tropical";
-    ayanamsa = chart.meta.ayanamsa ?? "lahiri";
+    houseSystem = chart.meta.house_system || defaults().houseSystem;
+    zodiac = chart.meta.ayanamsa ? "sidereal" : defaults().zodiac;
+    ayanamsa = chart.meta.ayanamsa ?? defaults().ayanamsa;
   }
 
   async function recalc() {

@@ -9,6 +9,7 @@ export type CommandName =
   | "list_locales"
   | "list_house_systems"
   | "list_ayanamsas"
+  | "calculation_defaults"
   | "build"
   | "reproject"
   | "preview"

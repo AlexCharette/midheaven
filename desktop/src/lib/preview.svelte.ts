@@ -13,18 +13,20 @@
 // is the interface: there are no fields to assign.
 
 import { preview as sendPreview } from "./api";
+import { defaults as optionDefaults } from "./options.svelte";
 import type { ChartData, PlaceDto } from "./types";
 import { ringAngles } from "./civil";
 import { createChartPose, type MoveSource } from "./chartPose.svelte";
 import { poseOf, project } from "./pose";
 import { createPump, requestFor, type Draft, type Outcome } from "./preview";
 
+// The calculation codes come from `options`, which serves what the backend
+// states — they are not written here. `Calculator` re-seeds them from
+// preferences at mount.
 const draft = $state<Draft>({
   minutes: 0,
   place: null,
-  houseSystem: "whole-sign",
-  zodiac: "tropical",
-  ayanamsa: "lahiri",
+  ...optionDefaults(),
   lang: "en",
 });
 

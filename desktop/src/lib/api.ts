@@ -20,6 +20,7 @@ import { reason } from "./failure";
 import type { CommandName } from "./generated/commands";
 import type {
   BirthForm,
+  CalculationDefaults,
   ChartData,
   LocaleDto,
   OptionDto,
@@ -58,6 +59,12 @@ export const listLocales = () => call<LocaleDto[]>("list_locales");
 export const listHouseSystems = () => call<OptionDto[]>("list_house_systems");
 
 export const listAyanamsas = () => call<OptionDto[]>("list_ayanamsas");
+
+/** The calculation a form starts from when nothing has been chosen — served
+ * rather than restated, so `chart::systems::DEFAULTS` is the only place the
+ * three codes are written. */
+export const calculationDefaults = () =>
+  call<CalculationDefaults>("calculation_defaults");
 
 export const build = (form: BirthForm) => call<ChartData>("build", { form });
 

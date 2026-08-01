@@ -8,7 +8,7 @@
   import { openReading } from "$lib/session.svelte";
   import { busy, during, isBusy } from "$lib/busy.svelte";
   import { resetFocus } from "$lib/focus.svelte";
-  import { locales, setModelPath } from "$lib/options.svelte";
+  import { defaults, locales, setModelPath } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
   import CalcOptions from "./CalcOptions.svelte";
   import PlacePicker from "./PlacePicker.svelte";
@@ -49,7 +49,7 @@
   /* svelte-ignore state_referenced_locally */
   let houseSystem = $state(initial?.houseSystem ?? "");
   /* svelte-ignore state_referenced_locally */
-  let zodiac = $state(initial?.zodiac ?? "tropical");
+  let zodiac = $state(initial?.zodiac ?? defaults().zodiac);
   /* svelte-ignore state_referenced_locally */
   let ayanamsa = $state(initial?.ayanamsa ?? "");
   let error = $state("");
@@ -64,8 +64,8 @@
     const p = await getPreferences();
     if (!model.trim() && p.default_model) model = p.default_model;
     if (!lang) lang = p.default_locale ?? "en";
-    if (!houseSystem) houseSystem = p.default_house_system ?? "whole-sign";
-    if (!ayanamsa) ayanamsa = p.default_ayanamsa ?? "lahiri";
+    if (!houseSystem) houseSystem = p.default_house_system ?? defaults().houseSystem;
+    if (!ayanamsa) ayanamsa = p.default_ayanamsa ?? defaults().ayanamsa;
     // Zodiac is a real toggle (default tropical); a set preference moves it
     // only when the calculator didn't hand one over.
     if (initial?.zodiac === undefined && p.default_zodiac) zodiac = p.default_zodiac;

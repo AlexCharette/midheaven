@@ -314,7 +314,7 @@ mod tests {
             tz: chrono_tz::Europe::Berlin,
             place: "Berlin".into(),
             locale: astro::i18n::Locale::En,
-            house_system: astro::chart::systems::house_system("whole-sign"),
+            house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
             ayanamsa: None,
         };
         astro::chart::compute_chart(&input).unwrap()

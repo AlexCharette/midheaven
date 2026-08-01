@@ -131,3 +131,21 @@ A departure is an override written next to its reason; everything not overridden
 cannot drift. What stays with the renderer regardless: arc construction (the PDF
 builds cubics where SVG writes an `A`), type sizes (points on paper against CSS
 pixels), and colour.
+
+## Calculation
+
+A house system, a zodiac, and — when the zodiac is sidereal — an ayanamsa.
+Chosen as wire codes (`whole-sign`, `tropical`, `lahiri`), resolved to types by
+`chart::systems::resolve` under a three-tier rule: **what was asked for**, else
+**what is preferred**, else `systems::DEFAULTS`.
+
+One ladder, one home for the three default codes. There were four ladders in two
+languages — the build command's, the preview command's with no preference tier,
+and two on the frontend gated on different conditions — and the codes appeared
+64 times across the core, the CLI, the command layer and four components. The
+webview reads them from `calculation_defaults` rather than restating them.
+
+An unknown code is **refused**, not defaulted. It used to become Whole Sign in
+silence, so a typo, a stale preference and a real choice were the same input:
+the chart came back claiming `whole-sign`, the reading view's selector snapped
+to match, and nothing was said.

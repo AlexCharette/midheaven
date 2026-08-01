@@ -10,6 +10,7 @@ mod session;
 
 use astro::chart::parse_time;
 use astro::contract::{ChartData, Excerpt};
+use astro::chart::systems;
 use astro::route::{next_ordinal, retag};
 use astro::{TranscriptSource, geo};
 use serde::{Deserialize, Serialize};
@@ -82,6 +83,30 @@ fn list_locales() -> Vec<LocaleDto> {
         .collect()
 }
 
+/// The calculation a form starts from when nothing has been chosen and nothing
+/// is preferred — served so the webview stops restating the three codes.
+#[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+struct CalculationDefaults {
+    house_system: String,
+    zodiac: String,
+    ayanamsa: String,
+}
+
+/// The three default codes. `"whole-sign"`, `"tropical"` and `"lahiri"` used to
+/// be written out in five places on this side of the wire and five more on the
+/// other; `chart::systems::DEFAULTS` is now the only one.
+#[tauri::command]
+fn calculation_defaults() -> CalculationDefaults {
+    let d = systems::DEFAULTS;
+    CalculationDefaults {
+        house_system: d.house_system.expect("a default house system").to_string(),
+        zodiac: d.zodiac.expect("a default zodiac").to_string(),
+        ayanamsa: d.ayanamsa.expect("a default ayanamsa").to_string(),
+    }
+}
+
 /// A calculation-option row for a UI selector: the stable wire `code` and its
 /// display `label`. Serves both the house-system and ayanamsa dropdowns.
 #[derive(Serialize)]
@@ -148,16 +173,19 @@ fn resolve_input(
     time: &str,
     place: &geo::Place,
     locale: astro::i18n::Locale,
-    house_system: &str,
-    zodiac: &str,
-    ayanamsa: Option<&str>,
+    asked: systems::Codes,
+    preferred: systems::Codes,
 ) -> Result<astro::chart::BirthInput, String> {
-    let house = astro::chart::systems::house_system(house_system);
-    let ayanamsa = zodiac
-        .trim()
-        .eq_ignore_ascii_case("sidereal")
-        .then(|| astro::chart::systems::ayanamsa(ayanamsa.unwrap_or("lahiri")));
-    Ok(astro::birth_at_place(name, date, parse_time(time)?, place, locale, house, ayanamsa))
+    let calc = systems::resolve(asked, preferred)?;
+    Ok(astro::birth_at_place(
+        name,
+        date,
+        parse_time(time)?,
+        place,
+        locale,
+        calc.house_system,
+        calc.ayanamsa,
+    ))
 }
 
 #[tauri::command]
@@ -186,9 +214,12 @@ async fn build(
         &form.time,
         place,
         locale,
-        form.house_system.as_deref().or(p.default_house_system.as_deref()).unwrap_or("whole-sign"),
-        form.zodiac.as_deref().or(p.default_zodiac.as_deref()).unwrap_or("tropical"),
-        form.ayanamsa.as_deref().or(p.default_ayanamsa.as_deref()),
+        systems::Codes::new(
+            form.house_system.as_deref(),
+            form.zodiac.as_deref(),
+            form.ayanamsa.as_deref(),
+        ),
+        preferred(&p),
     )?;
     let source = TranscriptSource::classify(
         form.transcript.as_deref().unwrap_or(""),
@@ -399,9 +430,8 @@ fn reproject(
         &carried.seed.time.clone(),
         place,
         carried.locale,
-        &house_system,
-        &zodiac,
-        ayanamsa.as_deref(),
+        systems::Codes::new(Some(&house_system), Some(&zodiac), ayanamsa.as_deref()),
+        systems::Codes::default(),
     )?;
 
     let mut chart = astro::chart::compute_chart(&input)?;
@@ -413,6 +443,15 @@ fn reproject(
         library::save_chart(dir, &reading.chart)?;
     }
     Ok(chart)
+}
+
+/// The calculation tier a person's stored preferences contribute.
+fn preferred(p: &prefs::Preferences) -> systems::Codes<'_> {
+    systems::Codes::new(
+        p.default_house_system.as_deref(),
+        p.default_zodiac.as_deref(),
+        p.default_ayanamsa.as_deref(),
+    )
 }
 
 /// A live-calculator moment: date/time/place plus calculation choices. No
@@ -456,9 +495,14 @@ async fn preview(input: PreviewInput) -> Result<PreviewDto, String> {
         &input.time,
         place,
         locale,
-        input.house_system.as_deref().unwrap_or("whole-sign"),
-        input.zodiac.as_deref().unwrap_or("tropical"),
-        input.ayanamsa.as_deref(),
+        systems::Codes::new(
+            input.house_system.as_deref(),
+            input.zodiac.as_deref(),
+            input.ayanamsa.as_deref(),
+        ),
+        // No preference tier: the calculator states every choice it has, and
+        // seeds them from preferences itself at startup.
+        systems::Codes::default(),
     )?;
     let (chart, warnings) = astro::chart::compute_chart_reporting(&birth)?;
     Ok(PreviewDto { chart, warnings })
@@ -635,6 +679,23 @@ fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), Stri
     if let Some(size) = &prefs.page_size {
         astro::pdf::PageSize::parse(size)?;
     }
+    // The calculation preferences were the four this never checked, so a
+    // nonsense value persisted and then quietly became Whole Sign on every
+    // build. Resolving them here refuses at the point a person can still see
+    // what they typed. Sidereal so the ayanamsa is checked too.
+    systems::resolve(
+        systems::Codes::default(),
+        systems::Codes::new(
+            prefs.default_house_system.as_deref(),
+            Some("sidereal"),
+            prefs.default_ayanamsa.as_deref(),
+        ),
+    )?;
+    if let Some(z) = &prefs.default_zodiac {
+        if !systems::is_sidereal(z) && z != "tropical" {
+            return Err(format!("unknown zodiac {z:?}"));
+        }
+    }
     for (label, dir) in [("models folder", &prefs.models_dir), ("readings folder", &prefs.readings_dir)] {
         if let Some(d) = dir {
             if !Path::new(d).is_dir() {
@@ -777,6 +838,7 @@ macro_rules! commands {
             list_locales,
             list_house_systems,
             list_ayanamsas,
+            calculation_defaults,
             build,
             reproject,
             preview,
@@ -852,7 +914,8 @@ fn export_bindings_command_names() {
     let Ok(dir) = std::env::var("TS_RS_EXPORT_DIR") else {
         return;
     };
-    let names: [&str; 25] = commands!(names, start_recording, stop_recording);
+    // Length inferred — adding a command should not need a number bumped here.
+    let names = commands!(names, start_recording, stop_recording);
     let mut out = String::from(
         "// This file was generated from the command list in \
          `desktop/src-tauri/src/lib.rs`. Do not edit this file manually.\n\n\
@@ -886,7 +949,7 @@ mod tests {
             tz: chrono_tz::Europe::Berlin,
             place: "Berlin".into(),
             locale: astro::i18n::Locale::En,
-            house_system: astro::chart::systems::house_system("whole-sign"),
+            house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
             ayanamsa: None,
         };
         astro::chart::compute_chart(&input).unwrap()
@@ -952,10 +1015,10 @@ mod tests {
                 tz: chrono_tz::Europe::Berlin,
                 place: "Berlin".into(),
                 locale: astro::i18n::Locale::En,
-                house_system: astro::chart::systems::house_system("whole-sign"),
+                house_system: astro::chart::systems::house_system("whole-sign").unwrap(),
                 ayanamsa: None,
             };
-            input.house_system = astro::chart::systems::house_system("placidus");
+            input.house_system = astro::chart::systems::house_system("placidus").unwrap();
             astro::chart::compute_chart(&input).unwrap()
         };
         assert!(fresh.excerpts.is_empty());
@@ -1032,20 +1095,36 @@ mod tests {
     }
 
     #[test]
-    fn resolve_input_maps_zodiac_onto_ayanamsa_and_rejects_bad_times() {
+    fn resolve_input_carries_the_calculation_and_gates_the_time() {
         let place = geo::search("Berlin", 1).into_iter().next().expect("gazetteer has Berlin");
         let date: chrono::NaiveDate = "1990-07-13".parse().unwrap();
         let en = astro::i18n::Locale::En;
-        // Tropical ignores any ayanamsa code; sidereal defaults to Lahiri.
-        let trop = resolve_input("", date, "14:30", place, en, "whole-sign", "tropical", Some("raman")).unwrap();
-        assert_eq!(trop.ayanamsa, None);
-        let sid = resolve_input("", date, "14:30", place, en, "placidus", "Sidereal", None).unwrap();
-        assert_eq!(sid.ayanamsa, Some(astro::chart::systems::ayanamsa("lahiri")));
-        assert_eq!(sid.house_system, astro::chart::systems::house_system("placidus"));
+        let none = systems::Codes::default();
+        let asked = |h, z, a| systems::Codes::new(Some(h), Some(z), a);
+
+        // The ladder itself is tested in `chart::systems`; what this checks is
+        // that the command layer hands it through to the birth input.
+        let sid = resolve_input("", date, "14:30", place, en, asked("placidus", "Sidereal", None), none)
+            .unwrap();
+        assert_eq!(sid.house_system, systems::house_system("placidus").unwrap());
+        assert_eq!(sid.ayanamsa, Some(systems::ayanamsa("lahiri").unwrap()));
         // A blank name resolves to the locale's anonymous label.
-        assert!(!trop.name.is_empty());
+        assert!(!sid.name.is_empty());
+
+        // A preference tier reaches it too.
+        let pref = resolve_input("", date, "14:30", place, en, none, asked("koch", "tropical", None))
+            .unwrap();
+        assert_eq!(pref.house_system, systems::house_system("koch").unwrap());
+        assert_eq!(pref.ayanamsa, None);
+
         // The shared time rule still gates: nonsense fails here, not deeper.
-        assert!(resolve_input("", date, "25:00", place, en, "", "tropical", None).is_err());
+        assert!(
+            resolve_input("", date, "25:00", place, en, none, none).is_err(),
+            "an impossible time is refused"
+        );
+        // And so does an impossible calculation.
+        assert!(resolve_input("", date, "14:30", place, en, asked("bogus", "tropical", None), none)
+            .is_err());
     }
 
     #[test]

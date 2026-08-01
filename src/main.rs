@@ -158,12 +158,15 @@ impl BirthArgs {
         let name = self.name.trim();
         let name = if name.is_empty() { locale.anonymous().to_string() } else { name.to_string() };
 
-        let house_system = systems::house_system(&self.house_system);
-        let ayanamsa = if self.zodiac.trim().eq_ignore_ascii_case("sidereal") {
-            Some(systems::ayanamsa(&self.ayanamsa))
-        } else {
-            None
-        };
+        // The CLI's flags are one tier; there are no preferences behind them.
+        let calc = systems::resolve(
+            systems::Codes::new(
+                Some(&self.house_system),
+                Some(&self.zodiac),
+                Some(&self.ayanamsa),
+            ),
+            systems::Codes::default(),
+        )?;
 
         let field = |manual: Option<f64>, from_place: Option<f64>, flag: &str| {
             manual.or(from_place).ok_or(format!("--{flag} is required unless --place/--place-id is given"))
@@ -183,8 +186,8 @@ impl BirthArgs {
                 .or(resolved.map(|p| p.label()))
                 .unwrap_or_default(),
             locale,
-            house_system,
-            ayanamsa,
+            house_system: calc.house_system,
+            ayanamsa: calc.ayanamsa,
         };
         Ok((input, notice))
     }

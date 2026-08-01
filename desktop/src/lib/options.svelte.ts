@@ -6,10 +6,10 @@
 // ayanamsas from `chart::systems` — so adding one on that side needs no change
 // on this one.
 
-import { listAyanamsas, listHouseSystems, listLocales } from "./api";
+import { calculationDefaults, listAyanamsas, listHouseSystems, listLocales } from "./api";
 import { reason } from "./failure";
 import { notify } from "./toasts.svelte";
-import type { LocaleDto, OptionDto } from "./types";
+import type { CalculationDefaults, LocaleDto, OptionDto } from "./types";
 
 /** Reading languages offered in the UI (`list_locales`): endonym labels for the
  * selectors and the house-name suffix to strip. Empty until `loadLocales`. */
@@ -30,11 +30,28 @@ export async function loadLocales() {
   }
 }
 
-/** Populate the calculation-option lists once; a no-op after the first call. */
+/** The calculation a form starts from when nothing has been chosen.
+ *
+ * Served by the backend rather than restated here: these three codes used to be
+ * written out in five places on this side and five more in Rust, so
+ * `chart::systems::DEFAULTS` is now the only one. The initial values below are
+ * what a form shows for the instant before `loadCalcOptions` answers. */
+const fallback: CalculationDefaults = {
+  houseSystem: "whole-sign",
+  zodiac: "tropical",
+  ayanamsa: "lahiri",
+};
+const calcDefaults = $state({ value: fallback });
+
+export const defaults = (): CalculationDefaults => calcDefaults.value;
+
+/** Populate the calculation-option lists and defaults once; a no-op after the
+ * first call. */
 export async function loadCalcOptions() {
   try {
     if (houseSystems.length === 0) houseSystems.push(...(await listHouseSystems()));
     if (ayanamsas.length === 0) ayanamsas.push(...(await listAyanamsas()));
+    calcDefaults.value = await calculationDefaults();
   } catch (e) {
     notify(reason(e), "error");
   }

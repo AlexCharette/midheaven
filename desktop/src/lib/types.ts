@@ -18,6 +18,7 @@ export type { PlaceDto } from "./generated/PlaceDto";
 export type { Preferences } from "./generated/Preferences";
 export type { ReadingEntry } from "./generated/ReadingEntry";
 export type { BirthForm } from "./generated/BirthForm";
+export type { CalculationDefaults } from "./generated/CalculationDefaults";
 export type { LocaleDto } from "./generated/LocaleDto";
 export type { OptionDto } from "./generated/OptionDto";
 export type { PreviewInput } from "./generated/PreviewInput";
