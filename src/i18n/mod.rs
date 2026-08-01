@@ -163,18 +163,7 @@ impl Locale {
         system: &str,
         zodiac: &str,
     ) -> String {
-        let place = if place.is_empty() { String::new() } else { format!(", {place}") };
-        match self {
-            Locale::En => format!(
-                "Fig. I. \u{2014} The natal figure of {name}, calculated for {born}{place}. \
-                 {system} houses upon the {} zodiac.",
-                zodiac.to_lowercase()
-            ),
-            Locale::Ru => format!(
-                "Рис. I. \u{2014} Натальная карта {name}, рассчитана на {born}{place}. \
-                 Система домов: {system}. Зодиак: {zodiac}."
-            ),
-        }
+        self.table().figure_caption.render(name, born, place, system, zodiac)
     }
 
     // ---- router match-terms (stage 3) ----
@@ -190,8 +179,13 @@ impl Locale {
     }
 
     /// Lowercase terms a reader would use for a 1-based house number.
+    ///
+    /// No English fallback, like every other term accessor: a locale with no
+    /// word for a house should route nothing rather than route on English
+    /// words. This used to fall back by accident, because it shared `house()`
+    /// with `house_name`, which should.
     pub fn house_terms(self, n: usize) -> &'static [&'static str] {
-        self.house(n).map_or(&[], |h| h.terms)
+        n.checked_sub(1).and_then(|i| self.table().houses.get(i)).map_or(&[], |h| h.terms)
     }
 
     /// Lowercase words that name an aspect kind in speech.
@@ -199,10 +193,51 @@ impl Locale {
         aspect(self.table().aspects, kind).map_or(&[], |a| a.match_words)
     }
 
+    /// A house entry for display, falling back to English — the name accessors
+    /// fall back, the term accessors do not. See [`house_terms`](Self::house_terms).
     fn house(self, n: usize) -> Option<&'static HouseEntry> {
         n.checked_sub(1)
             .and_then(|i| self.table().houses.get(i))
             .or_else(|| n.checked_sub(1).and_then(|i| en::TABLE.houses.get(i)))
+    }
+}
+
+/// How a language writes the plate's figure caption.
+///
+/// Its shape differs, not only its words — the same property that made
+/// [`PlateTitle`] a choice rather than a string. English folds the house system
+/// into a sentence and lowercases the zodiac word ("upon the tropical zodiac");
+/// Russian labels both as clauses and must not lowercase ("Зодиак:
+/// Тропический").
+///
+/// This was the last locale value that lived as a `match` in this file's body
+/// rather than in its tables, so a language's text sat in two files and the
+/// completeness tests — which iterate `Locale::ALL` over table fields — could
+/// not reach it.
+#[derive(Debug, Clone, Copy)]
+pub struct FigureCaption {
+    /// Placeholders: `{name}`, `{born}`, `{place}`, `{system}`, `{zodiac}`.
+    /// `{place}` is empty when the chart has none, and otherwise carries
+    /// [`place_prefix`](Self::place_prefix) in front of it.
+    pub template: &'static str,
+    /// What separates the place from the birth moment when there is one.
+    pub place_prefix: &'static str,
+    /// Whether the zodiac word is lowercased into the sentence.
+    pub lowercase_zodiac: bool,
+}
+
+impl FigureCaption {
+    pub fn render(self, name: &str, born: &str, place: &str, system: &str, zodiac: &str) -> String {
+        let place =
+            if place.is_empty() { String::new() } else { format!("{}{place}", self.place_prefix) };
+        let zodiac =
+            if self.lowercase_zodiac { zodiac.to_lowercase() } else { zodiac.to_string() };
+        self.template
+            .replace("{name}", name)
+            .replace("{born}", born)
+            .replace("{place}", &place)
+            .replace("{system}", system)
+            .replace("{zodiac}", &zodiac)
     }
 }
 
@@ -232,6 +267,8 @@ pub struct LocaleTable {
     pub house_suffix: &'static str,
     /// How this language titles a chart's plate — shared by both renditions.
     pub plate_title: PlateTitle,
+    /// How this language writes the PDF plate's figure caption.
+    pub figure_caption: FigureCaption,
     pub pdf: PdfChrome,
     pub artifact: ArtifactChrome,
 }
@@ -430,6 +467,49 @@ mod tests {
         let (headline, beneath) = Locale::Ru.plate_title().render("Мира Холт");
         assert_eq!(headline, "Натальная карта");
         assert_eq!(beneath, Some("Мира Холт"));
+    }
+
+    /// The figure caption was the last locale value living as a `match` in this
+    /// file rather than in its tables, and the only one no test could reach.
+    #[test]
+    fn every_locale_writes_a_complete_figure_caption() {
+        for loc in Locale::ALL {
+            let code = loc.code();
+            let caption =
+                loc.pdf_figure_caption("Mira Holt", "1990-07-13 14:30", "Berlin", "Whole Sign", "Tropical");
+            for needle in ["Mira Holt", "1990-07-13 14:30", "Berlin", "Whole Sign"] {
+                assert!(caption.contains(needle), "{code}: caption drops {needle:?}: {caption}");
+            }
+            assert!(!caption.contains('{'), "{code}: unfilled placeholder in {caption}");
+            assert!(caption.trim_end().ends_with('.'), "{code}: {caption}");
+        }
+    }
+
+    /// A chart built from bare coordinates has no place label, and the caption
+    /// must read as a sentence without one rather than leaving a dangling comma.
+    #[test]
+    fn a_caption_with_no_place_has_no_dangling_separator() {
+        for loc in Locale::ALL {
+            let code = loc.code();
+            let caption = loc.pdf_figure_caption("Mira", "1990-07-13", "", "Whole Sign", "Tropical");
+            let prefix = loc.table().figure_caption.place_prefix;
+            assert!(!caption.contains(&format!("{prefix}.")), "{code}: dangling: {caption}");
+            assert!(!caption.contains(", ."), "{code}: {caption}");
+            assert!(!caption.contains('{'), "{code}: {caption}");
+        }
+    }
+
+    /// English folds the zodiac into a sentence ("upon the tropical zodiac");
+    /// Russian labels it as a clause and must keep its capital. The difference
+    /// is the whole reason this is a shaped field and not a string.
+    #[test]
+    fn the_zodiac_word_is_cased_the_way_each_language_needs() {
+        let en = Locale::En.pdf_figure_caption("M", "b", "p", "Whole Sign", "Tropical");
+        assert!(en.contains("tropical zodiac"), "{en}");
+        assert!(!en.contains("Tropical"), "English lowercases it into the sentence: {en}");
+
+        let ru = Locale::Ru.pdf_figure_caption("M", "b", "p", "Целые знаки", "Тропический");
+        assert!(ru.contains("Тропический"), "Russian keeps the capital: {ru}");
     }
 
     /// The chrome's format strings carry the placeholders the viewer

@@ -2,7 +2,10 @@
 //! hardcoded values (`chart::catalog` names, the old `route::lexicon` term
 //! lists) so English output never shifts — the tests in `super` guard it.
 
-use super::{ArtifactChrome, AspectEntry, Entry, HouseEntry, LocaleTable, PdfChrome, PlateTitle};
+use super::{
+    ArtifactChrome, AspectEntry, Entry, FigureCaption, HouseEntry, LocaleTable, PdfChrome,
+    PlateTitle,
+};
 
 pub static TABLE: LocaleTable = LocaleTable {
     planets: PLANETS,
@@ -17,6 +20,12 @@ pub static TABLE: LocaleTable = LocaleTable {
     endonym: "English",
     house_suffix: " House",
     plate_title: PlateTitle::Inline("{name}'s birth chart"),
+    figure_caption: FigureCaption {
+        template: "Fig. I. \u{2014} The natal figure of {name}, calculated for {born}{place}. \
+                   {system} houses upon the {zodiac} zodiac.",
+        place_prefix: ", ",
+        lowercase_zodiac: true,
+    },
     pdf: PdfChrome {
         prepared_by: "Prepared by",
         index_of_elements: "Index of Elements",

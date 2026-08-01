@@ -3,7 +3,10 @@
 //! the router matches whole words, not stems. Native-speaker review welcome —
 //! extending a term list never changes ids or geometry, only what routes.
 
-use super::{ArtifactChrome, AspectEntry, Entry, HouseEntry, LocaleTable, PdfChrome, PlateTitle};
+use super::{
+    ArtifactChrome, AspectEntry, Entry, FigureCaption, HouseEntry, LocaleTable, PdfChrome,
+    PlateTitle,
+};
 
 pub static TABLE: LocaleTable = LocaleTable {
     planets: PLANETS,
@@ -18,6 +21,12 @@ pub static TABLE: LocaleTable = LocaleTable {
     endonym: "Русский",
     house_suffix: " дом",
     plate_title: PlateTitle::Above("Натальная карта"),
+    figure_caption: FigureCaption {
+        template: "Рис. I. \u{2014} Натальная карта {name}, рассчитана на {born}{place}. \
+                   Система домов: {system}. Зодиак: {zodiac}.",
+        place_prefix: ", ",
+        lowercase_zodiac: false,
+    },
     pdf: PdfChrome {
         prepared_by: "Подготовил",
         index_of_elements: "Указатель элементов",
