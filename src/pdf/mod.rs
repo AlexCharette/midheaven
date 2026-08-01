@@ -181,10 +181,44 @@ pub fn render(chart: &ChartData, size: PageSize) -> Result<Vec<u8>, String> {
     let frame = Frame { w, margin: MARGIN };
     let mut doc = Document::new();
 
-    render_title_page(&mut doc, chart, &fonts, loc, &frame, h);
-    paginate(&mut doc, chart, &fonts, &frame, h);
+    render_title_page(&mut doc, chart, &fonts, loc, &frame, h)?;
+    paginate(&mut doc, chart, &fonts, &frame, h)?;
 
     doc.finish().map_err(|e| format!("cannot assemble the PDF: {e:?}"))
+}
+
+/// The size the name is set at: the largest that fits `width`, stepping down to
+/// a floor below which it is left to overflow rather than become unreadable.
+///
+/// Pulled out of the title page so the shrink is a value — a long name is the
+/// one input that changes page 1's rhythm, and the loop that decides it was
+/// buried between two drawing calls.
+fn fitted_name_size(fonts: &Fonts, name: &str, width: f32) -> f32 {
+    use plate::*;
+    let tracking = |sz: f32| sz * NAME_TRACKING_RATIO;
+    let mut size = NAME_MAX_SIZE;
+    while fonts.width(Face::Regular, size, tracking(size), name) > width && size > NAME_MIN_SIZE {
+        size -= NAME_SHRINK_STEP;
+    }
+    size
+}
+
+/// The side of the framed plate: the content width, or whatever vertical room
+/// the header bands left, whichever is smaller.
+///
+/// Errors rather than returning a negative side. The header is built from fixed
+/// advances, so a page cannot actually run out of room today — but the value
+/// fed `Rect::from_xywh`, whose failure mode is a panic in a save dialog.
+fn plate_side(frame: &Frame, page_h: f32, cursor_y: f32) -> Result<f32, String> {
+    use plate::*;
+    let room = page_h - frame.margin - CAPTION_ROOM - cursor_y - BOTTOM_SLACK;
+    let side = frame.content_w().min(room);
+    if side <= 0.0 {
+        return Err(format!(
+            "the title page header leaves {side:.1}pt for the plate; the chart cannot be drawn"
+        ));
+    }
+    Ok(side)
 }
 
 /// Page 1: the title plate — header (ornament, super-title, name, details,
@@ -196,7 +230,7 @@ fn render_title_page(
     loc: Locale,
     frame: &Frame,
     h: f32,
-) {
+) -> Result<(), String> {
     use plate::*;
     let w = frame.w;
     let cw = frame.content_w();
@@ -223,11 +257,8 @@ fn render_title_page(
     y += SUPERTITLE_ADVANCE;
 
     let name = chart.meta.name.to_uppercase();
-    let mut nsize = NAME_MAX_SIZE;
+    let nsize = fitted_name_size(fonts, &name, cw);
     let tracking = |sz: f32| sz * NAME_TRACKING_RATIO;
-    while fonts.width(Face::Regular, nsize, tracking(nsize), &name) > cw && nsize > NAME_MIN_SIZE {
-        nsize -= NAME_SHRINK_STEP;
-    }
     let nw = fonts.width(Face::Regular, nsize, tracking(nsize), &name);
     draw_tracked(&mut s, fonts, Face::Regular, nsize, INK, tracking(nsize), cx - nw / 2.0, y + nsize, &name);
     y += nsize + NAME_ADVANCE_PAD;
@@ -255,7 +286,7 @@ fn render_title_page(
     y += RULE_ADVANCE;
 
     // the plate: double frame + wheel, sized to what the page leaves us
-    let side = cw.min(h - frame.margin - CAPTION_ROOM - y - BOTTOM_SLACK);
+    let side = plate_side(frame, h, y)?;
     let px = cx - side / 2.0;
     rect_stroke(&mut s, px, y, side, side, LINE, 0.8);
     rect_stroke(&mut s, px + FRAME_INSET, y + FRAME_INSET, side - 2.0 * FRAME_INSET, side - 2.0 * FRAME_INSET, HAIRLINE, 0.9);
@@ -276,44 +307,48 @@ fn render_title_page(
 
     s.finish();
     page.finish();
+    Ok(())
 }
 
-/// Pages 2+: measure the flow once, then lay it out page by page — fit lines
-/// by height, pull back any trailing keep-with-next run so a folio never sits
-/// alone at a break, and stamp the folio number.
-fn paginate(doc: &mut Document, chart: &ChartData, fonts: &Fonts, frame: &Frame, h: f32) {
+/// The height a flowed page has for lines: the paper less both margins and the
+/// room the folio number sits in.
+fn flow_room(frame: &Frame, h: f32) -> f32 {
+    h - frame.margin - flowed::FOOTER_ROOM - frame.margin
+}
+
+/// Pages 2+: measure the flow once, ask [`flow::slices`] how it divides, then
+/// paint each slice and stamp the folio number.
+///
+/// Deciding and painting used to share one loop and one mutable cursor, so
+/// nothing could observe a page break. This function now has no decisions left
+/// in it — everything it does is a `Surface` effect.
+fn paginate(
+    doc: &mut Document,
+    chart: &ChartData,
+    fonts: &Fonts,
+    frame: &Frame,
+    h: f32,
+) -> Result<(), String> {
     let w = frame.w;
     let cx = w / 2.0;
     let flow = build_flow(chart, fonts, frame);
-    let bottom = h - frame.margin - flowed::FOOTER_ROOM;
-    let mut i = 0;
-    let mut page_no = 2;
-    while i < flow.len() {
-        // decide the page's slice first: fit by height, then pull back any
-        // trailing keep-with-next run so folios never sit alone at a break
-        let start = i;
-        let mut y = frame.margin;
-        while i < flow.len() && y + flow[i].h <= bottom {
-            y += flow[i].h;
-            i += 1;
-        }
-        while i > start + 1 && i < flow.len() && flow[i - 1].keep {
-            i -= 1;
-        }
+    let measures: Vec<flow::Measure> = flow.iter().map(flow::FlowLine::measure).collect();
 
+    for (n, page_lines) in flow::slices(&measures, flow_room(frame, h))?.into_iter().enumerate() {
         let mut page = doc.start_page_with(page_settings(w, h));
         let mut s = page.surface();
         paper(&mut s, w, h);
         let mut y = frame.margin;
-        for line in &flow[start..i] {
+        for line in &flow[page_lines] {
             (line.draw)(&mut s, fonts, y);
             y += line.h;
         }
-        center_str(&mut s, fonts, Face::Italic, flowed::FOOTER_SIZE, INK3, cx, h - flowed::FOOTER_DROP, &format!("\u{b7} {page_no} \u{b7}"));
+        let folio = format!("\u{b7} {} \u{b7}", n + 2); // page 1 is the title plate
+        center_str(&mut s, fonts, Face::Italic, flowed::FOOTER_SIZE, INK3, cx, h - flowed::FOOTER_DROP, &folio);
         s.finish();
         page.finish();
-        page_no += 1;
     }
+    Ok(())
 }
 
 /// Render and write — the one entry point frontends call.
@@ -421,6 +456,84 @@ mod tests {
         let bytes = render(&chart, PageSize::A4).unwrap();
         assert!(bytes.starts_with(b"%PDF-"));
         assert!(bytes.len() > 20_000);
+    }
+
+    /// The title page's two measurements, which used to be buried between
+    /// drawing calls with no way to observe either.
+    #[test]
+    fn a_long_name_shrinks_to_fit_and_a_short_one_does_not() {
+        let fonts = Fonts::new(Locale::En).unwrap();
+        let width = 467.0; // A4 content width
+
+        assert_eq!(fitted_name_size(&fonts, "MIRA HOLT", width), plate::NAME_MAX_SIZE);
+
+        // The contract is "fits, or the floor" — not "fits". A name long enough
+        // to still overflow at 12pt is set at 12pt and allowed to run wide,
+        // because the alternative is a title nobody can read.
+        for long in [
+            "MARIA DE LOS ANGELES FERNANDEZ DE LA VEGA Y SANTAMARIA",
+            &"X".repeat(400),
+        ] {
+            let shrunk = fitted_name_size(&fonts, long, width);
+            assert!(shrunk < plate::NAME_MAX_SIZE, "a long name must shrink, got {shrunk}");
+            assert!(shrunk >= plate::NAME_MIN_SIZE, "never below the floor, got {shrunk}");
+            let tracking = shrunk * plate::NAME_TRACKING_RATIO;
+            let fits = fonts.width(Face::Regular, shrunk, tracking, long) <= width;
+            assert!(
+                fits || shrunk == plate::NAME_MIN_SIZE,
+                "{shrunk}pt neither fits nor is the floor"
+            );
+        }
+
+        // A name that overflows even at the floor is left to overflow.
+        assert_eq!(fitted_name_size(&fonts, &"X".repeat(400), width), plate::NAME_MIN_SIZE);
+    }
+
+    #[test]
+    fn the_plate_takes_the_content_width_until_the_page_runs_short() {
+        let frame = Frame { w: 595.276, margin: MARGIN };
+        let h = 841.89;
+
+        // With the real header cursor the plate is limited by the page height.
+        let side = plate_side(&frame, h, 255.0).unwrap();
+        assert!(side > 0.0 && side <= frame.content_w());
+
+        // A header that ended higher up is limited by the content width instead.
+        assert_eq!(plate_side(&frame, h, 40.0).unwrap(), frame.content_w());
+
+        // And a header that consumed the page is refused, not drawn negative.
+        let err = plate_side(&frame, h, 800.0).unwrap_err();
+        assert!(err.contains("cannot be drawn"), "{err}");
+    }
+
+    /// The real flow, through the real page height — the case the unit tests
+    /// above abstract over.
+    #[test]
+    fn a_reading_paginates_into_whole_pages_that_tile_its_flow() {
+        let chart = chart_fixture();
+        let fonts = Fonts::new(Locale::En).unwrap();
+        let (w, h) = PageSize::A4.dims();
+        let frame = Frame { w, margin: MARGIN };
+        let room = flow_room(&frame, h);
+
+        let flow = flow::build_flow(&chart, &fonts, &frame);
+        let measures: Vec<flow::Measure> = flow.iter().map(flow::FlowLine::measure).collect();
+        assert!(!measures.is_empty(), "an eleven-body chart flows an index at least");
+        assert!(
+            measures.iter().all(|m| m.h <= room),
+            "no single line may exceed a page, or pagination is impossible"
+        );
+
+        let pages = flow::slices(&measures, room).expect("a real reading paginates");
+        assert!(!pages.is_empty());
+        let mut at = 0;
+        for p in &pages {
+            let used: f32 = measures[p.clone()].iter().map(|m| m.h).sum();
+            assert!(used <= room, "page {p:?} overflows: {used}pt of {room}pt");
+            assert_eq!(p.start, at);
+            at = p.end;
+        }
+        assert_eq!(at, measures.len(), "every line is on a page");
     }
 
     #[test]
