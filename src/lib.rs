@@ -126,9 +126,8 @@ pub fn birth_at_place(
     house_system: xalen_houses::HouseSystem,
     ayanamsa: Option<xalen_ayanamsa::Ayanamsa>,
 ) -> chart::BirthInput {
-    let name = name.trim();
     chart::BirthInput {
-        name: if name.is_empty() { locale.anonymous().into() } else { name.into() },
+        name: locale.name_or_anonymous(name).to_string(),
         date,
         time,
         lat: place.lat,

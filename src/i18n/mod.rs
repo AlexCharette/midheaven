@@ -132,6 +132,14 @@ impl Locale {
     }
 
     /// The persona used when no name is given.
+    /// A chart holder's display name: what was given, or the locale's anonymous
+    /// persona when nothing was. The one home for the blank-name rule — the CLI
+    /// and `birth_at_place` each used to state it.
+    pub fn name_or_anonymous(self, name: &str) -> &str {
+        let name = name.trim();
+        if name.is_empty() { self.anonymous() } else { name }
+    }
+
     pub fn anonymous(self) -> &'static str {
         self.table().anonymous
     }

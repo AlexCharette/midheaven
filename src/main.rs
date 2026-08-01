@@ -155,8 +155,6 @@ impl BirthArgs {
         };
 
         let locale = Locale::parse(&self.lang);
-        let name = self.name.trim();
-        let name = if name.is_empty() { locale.anonymous().to_string() } else { name.to_string() };
 
         // The CLI's flags are one tier; there are no preferences behind them.
         let calc = systems::resolve(
@@ -168,27 +166,45 @@ impl BirthArgs {
             systems::Codes::default(),
         )?;
 
-        let field = |manual: Option<f64>, from_place: Option<f64>, flag: &str| {
-            manual.or(from_place).ok_or(format!("--{flag} is required unless --place/--place-id is given"))
+        // A resolved place gives every field; the flags then override whichever
+        // of them the caller stated. Without a place there is nothing to
+        // override, so all three coordinates are required.
+        let required = |flag: &str| format!("--{flag} is required unless --place/--place-id is given");
+        let mut input = match resolved {
+            Some(place) => astro::birth_at_place(
+                &self.name,
+                self.date,
+                time,
+                place,
+                locale,
+                calc.house_system,
+                calc.ayanamsa,
+            ),
+            None => BirthInput {
+                name: locale.name_or_anonymous(&self.name).to_string(),
+                date: self.date,
+                time,
+                lat: self.lat.ok_or_else(|| required("lat"))?,
+                lon: self.lon.ok_or_else(|| required("lon"))?,
+                tz: self.tz.ok_or_else(|| required("tz"))?,
+                place: String::new(),
+                locale,
+                house_system: calc.house_system,
+                ayanamsa: calc.ayanamsa,
+            },
         };
-        let input = BirthInput {
-            name,
-            date: self.date,
-            time,
-            lat: field(self.lat, resolved.map(|p| p.lat), "lat")?,
-            lon: field(self.lon, resolved.map(|p| p.lon), "lon")?,
-            tz: self
-                .tz
-                .or(resolved.map(|p| p.tz))
-                .ok_or("--tz is required unless --place/--place-id is given")?,
-            place: self
-                .place_label
-                .or(resolved.map(|p| p.label()))
-                .unwrap_or_default(),
-            locale,
-            house_system: calc.house_system,
-            ayanamsa: calc.ayanamsa,
-        };
+        if let Some(lat) = self.lat {
+            input.lat = lat;
+        }
+        if let Some(lon) = self.lon {
+            input.lon = lon;
+        }
+        if let Some(tz) = self.tz {
+            input.tz = tz;
+        }
+        if let Some(label) = self.place_label {
+            input.place = label;
+        }
         Ok((input, notice))
     }
 }
@@ -222,29 +238,67 @@ fn format_places(places: &[&geo::Place]) -> String {
     out
 }
 
-fn print_places(places: &[&geo::Place]) {
-    eprint!("{}", format_places(places));
+/// What a command did — everything `main` prints, and nothing about how.
+///
+/// Returning this rather than printing along the way is the whole seam: the
+/// notice, the warnings, the summary and the candidate table used to leave only
+/// through `eprintln!`, so nothing could observe them and `run` could not be
+/// called at all — it read `std::env::args()` itself.
+#[derive(Debug, PartialEq)]
+enum Report {
+    Chart { notice: Option<String>, warnings: Vec<String>, json: String },
+    Built { notice: Option<String>, warnings: Vec<String>, summary: String, wrote: Vec<PathBuf> },
+    Transcribed { segments: usize, jsonl: Option<String>, wrote: Option<PathBuf> },
+    Places(String),
 }
 
-fn run() -> Result<(), String> {
-    match Cli::parse().command {
+/// Everything a report says, on the streams it belongs on: the artifact itself
+/// on stdout, the running commentary on stderr.
+fn print(report: Report) {
+    let note = |notice: Option<String>, warnings: Vec<String>| {
+        if let Some(n) = notice {
+            eprintln!("{n}");
+        }
+        for w in warnings {
+            eprintln!("warning: {w}");
+        }
+    };
+    match report {
+        Report::Chart { notice, warnings, json } => {
+            note(notice, warnings);
+            println!("{json}");
+        }
+        Report::Built { notice, warnings, summary, wrote } => {
+            note(notice, warnings);
+            eprintln!("{summary}");
+            for path in wrote {
+                eprintln!("wrote {}", path.display());
+            }
+        }
+        Report::Transcribed { segments, jsonl, wrote } => {
+            eprintln!("\r  done — {segments} segments");
+            if let Some(path) = wrote {
+                eprintln!("wrote {segments} segments to {}", path.display());
+            }
+            if let Some(jsonl) = jsonl {
+                print!("{jsonl}");
+            }
+        }
+        Report::Places(table) => eprint!("{table}"),
+    }
+}
+
+fn run(cli: Cli) -> Result<Report, String> {
+    match cli.command {
         Command::Chart(birth) => {
             let (input, notice) = birth.into_input()?;
-            if let Some(notice) = notice {
-                eprintln!("{notice}");
-            }
             let (chart, warnings) = compute_chart_reporting(&input)?;
-            for w in &warnings {
-                eprintln!("warning: {w}");
-            }
-            println!("{}", serde_json::to_string_pretty(&chart).map_err(|e| e.to_string())?);
+            let json = serde_json::to_string_pretty(&chart).map_err(|e| e.to_string())?;
+            Ok(Report::Chart { notice, warnings, json })
         }
         Command::Build { birth, transcript, audio, model, out, pdf, page_size } => {
             let page_size = astro::pdf::PageSize::parse(&page_size)?;
             let (input, notice) = birth.into_input()?;
-            if let Some(notice) = notice {
-                eprintln!("{notice}");
-            }
             // clap guarantees exactly one of --transcript / --audio is present
             // (required_unless_present + conflicts_with), and --audio requires
             // --model, so the model-missing arm mirrors ClassifyError.
@@ -259,35 +313,33 @@ fn run() -> Result<(), String> {
             };
             let (chart, report) = build_reading(&input, source, cli_progress)?;
             emit::write_artifact(&chart, &out)?;
+            let mut wrote = Vec::new();
             if let Some(pdf_out) = pdf {
                 astro::pdf::write_pdf(&chart, page_size, &pdf_out)?;
-                eprintln!("wrote {}", pdf_out.display());
+                wrote.push(pdf_out);
             }
-            for w in &report.warnings {
-                eprintln!("warning: {w}");
-            }
-            eprintln!(
+            wrote.push(out);
+            let summary = format!(
                 "chart: {} planets, {} aspects · router: {} spans → {} excerpts past verify gate",
                 chart.planets.len(),
                 chart.aspects.len(),
                 report.n_routed,
                 chart.excerpts.len()
             );
-            eprintln!("wrote {}", out.display());
+            Ok(Report::Built { notice, warnings: report.warnings, summary, wrote })
         }
         Command::Transcribe { audio, model, lang, out } => {
             transcription_banner(&audio);
             let segments =
                 astro::transcribe::transcribe(&audio, &model, lang.as_deref(), cli_progress)?;
-            eprintln!("\r  done — {} segments", segments.len());
             let jsonl = astro::transcribe::to_jsonl(&segments);
             match out {
                 Some(path) => {
                     std::fs::write(&path, &jsonl)
                         .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-                    eprintln!("wrote {} segments to {}", segments.len(), path.display());
+                    Ok(Report::Transcribed { segments: segments.len(), jsonl: None, wrote: Some(path) })
                 }
-                None => print!("{jsonl}"),
+                None => Ok(Report::Transcribed { segments: segments.len(), jsonl: Some(jsonl), wrote: None }),
             }
         }
         Command::Places { query } => {
@@ -296,15 +348,222 @@ fn run() -> Result<(), String> {
             if hits.is_empty() {
                 return Err(format!("no place matches {query:?}"));
             }
-            print_places(&hits);
+            Ok(Report::Places(format_places(&hits)))
         }
     }
-    Ok(())
 }
 
 fn main() {
-    if let Err(e) = run() {
-        eprintln!("error: {e}");
-        std::process::exit(1);
+    match run(Cli::parse()) {
+        Ok(report) => print(report),
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The seam: a command line as a person would type it. `run` used to read
+    /// `std::env::args()` itself, so nothing below was reachable.
+    ///
+    /// `try_parse_from` rather than `parse_from` because the latter exits the
+    /// process on a malformed line — right for a person at a terminal, useless
+    /// in a test.
+    fn run_argv(args: &[&str]) -> Result<Report, String> {
+        let cli = Cli::try_parse_from(std::iter::once("astro").chain(args.iter().copied()))
+            .map_err(|e| e.to_string())?;
+        run(cli)
+    }
+
+    fn chart_argv(extra: &[&str]) -> Vec<String> {
+        let mut v: Vec<String> =
+            ["chart", "--date", "1990-07-13", "--time", "14:30"].iter().map(|s| s.to_string()).collect();
+        v.extend(extra.iter().map(|s| s.to_string()));
+        v
+    }
+
+    fn chart(extra: &[&str]) -> Result<Report, String> {
+        let owned = chart_argv(extra);
+        run_argv(&owned.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+
+    /// The computed chart, for assertions about what the flags resolved to.
+    fn computed(extra: &[&str]) -> serde_json::Value {
+        match chart(extra).expect("the chart computes") {
+            Report::Chart { json, .. } => serde_json::from_str(&json).expect("valid JSON"),
+            other => panic!("expected a chart report, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_place_resolves_and_says_what_it_resolved_to() {
+        let Report::Chart { notice, .. } = chart(&["--place", "berlin"]).unwrap() else {
+            panic!("expected a chart");
+        };
+        let notice = notice.expect("a resolved place is confirmed to the caller");
+        assert!(notice.contains("Berlin"), "{notice}");
+        // Hemisphere letters rather than signs — Berlin is north and east.
+        assert!(notice.contains('N') && notice.contains('E'), "{notice}");
+    }
+
+    #[test]
+    fn a_southern_western_place_says_so() {
+        let Report::Chart { notice, .. } = chart(&["--place", "montevideo"]).unwrap() else {
+            panic!("expected a chart");
+        };
+        let notice = notice.unwrap();
+        assert!(notice.contains('S') && notice.contains('W'), "{notice}");
+    }
+
+    /// The gazetteer's ambiguity resolution has exactly one caller in the
+    /// workspace — this one. The desktop disambiguates in its typeahead.
+    #[test]
+    fn an_ambiguous_place_lists_the_candidates_and_says_how_to_narrow() {
+        let err = chart(&["--place", "springfield"]).unwrap_err();
+        assert!(err.contains("ambiguous"), "{err}");
+        assert!(err.contains("--place-id"), "it should name the way out: {err}");
+        assert!(err.contains("id "), "the candidate table carries ids: {err}");
+        // The suggested qualifier is the leading candidate's country.
+        assert!(err.contains("springfield, "), "{err}");
+    }
+
+    #[test]
+    fn an_unknown_place_points_at_the_other_ways_in() {
+        let err = chart(&["--place", "xqzzyplugh"]).unwrap_err();
+        assert!(err.contains("no place matches"), "{err}");
+        assert!(err.contains("astro places"), "{err}");
+        assert!(err.contains("--lat"), "{err}");
+    }
+
+    #[test]
+    fn coordinates_stand_in_for_a_place_and_are_each_required() {
+        let ok = computed(&["--lat", "52.52", "--lon", "13.405", "--tz", "Europe/Berlin"]);
+        assert_eq!(ok["meta"]["place"], "", "no place label was given, and none is invented");
+
+        for missing in [
+            vec!["--lon", "13.405", "--tz", "Europe/Berlin"],
+            vec!["--lat", "52.52", "--tz", "Europe/Berlin"],
+            vec!["--lat", "52.52", "--lon", "13.405"],
+        ] {
+            let err = chart(&missing).unwrap_err();
+            assert!(err.contains("is required unless --place"), "{err}");
+        }
+    }
+
+    /// A flag beats the place it would otherwise have come from — that is what
+    /// makes them overrides rather than alternatives.
+    #[test]
+    fn a_coordinate_flag_overrides_the_resolved_place() {
+        let plain = computed(&["--place", "berlin"]);
+        let nudged = computed(&["--place", "berlin", "--lat", "0.0"]);
+        assert_ne!(plain["axes"]["asc"], nudged["axes"]["asc"], "the chart really moved");
+        // The label still comes from the place; only the coordinate changed.
+        assert_eq!(plain["meta"]["place"], nudged["meta"]["place"]);
+    }
+
+    #[test]
+    fn a_place_label_overrides_what_the_gazetteer_calls_it() {
+        let c = computed(&["--place", "berlin", "--place-label", "the old flat"]);
+        assert_eq!(c["meta"]["place"], "the old flat");
+    }
+
+    #[test]
+    fn a_blank_name_becomes_the_locales_anonymous_persona() {
+        let c = computed(&["--place", "berlin"]);
+        assert_eq!(c["meta"]["name"], Locale::En.anonymous());
+        let ru = computed(&["--place", "berlin", "--lang", "ru"]);
+        assert_eq!(ru["meta"]["name"], Locale::Ru.anonymous());
+        // And a name given is a name kept, whitespace trimmed.
+        let named = computed(&["--place", "berlin", "--name", "  Mira Holt  "]);
+        assert_eq!(named["meta"]["name"], "Mira Holt");
+    }
+
+    #[test]
+    fn the_calculation_flags_reach_the_chart() {
+        let c = computed(&["--place", "berlin", "--house-system", "placidus"]);
+        assert_eq!(c["meta"]["house_system"], "placidus");
+
+        let sid = computed(&["--place", "berlin", "--zodiac", "sidereal", "--ayanamsa", "raman"]);
+        assert_eq!(sid["meta"]["ayanamsa"], "raman");
+        // Tropical resolves no ayanamsa however the flag is set.
+        let trop = computed(&["--place", "berlin", "--ayanamsa", "raman"]);
+        assert!(trop["meta"]["ayanamsa"].is_null());
+    }
+
+    #[test]
+    fn an_unknown_calculation_code_is_refused_rather_than_defaulted() {
+        let err = chart(&["--place", "berlin", "--house-system", "nonsense"]).unwrap_err();
+        assert!(err.contains("nonsense"), "{err}");
+    }
+
+    #[test]
+    fn an_impossible_time_is_refused_before_anything_is_resolved() {
+        let err =
+            run_argv(&["chart", "--date", "1990-07-13", "--time", "25:00", "--place", "berlin"])
+                .unwrap_err();
+        assert!(err.contains("invalid time"), "{err}");
+    }
+
+    #[test]
+    fn a_dst_gap_is_refused_with_the_moment_that_does_not_exist() {
+        // 1990-03-25 02:30 never happened in Berlin.
+        let err = run_argv(&[
+            "chart", "--date", "1990-03-25", "--time", "02:30", "--place", "berlin",
+        ])
+        .unwrap_err();
+        assert!(err.contains("DST gap"), "{err}");
+    }
+
+    #[test]
+    fn a_dst_fold_computes_and_warns_rather_than_failing() {
+        // 1990-09-30 02:30 happened twice.
+        let Report::Chart { warnings, .. } = run_argv(&[
+            "chart", "--date", "1990-09-30", "--time", "02:30", "--place", "berlin",
+        ])
+        .unwrap() else {
+            panic!("expected a chart");
+        };
+        assert!(warnings.iter().any(|w| w.contains("ambiguous")), "{warnings:?}");
+    }
+
+    #[test]
+    fn places_lists_what_a_query_would_resolve_to() {
+        let Report::Places(table) = run_argv(&["places", "berlin"]).unwrap() else {
+            panic!("expected a place table");
+        };
+        assert!(table.contains("Berlin"), "{table}");
+        assert!(table.contains("Europe/Berlin"), "{table}");
+        assert!(table.contains("id "), "the ids are the point — they feed --place-id");
+        assert!(table.lines().count() > 1, "a search returns several");
+    }
+
+    #[test]
+    fn places_says_so_when_nothing_matches() {
+        let err = run_argv(&["places", "xqzzyplugh"]).unwrap_err();
+        assert!(err.contains("no place matches"), "{err}");
+    }
+
+    #[test]
+    fn a_multi_word_place_query_is_joined_before_searching() {
+        let Report::Places(table) = run_argv(&["places", "new", "york"]).unwrap() else {
+            panic!("expected a place table");
+        };
+        assert!(table.contains("New York"), "{table}");
+    }
+
+    #[test]
+    fn a_bad_page_size_is_refused_before_the_chart_is_computed() {
+        // Ordering matters: the page size is checked first, so a run that is
+        // wrong in two ways reports the cheap failure.
+        let err = run_argv(&[
+            "build", "--date", "1990-07-13", "--time", "25:00", "--place", "berlin",
+            "--transcript", "/nonexistent", "--page-size", "a3",
+        ])
+        .unwrap_err();
+        assert!(err.contains("unknown page size"), "the cheap check comes first: {err}");
     }
 }
