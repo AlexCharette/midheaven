@@ -24,6 +24,7 @@
   import { clearPins, mode, resetFocus, setMode, visibleExcerpts } from "$lib/focus.svelte";
   import { canRecord, loadCalcOptions, loadLocales, modelPath, setModelPath } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
+  import { TROPICAL } from "$lib/types";
   import Calculator from "$lib/components/Calculator.svelte";
   import ChartCore from "$lib/components/ChartCore.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
@@ -155,7 +156,7 @@
         <!-- keyed on the calculation so a live reproject remounts the wheel and
              replays its ring-draw/rise-in entrance as the transition; ChartCore
              stays mounted so the caption control keeps focus across the swap -->
-        {#key reading.meta.house_system + "|" + (reading.meta.ayanamsa ?? "tropical")}
+        {#key reading.meta.house_system + "|" + (reading.meta.ayanamsa ?? TROPICAL)}
           <Wheel chart={reading} />
         {/key}
         <ChartCore chart={reading} />

@@ -7,6 +7,7 @@ import {
   closed,
   isRecording,
   opened,
+  recalculated,
   recordingStarted,
   recordingStopped,
   whyCannotLeave,
@@ -187,14 +188,70 @@ describe("guards agree with the transitions they gate", () => {
       expect(whyCannotLeave(s) === null).toBe(closed(s).ok);
       expect(whyCannotOpenAnother(s) === null).toBe(opened(s, chart("B")).ok);
       expect(whyCannotRecord(s) === null).toBe(recordingStarted(s).ok);
+      expect(whyCannotRecalculate(s) === null).toBe(recalculated(s, chart("B")).ok);
     }
   });
 
   it("refusal reasons are non-empty", () => {
     for (const s of [IDLE, openWith(), recordingWith()]) {
-      for (const t of [closed(s), opened(s, chart("B")), recordingStarted(s)]) {
+      for (const t of [
+        closed(s),
+        opened(s, chart("B")),
+        recordingStarted(s),
+        recalculated(s, chart("B")),
+      ]) {
         if (!t.ok) expect(t.reason.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("a recalculation is refused at the write, not only at the click", () => {
+  // A reproject is a round trip. The control is gated when it is clicked, but
+  // the answer arrives later — and a take can begin in between. Curation must
+  // stay allowed mid-take, so the transition curation uses cannot refuse; this
+  // is why a recalculation needs its own.
+  it("a take that began while a reproject was out refuses the result", () => {
+    const open = openWith("original");
+    expect(whyCannotRecalculate(open)).toBeNull();
+
+    // …the astrologer starts a take while the round trip is in flight…
+    const recording = recordingStarted(open);
+    expect(recording.ok).toBe(true);
+    if (!recording.ok) return;
+
+    // …and the recomputed chart comes back.
+    const landed = recalculated(recording.session, chart("recomputed"));
+    expect(landed.ok).toBe(false);
+    if (!landed.ok) expect(landed.reason).toBe("stop transcribing first");
+    // The reading the take is being spoken over is untouched.
+    expect(chartOf(recording.session)?.meta.name).toBe("original");
+  });
+
+  it("curation in the same window is still allowed", () => {
+    const recording = recordingStarted(openWith("original"));
+    expect(recording.ok).toBe(true);
+    if (!recording.ok) return;
+    const curated = chartReplaced(recording.session, chart("merged"));
+    expect(curated.ok).toBe(true);
+    if (curated.ok) {
+      expect(curated.session.phase).toBe("recording");
+      expect(chartOf(curated.session)?.meta.name).toBe("merged");
+    }
+  });
+
+  it("an ordinary recalculation replaces the chart and stays open", () => {
+    const done = recalculated(openWith("original"), chart("recomputed"));
+    expect(done.ok).toBe(true);
+    if (done.ok) {
+      expect(done.session.phase).toBe("open");
+      expect(chartOf(done.session)?.meta.name).toBe("recomputed");
+    }
+  });
+
+  it("there is nothing to recalculate when no reading is open", () => {
+    const t = recalculated(IDLE, chart("A"));
+    expect(t.ok).toBe(false);
+    if (!t.ok) expect(t.reason).toBe("no reading is open");
   });
 });

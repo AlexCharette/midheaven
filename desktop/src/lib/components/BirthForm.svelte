@@ -9,6 +9,7 @@
   import { busy, during, isBusy } from "$lib/busy.svelte";
   import { resetFocus } from "$lib/focus.svelte";
   import { defaults, locales, setModelPath } from "$lib/options.svelte";
+  import { SIDEREAL } from "$lib/types";
   import { notify } from "$lib/toasts.svelte";
   import CalcOptions from "./CalcOptions.svelte";
   import PlacePicker from "./PlacePicker.svelte";
@@ -106,7 +107,7 @@
           lang: lang || null,
           house_system: houseSystem || null,
           zodiac: zodiac || null,
-          ayanamsa: zodiac === "sidereal" ? ayanamsa || null : null,
+          ayanamsa: zodiac === SIDEREAL ? ayanamsa || null : null,
         }),
       );
       // a built reading is the strongest "last used place" signal

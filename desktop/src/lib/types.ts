@@ -39,6 +39,35 @@ export const planetById = (chart: ChartData, id: string) => chart.planets.find((
  * that arithmetic. */
 export const signOf = (chart: ChartData, body: Body) => chart.signs[body.sign];
 
+/** The two zodiac wire codes.
+ *
+ * House systems and ayanamsas are served by the backend so the webview never
+ * re-encodes them; the zodiac's two have no list command, so this is their one
+ * client home. They are vocabulary, not defaults — `tropical` happens to be the
+ * default zodiac, but it is the code for a non-sidereal chart whatever the
+ * default becomes. */
+export const TROPICAL = "tropical";
+export const SIDEREAL = "sidereal";
+
+/** The calculation a chart was computed with, read from its own metadata.
+ *
+ * `meta` carries the house-system and ayanamsa *codes* but only a display label
+ * for the zodiac, so the zodiac code comes from the ayanamsa: the contract sets
+ * one exactly when the chart is sidereal. That inference used to live inside an
+ * `$effect` in the reading view and was its only statement anywhere.
+ *
+ * `fallback` covers a chart saved before `meta.house_system` existed. */
+export function calculationOf(
+  chart: ChartData,
+  fallback: { houseSystem: string; ayanamsa: string },
+): { houseSystem: string; zodiac: string; ayanamsa: string } {
+  return {
+    houseSystem: chart.meta.house_system || fallback.houseSystem,
+    zodiac: chart.meta.ayanamsa ? SIDEREAL : TROPICAL,
+    ayanamsa: chart.meta.ayanamsa ?? fallback.ayanamsa,
+  };
+}
+
 /** Every taggable element as {tag, glyph, name}, encoding the one
  * per-category glyph convention (houses show their roman label). */
 export function elementsOf(chart: ChartData): { tag: string; glyph: string; name: string }[] {

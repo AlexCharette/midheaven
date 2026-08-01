@@ -4,6 +4,7 @@
   // birth form and the reading view's caption. Two skins: the form's italic
   // gutter grid and the cartouche's small-caps line.
   import { ayanamsas, defaults, houseSystems } from "$lib/options.svelte";
+  import { SIDEREAL, TROPICAL } from "$lib/types";
 
   let {
     houseSystem = $bindable(defaults().houseSystem),
@@ -38,11 +39,11 @@
     </select>
     <label class="lbl" for="{uid}-zodiac">zodiac</label>
     <select id="{uid}-zodiac" class="lang" bind:value={zodiac} {disabled} onchange={report}>
-      <option value="tropical">Tropical</option>
-      <option value="sidereal">Sidereal</option>
+      <option value={TROPICAL}>Tropical</option>
+      <option value={SIDEREAL}>Sidereal</option>
     </select>
   </div>
-  {#if zodiac === "sidereal"}
+  {#if zodiac === SIDEREAL}
     <label class="aya">
       <span>ayanamsa</span>
       <select class="lang" bind:value={ayanamsa} {disabled} onchange={report}>
@@ -59,10 +60,10 @@
     </select>
     <span class="sep" aria-hidden="true">·</span>
     <select class="calc-sel" aria-label="zodiac" bind:value={zodiac} {disabled} onchange={report}>
-      <option value="tropical">Tropical</option>
-      <option value="sidereal">Sidereal</option>
+      <option value={TROPICAL}>Tropical</option>
+      <option value={SIDEREAL}>Sidereal</option>
     </select>
-    {#if zodiac === "sidereal"}
+    {#if zodiac === SIDEREAL}
       <select class="calc-sel" aria-label="ayanamsa" bind:value={ayanamsa} {disabled} onchange={report}>
         {#each ayanamsas as a (a.code)}<option value={a.code}>{a.label}</option>{/each}
       </select>

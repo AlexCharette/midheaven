@@ -2,6 +2,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { getPreferences, listModels, openLicenses, setPreferences } from "$lib/api";
   import { ayanamsas, defaults, houseSystems, locales } from "$lib/options.svelte";
+  import { SIDEREAL, TROPICAL } from "$lib/types";
   import { notify } from "$lib/toasts.svelte";
   import { reason } from "$lib/failure";
 
@@ -175,11 +176,11 @@
   <label>
     <span>zodiac</span>
     <select bind:value={defaultZodiac}>
-      <option value="tropical">Tropical</option>
-      <option value="sidereal">Sidereal</option>
+      <option value={TROPICAL}>Tropical</option>
+      <option value={SIDEREAL}>Sidereal</option>
     </select>
   </label>
-  {#if defaultZodiac === "sidereal"}
+  {#if defaultZodiac === SIDEREAL}
     <label>
       <span>ayanamsa</span>
       <select bind:value={defaultAyanamsa}>

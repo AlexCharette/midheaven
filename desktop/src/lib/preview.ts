@@ -11,6 +11,7 @@ import type { ChartData, PlaceDto, PreviewInput } from "./types";
 import type { MoveSource } from "./chartPose.svelte";
 import { fromMinutes } from "./civil";
 import { reason } from "./failure";
+import { SIDEREAL } from "./types";
 
 /** Everything a preview is computed from. The place is nullable because the
  * calculator opens before one is resolved. */
@@ -38,7 +39,7 @@ export function requestFor(draft: Draft): PreviewInput | null {
     lang: draft.lang,
     house_system: draft.houseSystem,
     zodiac: draft.zodiac,
-    ayanamsa: draft.zodiac === "sidereal" ? draft.ayanamsa : null,
+    ayanamsa: draft.zodiac === SIDEREAL ? draft.ayanamsa : null,
   };
 }
 

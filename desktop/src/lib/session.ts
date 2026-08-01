@@ -128,13 +128,28 @@ export function recordingStopped(session: Session, chart: ChartData | null): Tra
   return { ok: true, session: { phase: "open", chart: chart ?? session.chart } };
 }
 
-/** A command returned an updated chart for the session already open — curation
- * (merge, amend, file, delete) or a completed recalculation. Keeps the phase, so
- * curating during a take does not end it; guard recalculation with
- * `whyCannotRecalculate` before calling. */
+/** Curation returned an updated chart — merge, amend, file, delete. Keeps the
+ * phase, so curating during a take does not end it: the take appends to whatever
+ * it finds.
+ *
+ * A *recalculation* also returns an updated chart but is not this — see
+ * [`recalculated`]. The two were one transition, and because curation must be
+ * allowed mid-take this one cannot refuse, so a recalculation that resolved
+ * after a take began re-seated the chart under a live recorder. */
 export function chartReplaced(session: Session, chart: ChartData): Transition {
   if (session.phase === "idle") {
     return { ok: false, reason: "no reading is open" };
   }
   return { ok: true, session: { ...session, chart } };
+}
+
+/** A recalculation returned its chart. Refused on exactly the phases
+ * [`whyCannotRecalculate`] refuses, so the guard holds at the *write* and not
+ * only at the moment a control was clicked — a reproject is a round trip, and
+ * a take can begin while it is in flight. */
+export function recalculated(session: Session, chart: ChartData): Transition {
+  const refused = whyCannotRecalculate(session);
+  if (refused) return { ok: false, reason: refused };
+  // The guard leaves exactly one phase standing, so this is not a widening.
+  return { ok: true, session: { phase: "open", chart } };
 }

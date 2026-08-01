@@ -9,6 +9,7 @@
 import { calculationDefaults, listAyanamsas, listHouseSystems, listLocales } from "./api";
 import { reason } from "./failure";
 import { notify } from "./toasts.svelte";
+import { TROPICAL } from "./types";
 import type { CalculationDefaults, LocaleDto, OptionDto } from "./types";
 
 /** Reading languages offered in the UI (`list_locales`): endonym labels for the
@@ -38,7 +39,7 @@ export async function loadLocales() {
  * what a form shows for the instant before `loadCalcOptions` answers. */
 const fallback: CalculationDefaults = {
   houseSystem: "whole-sign",
-  zodiac: "tropical",
+  zodiac: TROPICAL,
   ayanamsa: "lahiri",
 };
 const calcDefaults = $state({ value: fallback });

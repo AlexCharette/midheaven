@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
-  import { catOf, planetById, signOf, textGlyph } from "$lib/types";
+  import { SIDEREAL, calculationOf, catOf, planetById, signOf, textGlyph } from "$lib/types";
   // A cusp is a longitude the chart carries, not a body, so it has no derived
   // position to read — the one case in this file that still derives.
   import { positionOf } from "$lib/derive";
@@ -8,7 +8,8 @@
   import { focusedTag } from "$lib/focus.svelte";
   import { defaults } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
-  import { updateChart, whyCannotRecalculate } from "$lib/session.svelte";
+  import { applyRecalculation, whyCannotRecalculate } from "$lib/session.svelte";
+  import { during, isBusy } from "$lib/busy.svelte";
   import { reproject } from "$lib/api";
   import CalcOptions from "./CalcOptions.svelte";
   import { swapDuration } from "$lib/motion";
@@ -19,44 +20,30 @@
 
   const coreSwap = { duration: swapDuration() };
 
-  // Live calculation controls. They mirror the chart's current codes and
-  // re-sync whenever the chart changes (a reproject or a reopen), so the line
-  // always reflects the active calculation.
-  let houseSystem = $state(defaults().houseSystem);
-  let zodiac = $state(defaults().zodiac);
-  let ayanamsa = $state(defaults().ayanamsa);
-  let reprojecting = $state(false);
-  $effect(() => {
-    syncToChart();
-  });
+  // What the chart WAS computed with, read from the chart itself — a
+  // projection, not a copy. Three `$state` slots used to mirror it, re-synced by
+  // an `$effect` that also had to be called by hand on every error path.
+  const settled = $derived(calculationOf(chart, defaults()));
+  // What the astrologer is ASKING for, or null when the selects simply show the
+  // chart. A refusal or a failure drops it; there is nothing to roll back to.
+  let asked = $state<{ houseSystem: string; zodiac: string; ayanamsa: string } | null>(null);
+  const shown = $derived(asked ?? settled);
 
-  // Snap the selects back to what the chart actually is. Also the body of the
-  // re-sync `$effect` above: on success the chart is replaced and that effect
-  // fires, on failure it does not, so the error path has to do it here.
-  function syncToChart() {
-    houseSystem = chart.meta.house_system || defaults().houseSystem;
-    zodiac = chart.meta.ayanamsa ? "sidereal" : defaults().zodiac;
-    ayanamsa = chart.meta.ayanamsa ?? defaults().ayanamsa;
-  }
-
-  async function recalc() {
-    // Refused mid-take: the backend releases the session across its
-    // transcription await, so a recalculation can land in that gap and the
-    // take's passages would be filed against a chart already replaced.
-    const refused = whyCannotRecalculate();
-    if (refused) {
-      notify(refused, "error");
-      syncToChart();
-      return;
-    }
-    reprojecting = true;
+  async function recalc(next: { houseSystem: string; zodiac: string; ayanamsa: string }) {
+    asked = next;
+    // `during` puts the reproject on the shared busy phase, so the record
+    // button is disabled for its duration rather than only looking safe.
     try {
-      updateChart(await reproject(houseSystem, zodiac, zodiac === "sidereal" ? ayanamsa : null));
+      const chart = await during("compute", () =>
+        reproject(next.houseSystem, next.zodiac, next.zodiac === SIDEREAL ? next.ayanamsa : null),
+      );
+      // Refused at the write, not only when the control was clicked: a take can
+      // begin while the round trip is out, and the machine is what knows.
+      applyRecalculation(chart);
     } catch (e) {
       notify(reason(e), "error");
-      syncToChart();
     } finally {
-      reprojecting = false;
+      asked = null;
     }
   }
 
@@ -95,10 +82,10 @@
     <div class="calc-line" title={whyCannotRecalculate() ?? undefined}>
       <CalcOptions
         variant="caption"
-        bind:houseSystem
-        bind:zodiac
-        bind:ayanamsa
-        disabled={reprojecting || whyCannotRecalculate() !== null}
+        houseSystem={shown.houseSystem}
+        zodiac={shown.zodiac}
+        ayanamsa={shown.ayanamsa}
+        disabled={isBusy() || whyCannotRecalculate() !== null}
         onchange={recalc}
       />
     </div>
