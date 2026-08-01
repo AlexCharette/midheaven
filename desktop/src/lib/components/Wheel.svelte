@@ -7,7 +7,7 @@
   import { axisLongitudes, crowdedRadii, densityLength, focusLongitude } from "$lib/orrery";
   import { focusedTag, isPinned, peek, toggle, unpeek } from "$lib/focus.svelte";
   import { prefersReducedMotion } from "$lib/motion";
-  import { t } from "$lib/chrome.svelte";
+  import { plural, t } from "$lib/chrome.svelte";
   import { onMount, type Snippet } from "svelte";
 
   // `interactive` off (the live calculator) takes the plate out of the shared
@@ -245,7 +245,7 @@
       <path d={band.d} class="wash wash-{band.s.element}" />
       <path d={band.d} class="sign-band"><title>{band.s.name} — {band.s.element}</title></path>
       {#if band.bar}
-        <path d={band.bar} class="dens-bar"><title>{band.w} {band.w === 1 ? "passage" : "passages"} · {band.s.name}</title></path>
+        <path d={band.bar} class="dens-bar"><title>{plural(t().passages, band.w)} · {band.s.name}</title></path>
       {/if}
       <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
         >{textGlyph(band.s.glyph)}</text

@@ -5,6 +5,7 @@
 
 use super::{
     AppChrome, ArtifactChrome, AspectEntry, Entry, FigureCaption, HouseEntry, LocaleTable, PdfChrome,
+    Plural,
     PlateTitle,
 };
 
@@ -33,7 +34,7 @@ pub static TABLE: LocaleTable = LocaleTable {
         of_selection: "из выбранного \u{b7}",
         clear: "сбросить",
         count: "{shown} из {total} фрагментов",
-        passages: "{n} фрагментов",
+        passages: Plural { one: "{n} фрагментов", other: "{n} фрагментов" },
         fewer: "\u{b7} свернуть",
         more: "\u{b7} ещё {n}",
         wheel_aria: "Колесо натальной карты; указатель элементов даёт те же фильтры",

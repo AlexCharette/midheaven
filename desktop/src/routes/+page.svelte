@@ -105,7 +105,8 @@
       // progress through `setProgress`, which only lands in that phase.
       const routed = await during("transcribe", stopRecording);
       updateChart(routed);
-      notify(fmt(t().passages, { n: routed.excerpts.length }));
+      // English: this whole sentence has no Russian yet, like the forms'.
+      notify(`${routed.excerpts.length} passages on the chart`);
     } catch (e) {
       notify(reason(e), "error");
     }

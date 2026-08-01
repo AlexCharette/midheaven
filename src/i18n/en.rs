@@ -4,6 +4,7 @@
 
 use super::{
     AppChrome, ArtifactChrome, AspectEntry, Entry, FigureCaption, HouseEntry, LocaleTable, PdfChrome,
+    Plural,
     PlateTitle,
 };
 
@@ -32,7 +33,7 @@ pub static TABLE: LocaleTable = LocaleTable {
         of_selection: "of the selection \u{b7}",
         clear: "clear",
         count: "{shown} of {total} passages",
-        passages: "{n} passages",
+        passages: Plural { one: "{n} passage", other: "{n} passages" },
         fewer: "\u{b7} fewer",
         more: "\u{b7} {n} more",
         wheel_aria: "Natal chart wheel; the index of elements offers the same filters",

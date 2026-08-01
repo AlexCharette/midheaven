@@ -348,6 +348,24 @@ pub struct PdfChrome {
     pub commentary: &'static str,
 }
 
+/// A count and its noun, in the form the count calls for.
+///
+/// English inflects: one passage, two passages. The Russian that ships does not
+/// — the artifact has always rendered one fixed genitive form for every count
+/// (`"{shown} из {total} фрагментов"`), so both entries here are the same
+/// string. Russian really has three categories, and wiring them up is a
+/// separate job from moving these words; what this shape buys is that English
+/// stops saying "1 passages", which it did when this was one string.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+pub struct Plural {
+    /// The form for exactly one. `{n}` is the count.
+    pub one: &'static str,
+    /// The form for every other count, zero included. `{n}` is the count.
+    pub other: &'static str,
+}
+
 /// Everything in the desktop app's own window that is not chart data.
 ///
 /// The core localizes element names, the PDF has [`PdfChrome`] and the artifact
@@ -355,10 +373,12 @@ pub struct PdfChrome {
 /// eleven of these strings already written in `ArtifactChrome` and one of them
 /// character-for-character identical.
 ///
-/// This covers the reading view. The forms and the preferences panel are still
-/// English literals in their components: translating them is authoring copy in
-/// a language, not moving it, and every string here is one that already had a
-/// Russian counterpart. Their fields belong here when someone can write them.
+/// This covers the reading view's *frame*: its headings, its controls, its
+/// counts and its empty states. What is still English in its component is
+/// anything whose whole sentence has no Russian yet — the forms, the
+/// preferences panel, the toasts, and the empty states' sub-captions.
+/// Translating those is authoring copy in a language, not moving it, and every
+/// string here is one that already had a Russian counterpart.
 ///
 /// Counts are format strings with a fixed noun, matching what the artifact
 /// already ships — neither rendition inflects a Russian plural by its count.
@@ -379,8 +399,9 @@ pub struct AppChrome {
     pub clear: &'static str,
     /// `{shown}` of `{total}` passages.
     pub count: &'static str,
-    /// `{n}` passages — a bare count, for the hub read-out and the library.
-    pub passages: &'static str,
+    /// A bare count of passages — the hub read-out, the density bar, the
+    /// library's rows.
+    pub passages: Plural,
     pub fewer: &'static str,
     /// `{n}` more.
     pub more: &'static str,
@@ -528,6 +549,21 @@ mod tests {
         assert_eq!(beneath, Some("Мира Холт"));
     }
 
+    /// English must not say "1 passages" — which it did when a bare count was one
+    /// string. A language that does not inflect says so by giving both forms the
+    /// same words, which is what the shipped Russian does.
+    #[test]
+    fn a_count_takes_the_form_its_number_calls_for() {
+        let en = Locale::En.app().passages;
+        assert_eq!(en.one.replace("{n}", "1"), "1 passage");
+        assert_eq!(en.other.replace("{n}", "2"), "2 passages");
+        assert_eq!(en.other.replace("{n}", "0"), "0 passages", "zero takes the plural");
+        assert_ne!(en.one, en.other, "English inflects");
+
+        let ru = Locale::Ru.app().passages;
+        assert_eq!(ru.one, ru.other, "the shipped Russian uses one fixed form");
+    }
+
     /// The window's own chrome, like the artifact's, must be complete for every
     /// language or a Russian reading renders inside an English frame.
     #[test]
@@ -546,7 +582,8 @@ mod tests {
                 ("ofSelection", a.of_selection),
                 ("clear", a.clear),
                 ("count", a.count),
-                ("passages", a.passages),
+                ("passages.one", a.passages.one),
+                ("passages.other", a.passages.other),
                 ("fewer", a.fewer),
                 ("more", a.more),
                 ("wheelAria", a.wheel_aria),
@@ -557,7 +594,8 @@ mod tests {
             }
             assert!(a.bands.iter().all(|b| !b.trim().is_empty()), "{code}: blank band head");
             assert!(a.count.contains("{shown}") && a.count.contains("{total}"), "{code}: count");
-            assert!(a.passages.contains("{n}"), "{code}: passages");
+            assert!(a.passages.one.contains("{n}"), "{code}: passages.one");
+            assert!(a.passages.other.contains("{n}"), "{code}: passages.other");
             assert!(a.more.contains("{n}"), "{code}: more");
             assert!(a.empty_no_match.contains("{word}"), "{code}: emptyNoMatch");
         }

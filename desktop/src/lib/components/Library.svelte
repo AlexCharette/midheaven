@@ -3,6 +3,7 @@
   import { deleteReading, getPreferences, listReadings, loadChart } from "$lib/api";
   import { openReading as installReading, whyCannotOpenAnother } from "$lib/session.svelte";
   import { during, isBusy } from "$lib/busy.svelte";
+  import { plural, t } from "$lib/chrome.svelte";
   import { notify } from "$lib/toasts.svelte";
   import type { ReadingEntry } from "$lib/types";
   import { reason } from "$lib/failure";
@@ -127,8 +128,7 @@
               >
             </span>
             <span class="meta apparatus-text">
-              {e.excerpts}
-              {e.excerpts === 1 ? "passage" : "passages"}{e.modifiedMs
+              {plural(t().passages, e.excerpts)}{e.modifiedMs
                 ? ` · saved ${savedLabel(e.modifiedMs)}`
                 : ""}
             </span>

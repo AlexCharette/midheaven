@@ -6,7 +6,7 @@
   import { catOf, elementsOf, textGlyph } from "$lib/types";
   import { updateChart } from "$lib/session.svelte";
   import { isBusy } from "$lib/busy.svelte";
-  import { hoveredTag, isPinned, pinCount, toggle, touchesPins } from "$lib/focus.svelte";
+  import { hoveredTag, isPinned, mode, pinCount, toggle, touchesPins } from "$lib/focus.svelte";
   import { notify } from "$lib/toasts.svelte";
   import { fmt, t } from "$lib/chrome.svelte";
   import { reason } from "$lib/failure";
@@ -121,10 +121,10 @@
   <div class="empty-plate">
     <span class="mark" aria-hidden="true">✶</span>
     {#if chart.excerpts.length === 0}
-      <p class="caption">No passages are filed under this chart yet.</p>
+      <p class="caption">{t().emptyNoneRouted}</p>
       <p class="sub">Transcribe a session or add one by hand to begin the commentary.</p>
     {:else}
-      <p class="caption">No passage touches the selection.</p>
+      <p class="caption">{fmt(t().emptyNoMatch, { word: mode() === "all" ? t().all : t().any })}</p>
       <p class="sub">Clear the selection to see the whole reading again.</p>
     {/if}
   </div>

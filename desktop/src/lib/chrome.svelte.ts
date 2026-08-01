@@ -28,7 +28,7 @@ const fallback: AppChrome = {
   ofSelection: "of the selection ·",
   clear: "clear",
   count: "{shown} of {total} passages",
-  passages: "{n} passages",
+  passages: { one: "{n} passage", other: "{n} passages" },
   fewer: "· fewer",
   more: "· {n} more",
   wheelAria: "Natal chart wheel; the index of elements offers the same filters",
@@ -45,6 +45,15 @@ export const t = (): AppChrome => store.value;
  * shape the artifact's viewer uses, because they come from the same tables. */
 export const fmt = (template: string, vals: Record<string, string | number>): string =>
   template.replace(/\{(\w+)\}/g, (_, k) => String(vals[k]));
+
+/** A count in the form its number calls for.
+ *
+ * English inflects; the Russian that ships gives both forms the same words.
+ * Four components each wrote their own `n === 1 ? "passage" : "passages"`, and
+ * collapsing them onto a single un-inflected string is how "1 passages"
+ * happened. */
+export const plural = (forms: { one: string; other: string }, n: number): string =>
+  fmt(n === 1 ? forms.one : forms.other, { n });
 
 /** Load the chrome for the configured language. A no-op to call twice. */
 export async function loadChrome() {
