@@ -134,6 +134,50 @@ export function ringAngles(min: number): { timeAngle: number; dateAngle: number 
   };
 }
 
+/** How many minutes a ring turns for a drag of `deg` degrees — the inverse of
+ * [`ringAngles`], and what a drag on the instrument limb actually uses.
+ *
+ * The ring follows the finger, so a clockwise drag (positive degrees) winds the
+ * moment BACK. The date ring's gearing depends on the year's length, which is
+ * why it takes one.
+ *
+ * The forward transform has been tested since it was written; this one lived in
+ * a closure inside `TimeRings` where nothing could reach it. */
+export function ringDragMinutes(
+  ring: "time" | "date",
+  deg: number,
+  daysInThisYear: number,
+): number {
+  return ring === "time"
+    ? -deg * (MINUTES_PER_DAY / 360)
+    : (-deg / 360) * daysInThisYear * MINUTES_PER_DAY;
+}
+
+/** Where a drag lands, from where it started and how far it has come.
+ *
+ * The date ring detents to whole days: shifting the date must not disturb the
+ * time of day, so a half-day of drag is no day at all. The time ring is
+ * continuous — dragging it past midnight is meant to roll the date. */
+export function ringDetent(ring: "time" | "date", start: number, dragged: number): number {
+  return ring === "time"
+    ? start + dragged
+    : start + Math.round(dragged / MINUTES_PER_DAY) * MINUTES_PER_DAY;
+}
+
+/** How far one arrow-key press moves the moment on a ring. Shift coarsens: the
+ * time ring goes from five minutes to an hour, the date ring from a day to a
+ * month — and a month is not a fixed number of minutes, so it is named rather
+ * than measured. */
+export function ringStep(
+  ring: "time" | "date",
+  from: number,
+  dir: 1 | -1,
+  coarse: boolean,
+): number {
+  if (ring === "time") return from + dir * (coarse ? 60 : 5);
+  return coarse ? addMonths(from, dir) : from + dir * MINUTES_PER_DAY;
+}
+
 /** Month names for the date ring's limb lettering. */
 export const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",

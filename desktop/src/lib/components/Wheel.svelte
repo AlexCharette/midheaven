@@ -1,16 +1,21 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
-  import {
-    catOf, degInSign, norm360, planetById, relatedTo, signDensity, textGlyph,
-  } from "$lib/types";
-  import { focusedTag, peek, selected, toggle, unpeek } from "$lib/state.svelte";
+  import { catOf, planetById, textGlyph } from "$lib/types";
+  import { norm360 } from "$lib/derive";
+  import { PLATE } from "$lib/generated/plate";
+  import { relatedTo, signDensity } from "$lib/focus";
+  import { axisLongitudes, crowdedRadii, densityLength, focusLongitude } from "$lib/orrery";
+  import { focusedTag, isPinned, peek, toggle, unpeek } from "$lib/focus.svelte";
   import { prefersReducedMotion } from "$lib/motion";
+  import { plural, t } from "$lib/chrome.svelte";
   import { onMount, type Snippet } from "svelte";
 
-  // `interactive` off (the live calculator) mutes the pin/preview contract:
-  // ring drags around the plate must not flicker `app.hovered` or leak pins
-  // into `selected` for the next reading. `scrubbing` hides the derived
-  // apparatus (houses, aspect chords) while a ring is being dragged.
+  // `interactive` off (the live calculator) takes the plate out of the shared
+  // focus entirely — it neither reads it nor writes it, because there it is a
+  // display of a moment rather than an index of a reading. It used to mute only
+  // the writes, which read as a workaround for the coupling rather than a
+  // statement about the plate. `scrubbing` hides the derived apparatus (houses,
+  // aspect chords) while a ring is being dragged.
   let {
     chart,
     interactive = true,
@@ -34,7 +39,7 @@
   // preview and light up its relations, click/Enter to pin it. A pin locks the
   // focus (hover stops flipping it); otherwise the hovered tag drives the
   // illumination and the selector pointer.
-  const focusTag = $derived(focusedTag());
+  const focusTag = $derived(interactive ? focusedTag() : null);
   const related = $derived(focusTag ? relatedTo(chart, focusTag) : new Set<string>());
   const pinKey = (tag: string) => (e: KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -43,26 +48,26 @@
     }
   };
 
-  // Geometry ports templates/reading.html: ASC on the left, ecliptic
-  // longitude increasing counterclockwise. Radii grow outward from the hub;
-  // the outer two tracks (density, drift) and the enlarged hub are new to the
-  // orrery.
+  // ASC on the left, ecliptic longitude increasing counterclockwise. The plate
+  // itself — radii, graduation classes, de-crowding — comes from `$lib/generated/plate`,
+  // which is emitted from src/plate.rs and read by the PDF and the artifact too.
+  //
+  // The orrery is deliberately richer than paper, so it departs from the spec in
+  // four places. Each is an override with its reason, rather than a different
+  // literal in a table that claims to be a copy.
   const CX = 360;
   const CY = 360;
   const R = {
+    ...PLATE.radii,
+    // Tracks the other two renditions do not have at all.
     drift: 398, // decorative idle-drift ring (outermost)
     passOut: 382, // passage-density bars grow toward here
     passIn: 356, // density baseline ring
-    outer: 348,
-    bandOut: 344,
-    signIn: 306,
-    gradIn: 294,
-    planet: 260,
-    wedgeOut: 230,
-    chord: 222,
-    houseLbl: 170, // sits in the house band, outside the focus-only core medallion
-    hub: 92, // inner edge of the house-wedge band + the hub ring
     hubInner: 8, // cusp spokes and axes converge here, at the compass centre
+    // DEPARTURE: the roman numerals sit in the house band rather than at the
+    // spec's 112, which on this plate would put them under the focus-only core
+    // medallion the other two renditions do not draw.
+    houseLabel: 170,
   };
 
   const asc = $derived(chart.axes.asc);
@@ -80,12 +85,16 @@
     return `M${x1} ${y1} A${r2} ${r2} 0 ${large} 0 ${x2} ${y2} L${x3} ${y3} A${r1} ${r1} 0 ${large} 1 ${x4} ${y4} Z`;
   }
 
-  // Degree graduations: 1°/5°/10° tick hierarchy, decade ticks a touch longer
-  // so the ring reads as a proper scale.
+  // Degree graduations: the spec's 1°/5°/10° hierarchy, with one departure —
+  // DEPARTURE: decade ticks run 2 units longer than the spec's, so the ring
+  // reads as a proper scale at screen size rather than at print size.
+  const TICKS = { ...PLATE.ticks, decadeLen: PLATE.ticks.decadeLen + 2 };
+  // The spec's rings less its innermost — see the DEPARTURE note in the markup.
+  const PLATE_RINGS = [R.outer, R.bandOut, R.signIn, R.gradIn, R.wedgeOut, R.hub];
   const grads = $derived(
     Array.from({ length: 360 }, (_, d) => {
-      const len = d % 10 === 0 ? 14 : d % 5 === 0 ? 8 : 4.5;
-      const w = d % 10 === 0 ? 0.9 : d % 5 === 0 ? 0.7 : 0.45;
+      const len = d % 10 === 0 ? TICKS.decadeLen : d % 5 === 0 ? TICKS.fiveLen : TICKS.unitLen;
+      const w = d % 10 === 0 ? TICKS.decadeWidth : d % 5 === 0 ? TICKS.fiveWidth : TICKS.unitWidth;
       const [x1, y1] = pt(d, R.signIn);
       const [x2, y2] = pt(d, R.signIn - len);
       return { x1, y1, x2, y2, w };
@@ -110,9 +119,9 @@
   const signBands = $derived(
     chart.signs.map((s, i) => {
       const lon = i * 30;
-      const [gx, gy] = pt(lon + 15, 325);
+      const [gx, gy] = pt(lon + 15, R.signGlyph);
       const w = density[i];
-      const len = w > 0 ? Math.sqrt(w / maxDensity) * (R.passOut - R.passIn) : 0;
+      const len = densityLength(w, maxDensity, R.passOut - R.passIn);
       const bar = w > 0 ? sector(lon + 5, lon + 25, R.passIn, R.passIn + len) : "";
       return { s, d: sector(lon, lon + 30, R.signIn, R.bandOut), gx, gy, bar, w };
     }),
@@ -120,11 +129,10 @@
 
   const houseWedges = $derived(
     chart.houseCusps.map((c, i) => {
-      const next = chart.houseCusps[(i + 1) % 12];
-      const sweep = norm360(next - c) || 30; // equal cusps mean a full sign
+      const sweep = chart.houseSweeps[i]; // derived, incl. the coincident-cusp rule
       const [sx1, sy1] = pt(c, R.hubInner); // spokes converge at the centre
       const [sx2, sy2] = pt(c, R.gradIn);
-      const [lx, ly] = pt(c + sweep / 2, R.houseLbl);
+      const [lx, ly] = pt(c + sweep / 2, R.houseLabel);
       return {
         h: chart.houses[i],
         d: sector(c, c + sweep, R.hub, R.wedgeOut),
@@ -136,15 +144,10 @@
   );
 
   const axes = $derived(
-    [
-      { lon: chart.axes.asc, label: "AC" },
-      { lon: chart.axes.mc, label: "MC" },
-      { lon: chart.axes.asc + 180, label: "DC" },
-      { lon: chart.axes.mc + 180, label: "IC" },
-    ].map(({ lon, label }) => {
+    axisLongitudes(chart).map(({ lon, label }) => {
       const [x1, y1] = pt(lon, R.hubInner); // the AC–DC / MC–IC cross meets at centre
       const [x2, y2] = pt(lon, R.outer);
-      const [tx, ty] = pt(lon, R.outer + 13);
+      const [tx, ty] = pt(lon, R.outer + PLATE.axisLabelGap);
       return { label, x1, y1, x2, y2, tx, ty };
     }),
   );
@@ -160,52 +163,20 @@
 
   const planets = $derived.by(() => {
     const byLon = [...chart.planets].sort((a, b) => a.lon - b.lon);
-    let prevLon: number | null = null;
-    let prevR = R.planet;
-    return byLon.map((p) => {
-      const gap = prevLon === null ? 999 : Math.min(Math.abs(p.lon - prevLon), 360 - Math.abs(p.lon - prevLon));
-      // De-stacking ramps in over 11°→8° instead of stepping at 8°, so a body
-      // closing on another during a live scrub slides inward rather than
-      // popping. (Static charts with gaps under 8° render exactly as before;
-      // gaps of 8–11° now inset slightly.)
-      const f = Math.max(0, Math.min(1, (11 - gap) / 3));
-      const r = f > 0 ? Math.max(prevR - 27 * f, 176) : R.planet;
-      prevLon = p.lon;
-      prevR = r;
+    // The de-crowding rule, with the orrery's ramp — see `$lib/orrery`.
+    const radii = crowdedRadii(byLon.map((p) => p.lon));
+    return byLon.map((p, i) => {
+      const r = radii[i];
       const [gx, gy] = pt(p.lon, r);
-      const [dx, dy] = pt(p.lon, r - 21);
-      const [t1x, t1y] = pt(p.lon, R.gradIn - 8);
+      const [dx, dy] = pt(p.lon, r - PLATE.degreeLabelDrop);
+      const [t1x, t1y] = pt(p.lon, R.gradIn - PLATE.bodyTickLen);
       const [t2x, t2y] = pt(p.lon, R.gradIn);
-      return { p, gx, gy, dx, dy, tick: { x1: t1x, y1: t1y, x2: t2x, y2: t2y }, deg: degInSign(p.lon) };
+      return { p, gx, gy, dx, dy, tick: { x1: t1x, y1: t1y, x2: t2x, y2: t2y }, deg: p.deg };
     });
   });
 
-  // The longitude the selector pointer aims at — the focused element's own
-  // position, a sign/house midpoint, or an aspect's angular bisector.
-  const focusLon = $derived.by(() => {
-    if (!focusTag) return null;
-    const c = catOf(focusTag);
-    if (c === "planet") return planetById(chart, focusTag)?.lon ?? null;
-    if (c === "sign") {
-      const i = chart.signs.findIndex((s) => s.id === focusTag);
-      return i < 0 ? null : i * 30 + 15;
-    }
-    if (c === "house") {
-      const n = Number(focusTag.split(":")[1]);
-      const cusp = chart.houseCusps[n - 1];
-      if (cusp === undefined) return null;
-      const sweep = norm360(chart.houseCusps[n % 12] - cusp) || 30;
-      return cusp + sweep / 2;
-    }
-    if (c === "aspect") {
-      const a = chart.aspects.find((x) => x.id === focusTag);
-      if (!a) return null;
-      const la = lonOf(a.a);
-      const diff = (((lonOf(a.b) - la + 540) % 360) - 180) / 2;
-      return la + diff;
-    }
-    return null;
-  });
+  // The longitude the selector pointer aims at, per category — see `$lib/orrery`.
+  const focusLon = $derived(focusTag ? focusLongitude(chart, focusTag) : null);
   // Rotate a north-pointing index clockwise onto the focused longitude.
   const pointerDeg = $derived.by(() => {
     if (focusLon === null) return 0;
@@ -221,7 +192,7 @@
   class:settled
   class:passive={!interactive}
   class:scrubbing
-  aria-label="Natal chart wheel; the index of elements offers the same filters"
+  aria-label={t().wheelAria}
 >
   <!-- every clickable element on the plate shares one interactive contract:
        pin on click/Enter, preview on hover/focus, and the sel/focus/rel
@@ -232,7 +203,7 @@
          set together: both "button"/0 when interactive, both absent when not) -->
     <g
       class={cls}
-      class:sel={selected.has(id)}
+      class:sel={interactive && isPinned(id)}
       class:focus={focusTag === id}
       class:rel={related.has(id)}
       role={interactive ? "button" : undefined}
@@ -258,7 +229,9 @@
   </g>
   <circle cx={CX} cy={CY} r={R.passIn} class="dens-ring" pathLength="1" style="--d: 0ms" />
 
-  {#each [R.outer, R.bandOut, R.signIn, R.gradIn, R.wedgeOut, R.hub] as r, i (r)}
+  <!-- DEPARTURE: the spec's inner hub ring (hub − 4) is omitted; the core
+       medallion sits there on this rendition. -->
+  {#each PLATE_RINGS as r, i (r)}
     <circle cx={CX} cy={CY} {r} pathLength="1" style="--d: {i * 70}ms" class={i < 2 ? "engrave-strong ring" : "engrave ring"} />
   {/each}
   {#each grads as g, i (i)}
@@ -272,7 +245,7 @@
       <path d={band.d} class="wash wash-{band.s.element}" />
       <path d={band.d} class="sign-band"><title>{band.s.name} — {band.s.element}</title></path>
       {#if band.bar}
-        <path d={band.bar} class="dens-bar"><title>{band.w} {band.w === 1 ? "passage" : "passages"} · {band.s.name}</title></path>
+        <path d={band.bar} class="dens-bar"><title>{plural(t().passages, band.w)} · {band.s.name}</title></path>
       {/if}
       <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
         >{textGlyph(band.s.glyph)}</text

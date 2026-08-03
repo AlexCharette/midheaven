@@ -2,15 +2,27 @@
   // The landing view: a live chart calculator. The engraved wheel is the hero
   // plate, ringed by the date/time instrument limb (TimeRings); beneath it a
   // figcaption cradle carries the place, the moment fields, the year switch,
-  // and the calculation selectors. Every input funnels through `setDraft`;
+  // and the calculation selectors. Every input funnels through `setMoment`;
   // the wheel renders the pose-tweened projection of the newest preview, so
   // the heavens glide — never jump — to the chosen moment.
   import { onMount } from "svelte";
   import { getPreferences, lastPlace, setLastPlace } from "$lib/api";
-  import { calc, pose, requestPreview, setDraft } from "$lib/calc.svelte";
+  import {
+    displayed,
+    error,
+    isSeeded,
+    options,
+    place,
+    refresh,
+    scrubbing,
+    seed,
+    setMoment,
+    setOptions,
+    setPlace,
+    minutes as draftMinutes,
+    warnings,
+  } from "$lib/preview.svelte";
   import { fromMinutes, nowMoment, parseDate, parseTime, setYear, toMinutes } from "$lib/civil";
-  import type { ChartData } from "$lib/types";
-  import { norm360 } from "$lib/types";
   import type { PlaceDto } from "$lib/types";
   import BirthForm from "./BirthForm.svelte";
   import CalcOptions from "./CalcOptions.svelte";
@@ -22,72 +34,71 @@
   import TimeRings from "./TimeRings.svelte";
   import Wheel from "./Wheel.svelte";
 
+  // Fly-outs this view owns; nobody else's business, so local rather than
+  // shared state. `birthOpen` used to sit in the preview pipeline's object,
+  // beside its in-flight and error fields.
   let libraryOpen = $state(false);
   let prefsOpen = $state(false);
+  let birthOpen = $state(false);
 
   onMount(async () => {
-    const firstRun = calc.minutes === 0;
-    if (!calc.place) {
+    // A first run seeds the moment and the calculation choices from
+    // preferences; a return visit finds the explored moment intact and only
+    // refreshes the language.
+    const firstRun = !isSeeded();
+    if (!place()) {
       try {
-        calc.place = await lastPlace();
+        seed({ place: await lastPlace() });
       } catch {
         /* no gazetteer place — the picker is still there */
       }
     }
     try {
       const p = await getPreferences();
-      if (p.default_locale) calc.lang = p.default_locale;
-      if (firstRun) {
-        if (p.default_house_system) calc.houseSystem = p.default_house_system;
-        if (p.default_zodiac) calc.zodiac = p.default_zodiac;
-        if (p.default_ayanamsa) calc.ayanamsa = p.default_ayanamsa;
-      }
+      seed({
+        ...(p.default_locale ? { lang: p.default_locale } : {}),
+        ...(firstRun && p.default_house_system ? { houseSystem: p.default_house_system } : {}),
+        ...(firstRun && p.default_zodiac ? { zodiac: p.default_zodiac } : {}),
+        ...(firstRun && p.default_ayanamsa ? { ayanamsa: p.default_ayanamsa } : {}),
+      });
     } catch {
       /* defaults stand */
     }
     if (firstRun) {
       const now = nowMoment();
-      calc.minutes = toMinutes(now.date, now.time)!;
+      seed({ minutes: toMinutes(now.date, now.time)! });
     }
-    requestPreview("now");
+    // One request for the whole seeded draft.
+    refresh("now");
   });
 
-  const moment = $derived(fromMinutes(calc.minutes));
+  const moment = $derived(fromMinutes(draftMinutes()));
   const year = $derived(Number(moment.date.slice(0, 4)));
+  const calcOptions = $derived(options());
 
-  // The wheel's chart: the target's identity with the pose's angles — planets,
-  // frame, and cusps mid-glide; aspects/houses/labels discrete from the target.
-  const displayed = $derived.by((): ChartData | null => {
-    const t = calc.target;
-    if (!t) return null;
-    const cur = pose.current;
-    return {
-      ...t,
-      axes: { asc: norm360(cur.asc), mc: norm360(cur.mc) },
-      houseCusps: t.houseCusps.map((c, i) => norm360(cur.cusps[i] ?? c)),
-      planets: t.planets.map((p) => ({ ...p, lon: norm360(cur.lons[p.id] ?? p.lon) })),
-    };
-  });
+  // The chart to render — the target's identity with the pose's angles — is
+  // `pose.project`, not this view's business.
+  const chart = $derived(displayed());
 
   function commitDate(text: string) {
     const min = toMinutes(text, moment.time);
-    if (min !== null) setDraft(min, "field");
+    if (min !== null) setMoment(min, "field");
   }
   function commitTime(text: string) {
     const min = toMinutes(moment.date, text);
-    if (min !== null) setDraft(min, "field");
+    if (min !== null) setMoment(min, "field");
   }
   function stepYear(delta: number) {
     const min = toMinutes(setYear(moment.date, year + delta), moment.time);
-    if (min !== null) setDraft(min, "stepper");
+    if (min !== null) setMoment(min, "stepper");
   }
   function setToNow() {
     const now = nowMoment();
-    setDraft(toMinutes(now.date, now.time)!, "now");
+    setMoment(toMinutes(now.date, now.time)!, "now");
   }
   function onPlacePicked(p: PlaceDto) {
+    setPlace(p);
     setLastPlace(p.id).catch(() => {});
-    requestPreview("field");
   }
 </script>
 
@@ -96,8 +107,8 @@
     <div class="plate-frame">
       <div class="stack">
         <div class="wheel-slot">
-          {#if displayed}
-            <Wheel chart={displayed} interactive={false} scrubbing={calc.scrubbing} />
+          {#if chart}
+            <Wheel {chart} interactive={false} scrubbing={scrubbing()} />
           {/if}
         </div>
         <TimeRings />
@@ -116,7 +127,7 @@
 
     <div class="place-line">
       <p class="over-lbl">the heavens over</p>
-      <PlacePicker bind:value={calc.place} compact ariaLabel="place" onpick={onPlacePicked} />
+      <PlacePicker value={place()} compact ariaLabel="place" onpick={onPlacePicked} />
     </div>
 
     <div class="moment">
@@ -150,14 +161,14 @@
     <div class="calc-line">
       <CalcOptions
         variant="caption"
-        bind:houseSystem={calc.houseSystem}
-        bind:zodiac={calc.zodiac}
-        bind:ayanamsa={calc.ayanamsa}
-        onchange={() => requestPreview("field")}
+        houseSystem={calcOptions.houseSystem}
+        zodiac={calcOptions.zodiac}
+        ayanamsa={calcOptions.ayanamsa}
+        onchange={setOptions}
       />
     </div>
-    <p class="note" class:err={calc.error !== null} aria-live="polite">
-      {calc.error ?? calc.warnings.join(" · ")}
+    <p class="note" class:err={error() !== null} aria-live="polite">
+      {error() ?? warnings().join(" · ")}
     </p>
   </aside>
 </div>
@@ -168,23 +179,23 @@
     <span class="sep" aria-hidden="true">·</span>
     <button type="button" class="ghost" onclick={() => (prefsOpen = true)}>preferences</button>
   </span>
-  <button type="button" class="frame-btn cast" onclick={() => (calc.birthOpen = true)}>
+  <button type="button" class="frame-btn cast" onclick={() => (birthOpen = true)}>
     cast a natal chart
   </button>
 </footer>
 
-{#if calc.birthOpen}
-  <Overlay variant="panel" label="cast a natal chart" onclose={() => (calc.birthOpen = false)}>
+{#if birthOpen}
+  <Overlay variant="panel" label="cast a natal chart" onclose={() => (birthOpen = false)}>
     <BirthForm
       initial={{
         date: moment.date,
         time: moment.time,
-        place: calc.place,
-        houseSystem: calc.houseSystem,
-        zodiac: calc.zodiac,
-        ayanamsa: calc.ayanamsa,
+        place: place(),
+        houseSystem: calcOptions.houseSystem,
+        zodiac: calcOptions.zodiac,
+        ayanamsa: calcOptions.ayanamsa,
       }}
-      onclose={() => (calc.birthOpen = false)}
+      onclose={() => (birthOpen = false)}
     />
   </Overlay>
 {:else if libraryOpen}

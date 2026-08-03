@@ -1,6 +1,6 @@
-# Lean checks on the root crate + the webview frontend. The desktop Rust
-# crate is exercised by the release workflow (it needs platform webview
-# toolchains that aren't worth installing here).
+# Lean checks on the root crate + the webview frontend, plus the desktop crate's
+# tests and generated bindings on macOS (its webview/audio toolchains ship with
+# the runner, which is why that job isn't on ubuntu with the others).
 name: ci
 
 on:
@@ -25,12 +25,32 @@ jobs:
       - run: cargo clippy -p astro --all-targets -- -D warnings
       # The webview's TypeScript contract types are generated from the Rust
       # structs by ts-rs. Regenerate and fail if the committed bindings drift —
-      # so a contract rename can't silently diverge from the frontend. (The
-      # desktop DTOs are generated from the desktop crate, which CI doesn't
-      # build; `npm run gen:types` locally + the svelte `check` job cover those.)
+      # so a contract rename can't silently diverge from the frontend. The
+      # desktop crate's own DTOs are checked by the `desktop` job below.
       - name: contract bindings are up to date
         run: |
           TS_RS_EXPORT_DIR="$PWD/desktop/src/lib" cargo test -p astro --features ts export_bindings
+          git diff --exit-code desktop/src/lib/generated
+
+  # The desktop crate: its tests (the session state machine, the curation
+  # helpers) never ran in CI, and eight of the seventeen generated TypeScript
+  # files — every DTO the commands take or return, plus the command-name union —
+  # were outside the drift check, so a rename there passed CI with a stale
+  # binding and failed at runtime.
+  desktop:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/astro-geonames
+          key: geonames-${{ hashFiles('build.rs') }}
+      - run: cargo test -p astro-desktop
+      - name: desktop bindings are up to date
+        run: |
+          TS_RS_EXPORT_DIR="$PWD/desktop/src/lib" cargo test -p astro-desktop --features ts export_bindings
           git diff --exit-code desktop/src/lib/generated
 
   svelte:
@@ -45,4 +65,9 @@ jobs:
       - run: npm ci
         working-directory: desktop
       - run: npm run check
+        working-directory: desktop
+      # The frontend's unit tests (vitest) cover the pure modules: the session
+      # state machine, civil-date arithmetic, and the pose interpolation. They
+      # need no DOM environment, so they run in the same job as the type check.
+      - run: npm run test:unit
         working-directory: desktop

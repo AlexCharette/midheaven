@@ -2,8 +2,11 @@
   import { fade, fly, slide } from "svelte/transition";
   import { expoOut } from "svelte/easing";
   import type { ChartData } from "$lib/types";
-  import { catOf, degInSign, planetById, relatedTo, signAt, textGlyph } from "$lib/types";
-  import { app, focusedTag, houseSuffix, peek, selected, toggle, unpeek } from "$lib/state.svelte";
+  import { catOf, planetById, signOf, textGlyph } from "$lib/types";
+  import { occupiedTags, relatedTo } from "$lib/focus";
+  import { focusedTag, isPinned, peek, toggle, unpeek } from "$lib/focus.svelte";
+  import { houseSuffix } from "$lib/options.svelte";
+  import { fmt, t } from "$lib/chrome.svelte";
   import { swapDuration } from "$lib/motion";
 
   let { chart }: { chart: ChartData } = $props();
@@ -22,13 +25,16 @@
   const suffix = $derived(houseSuffix(chart.meta.locale ?? "en"));
 
   // Relevance rule (canonical prose lives in templates/reading.html beside
-  // syncRelevance; keep the two in step): visible = occupied ∪ selected ∪
-  // expanded — occupancy means a body stands in the sign/house, and a
-  // selected filter must never hide itself.
-  const occupied = $derived(
-    new Set(chart.planets.flatMap((p) => [signAt(chart, p.lon).id, `house:${p.house}`])),
-  );
+  // syncRelevance; keep the two in step): visible = occupied ∪ pinned ∪
+  // expanded — occupancy means a body stands in the sign/house, and a pinned
+  // filter must never hide itself.
+  const occupied = $derived(occupiedTags(chart));
   let expanded = $state<Record<string, boolean>>({ signs: false, houses: false });
+
+  // This fold is nobody else's business, so it is local state rather than a
+  // field on a shared object. Folded by default so the orrery leads; opening
+  // it reveals the full keyboard-accessible mirror.
+  let open = $state(false);
 
   interface Entry {
     tag: string;
@@ -37,27 +43,32 @@
     detail: string;
   }
   interface Column {
+    /** The key the fold state is stored under — not shown; `label` is. */
     head: string;
+    label: string;
     entries: Entry[];
     filterable?: boolean;
   }
   const columns: Column[] = $derived([
     {
       head: "planets",
+      label: t().bands[0],
       entries: chart.planets.map((p) => ({
         tag: p.id,
         glyph: p.glyph,
         name: p.name,
-        detail: `${degInSign(p.lon)}° ${textGlyph(signAt(chart, p.lon).glyph)}`,
+        detail: `${p.deg}° ${textGlyph(signOf(chart, p).glyph)}`,
       })),
     },
     {
       head: "signs",
+      label: t().bands[1],
       filterable: true,
       entries: chart.signs.map((s) => ({ tag: s.id, glyph: s.glyph, name: s.name, detail: "" })),
     },
     {
       head: "houses",
+      label: t().bands[2],
       filterable: true,
       entries: chart.houses.map((h) => ({
         tag: h.id,
@@ -68,6 +79,7 @@
     },
     {
       head: "aspects",
+      label: t().bands[3],
       entries: chart.aspects.map((a) => ({
         tag: a.id,
         glyph: a.glyph,
@@ -82,35 +94,35 @@
   <button
     type="button"
     class="rubric index-summary"
-    class:open={app.indexOpen}
-    aria-expanded={app.indexOpen}
+    class:open={open}
+    aria-expanded={open}
     aria-controls="index-body"
-    onclick={() => (app.indexOpen = !app.indexOpen)}
+    onclick={() => (open = !open)}
   >
     <span class="head-group">
-      <span class="lbl">Index of Elements</span>
+      <span class="lbl">{t().indexOfElements}</span>
       <span class="caret" aria-hidden="true">
         <svg width="11" height="7" viewBox="0 0 11 7"><path d="M1 1.2 L5.5 5.5 L10 1.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
     </span>
   </button>
-  {#if app.indexOpen}
+  {#if open}
     <div class="index" id="index-body" transition:slide={{ duration: swapDuration(), easing: expoOut }}>
     {#each columns as col (col.head)}
       {@const filtering = col.filterable && !expanded[col.head]}
       {@const shown = filtering
-        ? col.entries.filter((e) => occupied.has(e.tag) || selected.has(e.tag))
+        ? col.entries.filter((e) => occupied.has(e.tag) || isPinned(e.tag))
         : col.entries}
       {@const hidden = col.entries.length - shown.length}
       <div class="band">
-        <h3>{col.head}</h3>
+        <h3>{col.label}</h3>
         <div class="entries">
           {#each shown as e (e.tag)}
             <button
               class="entry"
               class:focus={focusTag === e.tag}
               class:rel={related.has(e.tag)}
-              aria-pressed={selected.has(e.tag)}
+              aria-pressed={isPinned(e.tag)}
               onclick={() => toggle(e.tag)}
               onmouseenter={() => peek(e.tag)}
               onmouseleave={unpeek}
@@ -125,9 +137,9 @@
             </button>
           {/each}
           {#if filtering && hidden > 0}
-            <button class="more" onclick={() => (expanded[col.head] = true)}>· {hidden} more</button>
+            <button class="more" onclick={() => (expanded[col.head] = true)}>{fmt(t().more, { n: hidden })}</button>
           {:else if col.filterable && expanded[col.head]}
-            <button class="more" onclick={() => (expanded[col.head] = false)}>· fewer</button>
+            <button class="more" onclick={() => (expanded[col.head] = false)}>{t().fewer}</button>
           {/if}
         </div>
       </div>

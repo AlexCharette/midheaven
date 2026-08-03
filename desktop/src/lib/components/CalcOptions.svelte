@@ -3,12 +3,13 @@
   // "sidereal opts into an ayanamsa" rule, previously duplicated between the
   // birth form and the reading view's caption. Two skins: the form's italic
   // gutter grid and the cartouche's small-caps line.
-  import { ayanamsas, houseSystems } from "$lib/state.svelte";
+  import { ayanamsas, defaults, houseSystems } from "$lib/options.svelte";
+  import { SIDEREAL, TROPICAL } from "$lib/types";
 
   let {
-    houseSystem = $bindable("whole-sign"),
-    zodiac = $bindable("tropical"),
-    ayanamsa = $bindable("lahiri"),
+    houseSystem = $bindable(defaults().houseSystem),
+    zodiac = $bindable(defaults().zodiac),
+    ayanamsa = $bindable(defaults().ayanamsa),
     disabled = false,
     variant = "form",
     onchange = () => {},
@@ -18,8 +19,12 @@
     ayanamsa?: string;
     disabled?: boolean;
     variant?: "form" | "caption";
-    onchange?: () => void;
+    /** The whole trio as it now stands, so a parent that owns the choices
+     * elsewhere can take them without two-way binding. */
+    onchange?: (next: { houseSystem: string; zodiac: string; ayanamsa: string }) => void;
   } = $props();
+
+  const report = () => onchange({ houseSystem, zodiac, ayanamsa });
 
   const uid = $props.id();
 </script>
@@ -27,21 +32,21 @@
 {#if variant === "form"}
   <div class="pair">
     <label class="lbl" for="{uid}-house">house system</label>
-    <select id="{uid}-house" class="lang" bind:value={houseSystem} {disabled} {onchange}>
+    <select id="{uid}-house" class="lang" bind:value={houseSystem} {disabled} onchange={report}>
       {#each houseSystems as h (h.code)}
         <option value={h.code}>{h.label}</option>
       {/each}
     </select>
     <label class="lbl" for="{uid}-zodiac">zodiac</label>
-    <select id="{uid}-zodiac" class="lang" bind:value={zodiac} {disabled} {onchange}>
-      <option value="tropical">Tropical</option>
-      <option value="sidereal">Sidereal</option>
+    <select id="{uid}-zodiac" class="lang" bind:value={zodiac} {disabled} onchange={report}>
+      <option value={TROPICAL}>Tropical</option>
+      <option value={SIDEREAL}>Sidereal</option>
     </select>
   </div>
-  {#if zodiac === "sidereal"}
+  {#if zodiac === SIDEREAL}
     <label class="aya">
       <span>ayanamsa</span>
-      <select class="lang" bind:value={ayanamsa} {disabled} {onchange}>
+      <select class="lang" bind:value={ayanamsa} {disabled} onchange={report}>
         {#each ayanamsas as a (a.code)}
           <option value={a.code}>{a.label}</option>
         {/each}
@@ -50,16 +55,16 @@
   {/if}
 {:else}
   <div class="calc">
-    <select class="calc-sel" aria-label="house system" bind:value={houseSystem} {disabled} {onchange}>
+    <select class="calc-sel" aria-label="house system" bind:value={houseSystem} {disabled} onchange={report}>
       {#each houseSystems as h (h.code)}<option value={h.code}>{h.label}</option>{/each}
     </select>
     <span class="sep" aria-hidden="true">·</span>
-    <select class="calc-sel" aria-label="zodiac" bind:value={zodiac} {disabled} {onchange}>
-      <option value="tropical">Tropical</option>
-      <option value="sidereal">Sidereal</option>
+    <select class="calc-sel" aria-label="zodiac" bind:value={zodiac} {disabled} onchange={report}>
+      <option value={TROPICAL}>Tropical</option>
+      <option value={SIDEREAL}>Sidereal</option>
     </select>
-    {#if zodiac === "sidereal"}
-      <select class="calc-sel" aria-label="ayanamsa" bind:value={ayanamsa} {disabled} {onchange}>
+    {#if zodiac === SIDEREAL}
+      <select class="calc-sel" aria-label="ayanamsa" bind:value={ayanamsa} {disabled} onchange={report}>
         {#each ayanamsas as a (a.code)}<option value={a.code}>{a.label}</option>{/each}
       </select>
     {/if}

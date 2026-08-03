@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { toasts, dismissToast } from "$lib/state.svelte";
+  import { toasts, dismissToast } from "$lib/toasts.svelte";
 
   // Force text presentation on the error mark, matching the glyph convention.
   const mark = "✗︎"; // ✗

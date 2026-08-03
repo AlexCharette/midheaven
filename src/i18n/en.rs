@@ -2,7 +2,11 @@
 //! hardcoded values (`chart::catalog` names, the old `route::lexicon` term
 //! lists) so English output never shifts — the tests in `super` guard it.
 
-use super::{AspectEntry, Entry, HouseEntry, LocaleTable, PdfChrome};
+use super::{
+    AppChrome, ArtifactChrome, AspectEntry, Entry, FigureCaption, HouseEntry, LocaleTable, PdfChrome,
+    Plural,
+    PlateTitle,
+};
 
 pub static TABLE: LocaleTable = LocaleTable {
     planets: PLANETS,
@@ -16,11 +20,57 @@ pub static TABLE: LocaleTable = LocaleTable {
     anonymous: "Anonymous",
     endonym: "English",
     house_suffix: " House",
+    plate_title: PlateTitle::Inline("{name}'s birth chart"),
+    app: AppChrome {
+        index_of_elements: "Index of Elements",
+        bands: ["planets", "signs", "houses", "aspects"],
+        commentary: "Commentary",
+        passages_touching: "passages touching",
+        any: "any",
+        all: "all",
+        any_title: "Passages touching any selected element",
+        all_title: "Only passages touching every selected element",
+        of_selection: "of the selection \u{b7}",
+        clear: "clear",
+        count: "{shown} of {total} passages",
+        passages: Plural { one: "{n} passage", other: "{n} passages" },
+        fewer: "\u{b7} fewer",
+        more: "\u{b7} {n} more",
+        wheel_aria: "Natal chart wheel; the index of elements offers the same filters",
+        empty_none_routed: "No passages are filed under this chart yet.",
+        empty_no_match: "No passage touches {word} of the selected elements.",
+    },
+    figure_caption: FigureCaption {
+        template: "Fig. I. \u{2014} The natal figure of {name}, calculated for {born}{place}. \
+                   {system} houses upon the {zodiac} zodiac.",
+        place_prefix: ", ",
+        lowercase_zodiac: true,
+    },
     pdf: PdfChrome {
-        nativity_of: "The Nativity of",
         prepared_by: "Prepared by",
         index_of_elements: "Index of Elements",
         commentary: "Commentary",
+    },
+    artifact: ArtifactChrome {
+        natal_reading: "Natal Reading",
+        index_of_elements: "Index of Elements",
+        bands: ["planets", "signs", "houses", "aspects"],
+        passages_touching: "passages touching",
+        any: "any",
+        all: "all",
+        any_title: "Passages touching any selected element",
+        all_title: "Only passages touching every selected element",
+        of_selection: "of the selection \u{b7}",
+        clear: "clear",
+        commentary: "Commentary",
+        prepared_by: "prepared by",
+        wheel_aria: "Natal chart wheel; the index of elements offers the same filters",
+        count: "{shown} of {total} passages",
+        no_passages_routed: "no passages routed",
+        empty_none_routed: "No transcript passages were routed to this chart.",
+        empty_no_match: "No passage touches {word} of the selected elements \u{2014} clear the selection to see everything.",
+        fewer: "\u{b7} fewer",
+        more: "\u{b7} {n} more",
     },
 };
 

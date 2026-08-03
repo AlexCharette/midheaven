@@ -10,25 +10,37 @@
     startRecording,
     stopRecording,
   } from "$lib/api";
-  import { app, excerptsMatching, isBusy, loadCalcOptions, loadLocales, notify, selected, visibleExcerpts } from "$lib/state.svelte";
+  import {
+    chart as openChart,
+    isRecording,
+    leaveReading,
+    takeBegan,
+    takeEnded,
+    updateChart,
+    whyCannotLeave,
+    whyCannotRecord,
+  } from "$lib/session.svelte";
+  import { busy, during, isBusy, setProgress } from "$lib/busy.svelte";
+  import { clearPins, mode, resetFocus, setMode, visibleExcerpts } from "$lib/focus.svelte";
+  import { canRecord, loadCalcOptions, loadLocales, modelPath, setModelPath } from "$lib/options.svelte";
+  import { notify } from "$lib/toasts.svelte";
+  import { TROPICAL } from "$lib/types";
+  import { fmt, loadChrome, t } from "$lib/chrome.svelte";
   import Calculator from "$lib/components/Calculator.svelte";
   import ChartCore from "$lib/components/ChartCore.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
   import IndexOfElements from "$lib/components/IndexOfElements.svelte";
   import Wheel from "$lib/components/Wheel.svelte";
   import { onMount } from "svelte";
+  import { reason } from "$lib/failure";
 
-  // With nothing pinned, hovering an element previews just its passages;
-  // once anything is pinned the hover preview stops and the commentary tracks
-  // the pinned selection (empty selection = the whole reading).
-  const previewing = $derived(selected.size === 0 && app.hovered !== null);
-  const visible = $derived(
-    app.chart
-      ? previewing
-        ? excerptsMatching(app.chart, [app.hovered!], "any")
-        : visibleExcerpts(app.chart)
-      : [],
-  );
+  const reading = $derived(openChart());
+  // Which passages the hover and the pins add up to is the focus module's rule,
+  // not this view's — the hover-preview half of it used to live here, apart from
+  // the pin rule it completes.
+  const visible = $derived(reading ? visibleExcerpts(reading) : []);
+  // A local binding so the template can narrow the discriminated phase.
+  const phase = $derived(busy());
 
   // transcription progress can arrive during a form build or a live take
   onMount(() => {
@@ -36,19 +48,18 @@
     // backend once; the form and preferences selectors read it from state.
     loadLocales();
     loadCalcOptions();
+    loadChrome();
     // A configured default model enables live transcription on ANY open chart,
-    // not only ones just built through the form (which sets app.model itself) —
+    // not only ones just built through the form (which sets the path itself) —
     // so a reading opened from the library can still be transcribed onto.
-    if (!app.model) {
+    if (!canRecord()) {
       getPreferences()
         .then((p) => {
-          if (!app.model && p.default_model) app.model = p.default_model;
+          if (!canRecord() && p.default_model) setModelPath(p.default_model);
         })
         .catch(() => {});
     }
-    const unlisten = onTranscribeProgress((pct) => {
-      if (isBusy()) app.busy = { kind: "transcribe", pct };
-    });
+    const unlisten = onTranscribeProgress(setProgress);
     // Warnings the pipeline used to write to stderr now surface as toasts.
     const unlistenWarn = onBuildWarnings((ws) => ws.forEach((w) => notify(w)));
     return () => {
@@ -58,36 +69,46 @@
   });
 
   // ---- live session recording ----
-  let recording = $state(false);
+  // Whether a take is running lives in the session, alongside the reading it is
+  // being spoken over — the two used to be independent, which is how leaving a
+  // reading could strand a recorder. `recSecs` stays here because it is only a
+  // display counter, and no path can change the phase underneath it while
+  // recording (leaving, opening another reading and recalculating are refused).
   let recSecs = $state(0);
   let recTimer: ReturnType<typeof setInterval> | undefined;
   const mmss = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
   async function toggleRecording() {
-    if (!recording) {
+    if (!isRecording()) {
       try {
-        await startRecording(app.model);
-        recording = true;
+        // The phase turns only after the backend confirms a recorder is up.
+        await startRecording(modelPath());
+        if (!takeBegan()) return;
         recSecs = 0;
         recTimer = setInterval(() => recSecs++, 1000);
         notify("listening — speak the reading; stop to route it");
       } catch (e) {
-        notify(`${e}`, "error");
+        notify(reason(e), "error");
       }
       return;
     }
     clearInterval(recTimer);
-    recording = false;
-    app.busy = { kind: "compute" };
+    // The recorder is gone the moment `stop_recording` is entered, so the phase
+    // leaves `recording` before the transcription await rather than after: the
+    // footer should show progress, not a stop button for a recorder that has
+    // already ended. A failed transcription therefore keeps the chart it had.
+    takeEnded(null);
     notify("routing the recording…");
     try {
-      app.chart = await stopRecording();
-      notify(`${app.chart.excerpts.length} passages on the chart`);
+      // `transcribe` rather than `compute`: the backend reports whole-percent
+      // progress through `setProgress`, which only lands in that phase.
+      const routed = await during("transcribe", stopRecording);
+      updateChart(routed);
+      // English: this whole sentence has no Russian yet, like the forms'.
+      notify(`${routed.excerpts.length} passages on the chart`);
     } catch (e) {
-      notify(`${e}`, "error");
-    } finally {
-      app.busy = { kind: "idle" };
+      notify(reason(e), "error");
     }
   }
 
@@ -102,7 +123,7 @@
       const written = await saveArtifact(path);
       notify(`wrote ${written} ☞ open it in a browser`);
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
@@ -117,62 +138,70 @@
       const written = await savePdf(path);
       notify(`wrote ${written}`);
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
+  // Refused mid-take — the stop control lives in this view, so leaving would
+  // strand a recorder the user can no longer reach and its take would land on
+  // whatever reading is opened next. The button is disabled for the same reason;
+  // this is the backstop, and it surfaces the refusal rather than failing quietly.
   function back() {
-    app.chart = null;
-    app.hovered = null;
-    selected.clear();
+    if (!leaveReading()) return;
+    resetFocus();
   }
 </script>
 
-{#if app.chart}
+{#if reading}
   <div class="reading">
     <figure class="plate">
       <div class="plate-frame">
         <!-- keyed on the calculation so a live reproject remounts the wheel and
              replays its ring-draw/rise-in entrance as the transition; ChartCore
              stays mounted so the caption control keeps focus across the swap -->
-        {#key app.chart.meta.house_system + "|" + (app.chart.meta.ayanamsa ?? "tropical")}
-          <Wheel chart={app.chart} />
+        {#key reading.meta.house_system + "|" + (reading.meta.ayanamsa ?? TROPICAL)}
+          <Wheel chart={reading} />
         {/key}
-        <ChartCore chart={app.chart} />
+        <ChartCore chart={reading} />
       </div>
     </figure>
 
     <section>
       <div class="toolbar">
-        <span class="apparatus-text">passages touching</span>
+        <span class="apparatus-text">{t().passagesTouching}</span>
         <span class="segmented">
-          <button aria-pressed={app.mode === "any"} onclick={() => (app.mode = "any")}>any</button>
-          <button aria-pressed={app.mode === "all"} onclick={() => (app.mode = "all")}>all</button>
+          <button aria-pressed={mode() === "any"} onclick={() => setMode("any")} title={t().anyTitle}>{t().any}</button>
+          <button aria-pressed={mode() === "all"} onclick={() => setMode("all")} title={t().allTitle}>{t().all}</button>
         </span>
-        <span class="apparatus-text">of the selection ·</span>
-        <button class="ghost" onclick={() => selected.clear()}>clear</button>
-        <span class="count apparatus-text">{visible.length} of {app.chart.excerpts.length} passages</span>
+        <span class="apparatus-text">{t().ofSelection}</span>
+        <button class="ghost" onclick={clearPins}>{t().clear}</button>
+        <span class="count apparatus-text">{fmt(t().count, { shown: visible.length, total: reading.excerpts.length })}</span>
       </div>
 
-      <IndexOfElements chart={app.chart} />
+      <IndexOfElements chart={reading} />
 
-      <Commentary chart={app.chart} {visible} />
+      <Commentary chart={reading} {visible} />
     </section>
   </div>
   <footer>
-    <button class="ghost" onclick={back}>← new reading</button>
+    <button
+      class="ghost"
+      onclick={back}
+      disabled={whyCannotLeave() !== null}
+      title={whyCannotLeave() ?? undefined}>← new reading</button
+    >
     <span class="foot-actions">
-      {#if app.model}
+      {#if canRecord()}
         <button
           class="frame-btn rec"
-          class:on={recording}
+          class:on={isRecording()}
           onclick={toggleRecording}
-          disabled={!recording && isBusy()}
+          disabled={!isRecording() && (isBusy() || whyCannotRecord() !== null)}
         >
-          {#if recording}
+          {#if isRecording()}
             <span class="dot" aria-hidden="true"></span> stop transcribing · {mmss(recSecs)}
-          {:else if app.busy.kind === "transcribe"}
-            transcribing… {app.busy.pct}%
+          {:else if phase.kind === "transcribe"}
+            transcribing… {phase.pct}%
           {:else}
             ◉ begin transcribing
           {/if}
@@ -183,13 +212,13 @@
         <button
           class="frame-btn primary"
           onclick={engrave}
-          disabled={recording}
+          disabled={isRecording()}
           title="the self-contained HTML reading — opens in any browser"
         >HTML</button>
         <button
           class="frame-btn"
           onclick={engravePdf}
-          disabled={recording}
+          disabled={isRecording()}
           title="a printer-friendly PDF"
         >PDF</button>
       </span>

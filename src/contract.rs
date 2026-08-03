@@ -13,6 +13,11 @@ pub struct ChartData {
     pub axes: Axes,
     #[serde(rename = "houseCusps")]
     pub house_cusps: Vec<f64>,
+    /// Derived: how wide each house is, cusp to next cusp — see
+    /// [`crate::derive::sweep`]. Parallel to `house_cusps`. Absent from charts
+    /// saved before the field existed; `derive::fill` restores it on load.
+    #[serde(rename = "houseSweeps", default)]
+    pub house_sweeps: Vec<f64>,
     pub planets: Vec<Body>,
     pub signs: Vec<Ref>,
     pub houses: Vec<HouseRef>,
@@ -53,6 +58,7 @@ impl ChartData {
             ("signs", self.signs.len()),
             ("houses", self.houses.len()),
             ("house cusps", self.house_cusps.len()),
+            ("house sweeps", self.house_sweeps.len()),
         ] {
             if len != 12 {
                 return Err(format!("expected 12 {label}, found {len}"));
@@ -62,6 +68,15 @@ impl ChartData {
             check_id(&p.id, "planet")?;
             if !(1..=12).contains(&p.house) {
                 return Err(format!("planet {:?} has house {} outside 1..=12", p.id, p.house));
+            }
+            // The derived position indexes `signs` directly and is rendered as
+            // text; `derive::fill` guarantees the ranges, so a violation here
+            // means the fields were never filled.
+            if p.sign > 11 || p.deg > 29 || p.min > 59 {
+                return Err(format!(
+                    "planet {:?} has an out-of-range derived position {}/{}/{}",
+                    p.id, p.sign, p.deg, p.min
+                ));
             }
         }
         for s in &self.signs {
@@ -116,13 +131,14 @@ pub struct Segment {
     pub text: String,
 }
 
-/// Filter match mode for excerpt selections, shared by every viewer
-/// (the HTML template implements the same semantics in JS).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Mode {
-    Any,
-    All,
-}
+// The excerpt filter mode and `Excerpt::matches` used to live here, documented
+// as "shared by every viewer". They were shared by none: both viewers are
+// JavaScript and implement it themselves — `desktop/src/lib/focus.ts`'s
+// `matching` for the app, and `templates/reading.html`'s `matches` for the
+// artifact — and nothing in Rust ever filtered a passage, because the PDF prints
+// them all. A third statement of a rule, in the module whose job is to be the
+// shared contract, that no caller could reach. Deleting it concentrated nothing,
+// which is what made it safe to delete.
 
 impl Excerpt {
     /// Merge a later passage into this one: the span extends to cover both,
@@ -135,18 +151,6 @@ impl Excerpt {
         tags.sort();
         tags.dedup();
         self.tags = tags;
-    }
-
-    /// An empty selection matches everything; Any = the excerpt touches any
-    /// selected tag; All = it touches every one.
-    pub fn matches(&self, selected: &BTreeSet<String>, mode: Mode) -> bool {
-        if selected.is_empty() {
-            return true;
-        }
-        match mode {
-            Mode::Any => selected.iter().any(|t| self.tags.contains(t)),
-            Mode::All => selected.iter().all(|t| self.tags.contains(t)),
-        }
     }
 }
 
@@ -221,7 +225,10 @@ pub struct Axes {
     pub mc: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A chart body. `Default` exists so the compute stage can write the measured
+/// fields and leave the derived ones to `derive::fill`, its only writer:
+/// `Body { id, glyph, name, lon, house, ..Default::default() }`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Body {
     pub id: String,
@@ -229,6 +236,20 @@ pub struct Body {
     pub name: String,
     pub lon: f64,
     pub house: u8,
+    /// Derived from `lon` by [`crate::derive::position`]: the sign it falls in
+    /// (`0..=11`, indexing [`ChartData::signs`]) and how far into it. Every
+    /// renderer reads these instead of re-deriving them — the PDF, the artifact
+    /// and the desktop wheel each used to carry their own copy of the
+    /// arithmetic and had drifted. Absent from charts saved before the fields
+    /// existed; `derive::fill` restores them on load.
+    #[serde(default)]
+    pub sign: u8,
+    /// Whole degrees into the sign, `0..=29`.
+    #[serde(default)]
+    pub deg: u8,
+    /// Arcminutes, `0..=59`.
+    #[serde(default)]
+    pub min: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -295,65 +316,12 @@ pub struct Excerpt {
 mod tests {
     use super::*;
 
-    /// A minimal but structurally valid chart: 12 signs/houses/cusps, one
-    /// planet, one aspect, one excerpt tagged from the vocabulary.
+    /// The shared minimal chart plus one passage, so the vocabulary check has
+    /// something to check. Every assertion below mutates a copy of it.
     fn valid_chart() -> ChartData {
-        ChartData {
-            meta: Meta {
-                name: "T".into(),
-                born: "b".into(),
-                place: "p".into(),
-                system: "Whole Sign".into(),
-                zodiac: "Tropical".into(),
-                house_system: "whole-sign".into(),
-                ayanamsa: None,
-                locale: "en".into(),
-                astrologer: None,
-                logo: None,
-                birth: None,
-            },
-            axes: Axes { asc: 0.0, mc: 270.0 },
-            house_cusps: (0..12).map(|i| i as f64 * 30.0).collect(),
-            planets: vec![Body {
-                id: "planet:sun".into(),
-                glyph: "☉".into(),
-                name: "Sun".into(),
-                lon: 0.0,
-                house: 1,
-            }],
-            signs: (0..12)
-                .map(|i| Ref {
-                    id: format!("sign:s{i}"),
-                    glyph: "x".into(),
-                    name: "S".into(),
-                    element: "fire".into(),
-                })
-                .collect(),
-            houses: (0..12)
-                .map(|i| HouseRef {
-                    id: format!("house:{}", i + 1),
-                    label: "I".into(),
-                    name: "H".into(),
-                })
-                .collect(),
-            aspects: vec![Aspect {
-                id: "aspect:sun-moon".into(),
-                glyph: "△".into(),
-                name: "Trine".into(),
-                a: "planet:sun".into(),
-                b: "planet:moon".into(),
-                nature: "harmonious".into(),
-                orb: 0.0,
-                kind: "",
-            }],
-            excerpts: vec![Excerpt {
-                id: "x1".into(),
-                time: String::new(),
-                span: [0, 0],
-                text: "hi".into(),
-                tags: vec!["planet:sun".into()],
-            }],
-        }
+        let mut chart = crate::fixtures::minimal_chart();
+        chart.excerpts = vec![crate::fixtures::excerpt("x1", "hi", &["planet:sun"])];
+        chart
     }
 
     #[test]

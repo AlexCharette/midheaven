@@ -8,6 +8,9 @@ import {
   parseDate,
   parseTime,
   ringAngles,
+  ringDetent,
+  ringDragMinutes,
+  ringStep,
   setYear,
   toDays,
   toMinutes,
@@ -130,5 +133,60 @@ describe("ringAngles", () => {
     expect(a.timeAngle).toBeLessThan(360);
     expect(a.dateAngle).toBeGreaterThanOrEqual(0);
     expect(a.dateAngle).toBeLessThan(360);
+  });
+});
+
+describe("the instrument rings", () => {
+  /// `ringAngles` has been tested since it was written; the transform a drag
+  /// actually uses is its inverse, and lived in a closure inside `TimeRings`.
+  it("a drag and the ring rotation are inverses", () => {
+    const days = daysInYear(1990);
+    for (const minutes of [5, 60, 725, -300, MINUTES_PER_DAY / 4]) {
+      // time ring: one turn per day
+      const deg = -(minutes / MINUTES_PER_DAY) * 360;
+      expect(ringDragMinutes("time", deg, days)).toBeCloseTo(minutes, 9);
+      // date ring: one turn per year
+      const dateDeg = -(minutes / (days * MINUTES_PER_DAY)) * 360;
+      expect(ringDragMinutes("date", dateDeg, days)).toBeCloseTo(minutes, 9);
+    }
+  });
+
+  it("the ring follows the finger — a clockwise drag winds the moment back", () => {
+    expect(ringDragMinutes("time", 90, 365)).toBeLessThan(0);
+    expect(ringDragMinutes("date", 90, 365)).toBeLessThan(0);
+  });
+
+  it("the date ring is geared to the year's own length", () => {
+    // A leap year turns slower: the same drag moves fewer of its longer year.
+    expect(ringDragMinutes("date", -90, 366)).toBeGreaterThan(ringDragMinutes("date", -90, 365));
+  });
+
+  it("the date ring detents to whole days, the time ring does not", () => {
+    const start = toMinutes("1990-07-13", "14:30")!;
+    // Half a day of drag is no day at all on the date ring.
+    expect(ringDetent("date", start, MINUTES_PER_DAY * 0.4)).toBe(start);
+    expect(ringDetent("date", start, MINUTES_PER_DAY * 0.6)).toBe(start + MINUTES_PER_DAY);
+    // …so the time of day never shifts.
+    expect(fromMinutes(ringDetent("date", start, MINUTES_PER_DAY * 2.3)).time).toBe("14:30");
+    // The time ring is continuous, and rolling past midnight moves the date.
+    expect(ringDetent("time", start, 90)).toBe(start + 90);
+    expect(fromMinutes(ringDetent("time", start, MINUTES_PER_DAY)).date).toBe("1990-07-14");
+  });
+
+  it("an arrow key steps by the ring's own unit, shift coarsens it", () => {
+    const start = toMinutes("1990-07-13", "14:30")!;
+    expect(ringStep("time", start, 1, false)).toBe(start + 5);
+    expect(ringStep("time", start, -1, false)).toBe(start - 5);
+    expect(ringStep("time", start, 1, true)).toBe(start + 60);
+    expect(ringStep("date", start, 1, false)).toBe(start + MINUTES_PER_DAY);
+    // A month is not a fixed number of minutes.
+    expect(fromMinutes(ringStep("date", start, 1, true)).date).toBe("1990-08-13");
+    expect(fromMinutes(ringStep("date", start, -1, true)).date).toBe("1990-06-13");
+  });
+
+  it("a coarse date step clamps a day that the next month lacks", () => {
+    const jan31 = toMinutes("1990-01-31", "09:00")!;
+    expect(fromMinutes(ringStep("date", jan31, 1, true)).date).toBe("1990-02-28");
+    expect(fromMinutes(ringStep("date", jan31, 1, true)).time).toBe("09:00");
   });
 });

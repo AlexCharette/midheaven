@@ -41,22 +41,63 @@ pub fn is_audio(path: &Path) -> bool {
     }
 }
 
-/// (audio path, model path, audio mtime, language hint) — identifies one
-/// transcription run. The language is part of the key: the same audio decoded
-/// as `ru` vs `auto` can differ, so the cache must not cross them.
+/// What identifies one transcription run.
+///
+/// Every part earns its place. The **language** because the same audio decoded
+/// as `ru` and as `auto` can differ, so a memo must not cross them. The
+/// **model** because a bigger one hears different words. The audio's **mtime**
+/// because re-recording to the same path is a different run — the desktop
+/// writes every take to `astro-take-{millis}.wav`, but the CLI is pointed at
+/// whatever path a person names.
 #[cfg(feature = "transcribe")]
-type CacheKey = (PathBuf, PathBuf, Option<SystemTime>, String);
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct RunKey {
+    audio: PathBuf,
+    model: PathBuf,
+    mtime: Option<SystemTime>,
+    lang: String,
+}
 
-/// Single-slot result cache: transcription is by far the most expensive step
-/// (minutes for an hour of audio), and "tweak a birth field, resubmit the
-/// same recording" is a common loop in the desktop app.
 #[cfg(feature = "transcribe")]
-static LAST_RUN: Mutex<Option<(CacheKey, Vec<Segment>)>> = Mutex::new(None);
+impl RunKey {
+    fn of(audio: &Path, model: &Path, lang: &str) -> RunKey {
+        RunKey {
+            audio: audio.to_path_buf(),
+            model: model.to_path_buf(),
+            mtime: std::fs::metadata(audio).and_then(|m| m.modified()).ok(),
+            lang: lang.to_string(),
+        }
+    }
+}
+
+/// Single-slot memo over the most recent transcription: it is by far the most
+/// expensive step (minutes for an hour of audio), and "tweak a birth field,
+/// resubmit the same recording" is a common loop in the desktop app.
+///
+/// One slot rather than a map because the loop it serves is a repeat of the
+/// *last* run, and an hour of speech is not something to keep several of.
+#[cfg(feature = "transcribe")]
+static LAST_RUN: Mutex<Option<(RunKey, Vec<Segment>)>> = Mutex::new(None);
+
+/// What the last run produced, if it was this one.
+#[cfg(feature = "transcribe")]
+fn recall(key: &RunKey) -> Option<Vec<Segment>> {
+    let slot = LAST_RUN.lock().expect("the memo mutex is never poisoned");
+    slot.as_ref().filter(|(last, _)| last == key).map(|(_, segments)| segments.clone())
+}
 
 #[cfg(feature = "transcribe")]
-fn cache_key(audio: &Path, model: &Path, lang: &str) -> CacheKey {
-    let mtime = std::fs::metadata(audio).and_then(|m| m.modified()).ok();
-    (audio.to_path_buf(), model.to_path_buf(), mtime, lang.to_string())
+fn remember(key: RunKey, segments: &[Segment]) {
+    *LAST_RUN.lock().expect("the memo mutex is never poisoned") =
+        Some((key, segments.to_vec()));
+}
+
+/// Empty the memo. Tests in one process share the slot, so a test that cares
+/// what the memo does has to start from a known state — which is the whole
+/// reason this exists.
+#[cfg(all(test, feature = "transcribe"))]
+fn forget() {
+    *LAST_RUN.lock().expect("the memo mutex is never poisoned") = None;
 }
 
 /// Transcribe a WAV file with a ggml whisper model. `lang` is the whisper
@@ -78,11 +119,9 @@ pub fn transcribe(
         ));
     }
     let lang = lang.unwrap_or("auto");
-    let key = cache_key(audio, model, lang);
-    if let Some((last_key, segments)) = &*LAST_RUN.lock().unwrap()
-        && *last_key == key
-    {
-        return Ok(segments.clone());
+    let key = RunKey::of(audio, model, lang);
+    if let Some(segments) = recall(&key) {
+        return Ok(segments);
     }
 
     let samples = load_wav_mono_16k(audio)?;
@@ -113,7 +152,7 @@ pub fn transcribe(
             segments.push(Segment { start: seg.start_timestamp() as f64 / 100.0, text });
         }
     }
-    *LAST_RUN.lock().unwrap() = Some((key, segments.clone()));
+    remember(key, &segments);
     Ok(segments)
 }
 
@@ -208,6 +247,74 @@ fn resample_linear(samples: Vec<f32>, from: u32, to: u32) -> Vec<f32> {
 #[cfg(all(test, feature = "transcribe"))]
 mod tests {
     use super::*;
+
+    /// Two files, so a key can differ in its audio, and a stable model path.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join("midheaven-memo");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join(name);
+        std::fs::write(&path, b"RIFF....WAVE").expect("write");
+        path
+    }
+
+    /// The memo is a single slot in a process every test shares, which is why
+    /// it can be emptied. These run one after another over the same slot.
+    #[test]
+    fn the_memo_answers_only_for_the_run_it_holds() {
+        let audio = scratch("a.wav");
+        let other = scratch("b.wav");
+        let model = PathBuf::from("/models/ggml.bin");
+        let said = vec![Segment { start: 0.0, text: "The sun.".into() }];
+
+        forget();
+        let key = RunKey::of(&audio, &model, "en");
+        assert_eq!(recall(&key), None, "an empty memo recalls nothing");
+
+        remember(key.clone(), &said);
+        assert_eq!(recall(&key), Some(said.clone()), "the same run is recalled");
+
+        // Every part of the key is part of it.
+        assert_eq!(recall(&RunKey::of(&other, &model, "en")), None, "different audio");
+        assert_eq!(recall(&RunKey::of(&audio, Path::new("/models/big.bin"), "en")), None, "different model");
+        assert_eq!(recall(&RunKey::of(&audio, &model, "ru")), None, "different language");
+        assert_eq!(recall(&RunKey::of(&audio, &model, "auto")), None, "auto is not a language");
+
+        forget();
+        assert_eq!(recall(&key), None, "and it can be emptied");
+    }
+
+    /// Re-recording to the same path is a different run — the words changed
+    /// even though nothing about the request did.
+    #[test]
+    fn rewriting_the_audio_invalidates_the_memo() {
+        let audio = scratch("rewritten.wav");
+        let model = PathBuf::from("/models/ggml.bin");
+        forget();
+        let before = RunKey::of(&audio, &model, "en");
+        remember(before.clone(), &[Segment { start: 0.0, text: "first".into() }]);
+        assert!(recall(&before).is_some());
+
+        // Coarse mtime resolution on some filesystems; make the write land later.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&audio, b"RIFF....WAVEdifferent").expect("rewrite");
+
+        let after = RunKey::of(&audio, &model, "en");
+        assert_ne!(after, before, "the mtime is part of the key");
+        assert_eq!(recall(&after), None, "so the old words are not handed back");
+        forget();
+    }
+
+    /// A path that is not there yet has no mtime, and two such keys must still
+    /// compare — otherwise a missing file would recall a previous run's words.
+    #[test]
+    fn a_missing_audio_file_has_no_mtime_but_still_makes_a_key() {
+        let missing = PathBuf::from("/no/such/take.wav");
+        let model = PathBuf::from("/models/ggml.bin");
+        let key = RunKey::of(&missing, &model, "en");
+        assert_eq!(key.mtime, None);
+        assert_eq!(key, RunKey::of(&missing, &model, "en"));
+        assert_ne!(key, RunKey::of(&missing, &model, "ru"));
+    }
     use crate::route::Transcript;
 
     /// Write a WAV of `n` frames, every sample set to `value`.

@@ -15,14 +15,22 @@
 //!    the self-contained HTML viewer.
 //!
 //! [`contract`] holds the `ChartData` types — the contract between stages; no
-//! stage owns it.
+//! stage owns it. [`mod@derive`] is the same kind of module for behaviour rather
+//! than data: the longitude arithmetic every renderer would otherwise
+//! re-derive, computed once so its results can ride on `ChartData` fields.
+//! [`plate`] is the third of that kind: the engraved wheel's geometry, stated
+//! once for the three renditions that draw it.
 
 pub mod chart;
 pub mod contract;
+pub mod derive;
 pub mod emit;
+#[cfg(any(test, feature = "testing"))]
+pub mod fixtures;
 pub mod geo;
 pub mod i18n;
 pub mod pdf;
+pub mod plate;
 pub mod route;
 pub mod transcribe;
 
@@ -118,9 +126,8 @@ pub fn birth_at_place(
     house_system: xalen_houses::HouseSystem,
     ayanamsa: Option<xalen_ayanamsa::Ayanamsa>,
 ) -> chart::BirthInput {
-    let name = name.trim();
     chart::BirthInput {
-        name: if name.is_empty() { locale.anonymous().into() } else { name.into() },
+        name: locale.name_or_anonymous(name).to_string(),
         date,
         time,
         lat: place.lat,
@@ -133,19 +140,37 @@ pub fn birth_at_place(
     }
 }
 
+/// The words a build routed from, in the form they should be archived: a
+/// filename following the source's kind (`transcript.jsonl` for a recording,
+/// `transcript.{ext}` for a file) and their verbatim contents.
+///
+/// A library that saves a reading has to save these too — a passage is verbatim
+/// by definition, and without the transcript its span points at nothing, so
+/// provenance can no longer be re-checked. [`build_reading`] therefore hands the
+/// transcript back rather than consuming it: the desktop used to fork the whole
+/// transcript-acquisition match for want of this one value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArchivedTranscript {
+    pub filename: String,
+    pub contents: String,
+}
+
 /// What a full build produced besides the chart: the span count the router
-/// emitted before gating, and any non-fatal warnings (a DST-ambiguous birth
-/// time, Verify-gate rejections) for the caller to surface.
+/// emitted before gating, any non-fatal warnings (a DST-ambiguous birth
+/// time, Verify-gate rejections) for the caller to surface, and the transcript
+/// it routed from, for callers that persist the reading.
 #[derive(Debug, Default)]
 pub struct BuildReport {
     pub n_routed: usize,
     pub warnings: Vec<String>,
+    /// `None` when the build had no transcript at all.
+    pub transcript: Option<ArchivedTranscript>,
 }
 
 /// The whole pipeline in one call: obtain the transcript (reading a file, or
 /// transcribing audio while reporting whole-percent `progress`), compute the
 /// chart, route + verify passages into `excerpts`. Returns the chart and a
-/// [`BuildReport`]. This is the single entry point the CLI and tests share.
+/// [`BuildReport`]. This is the single entry point every frontend shares.
 pub fn build_reading(
     input: &chart::BirthInput,
     source: TranscriptSource,
@@ -155,21 +180,31 @@ pub fn build_reading(
     // arm is gone, so drop the callback to keep it from reading as unused.
     #[cfg(not(feature = "transcribe"))]
     let _ = progress;
-    let transcript = match source {
-        TranscriptSource::None => None,
+    let (transcript, archived) = match source {
+        TranscriptSource::None => (None, None),
         TranscriptSource::File(path) => {
-            let raw = std::fs::read_to_string(&path)
+            let contents = std::fs::read_to_string(&path)
                 .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-            Some(route::Transcript::load(&raw))
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("txt");
+            let archived =
+                ArchivedTranscript { filename: format!("transcript.{ext}"), contents };
+            (Some(route::Transcript::load(&archived.contents)), Some(archived))
         }
         #[cfg(feature = "transcribe")]
         TranscriptSource::Audio { wav, model } => {
             let lang = input.locale.whisper_lang();
             let segments = transcribe::transcribe(&wav, &model, Some(lang), progress)?;
-            Some(route::Transcript::from_segments(segments))
+            let archived = ArchivedTranscript {
+                filename: "transcript.jsonl".to_string(),
+                contents: transcribe::to_jsonl(&segments),
+            };
+            // Straight from the segments, skipping the JSONL round trip.
+            (Some(route::Transcript::from_segments(segments)), Some(archived))
         }
     };
-    route_into_chart(input, transcript)
+    let (chart, mut report) = route_into_chart(input, transcript)?;
+    report.transcript = archived;
+    Ok((chart, report))
 }
 
 fn route_into_chart(
@@ -179,10 +214,9 @@ fn route_into_chart(
     let (mut chart, mut warnings) = chart::compute_chart_reporting(input)?;
     let mut n_routed = 0;
     if let Some(transcript) = transcript {
-        let router = route::lexicon_for(&chart);
-        let report = route::index_transcript(&mut chart, &transcript, &router);
+        let report = route::route_into(&mut chart, &transcript, route::Filing::Fresh);
         n_routed = report.n_routed;
         warnings.extend(report.warnings);
     }
-    Ok((chart, BuildReport { n_routed, warnings }))
+    Ok((chart, BuildReport { n_routed, warnings, transcript: None }))
 }

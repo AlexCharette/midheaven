@@ -33,6 +33,15 @@ impl Recorder {
     }
 }
 
+/// The production adapter at the session's capture port — the microphone. The
+/// other adapter is the fake in `session`'s tests, which is what lets the take
+/// arithmetic be tested without a device.
+impl crate::session::Capture for Recorder {
+    fn stop(self: Box<Self>) -> Result<(PathBuf, f64), String> {
+        Recorder::stop(*self)
+    }
+}
+
 type Writer = hound::WavWriter<std::io::BufWriter<std::fs::File>>;
 
 /// Begin capturing from the default input device into `out`. Returns once the

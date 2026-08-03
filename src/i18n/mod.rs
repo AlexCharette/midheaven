@@ -1,7 +1,8 @@
 //! Per-locale display names and router match-terms, keyed by the
 //! language-neutral catalog (`chart::catalog`). This is the one place a
 //! language's astrology vocabulary lives; adding a language means adding a
-//! table module (`en`, `ru`, …) and one arm in [`Locale::parse`]/[`Locale::table`].
+//! table module (`en`, `ru`, …) and one arm in [`Locale::parse`] and one in its
+//! private `table`.
 //!
 //! The catalog stays language-neutral (slugs, glyphs, elements, ids, angles);
 //! only the *text* — element names and the words a reader would say — is here.
@@ -103,7 +104,7 @@ impl Locale {
     }
 
     /// Default house-system label ("Whole Sign" / "Целые знаки"). Kept for the
-    /// Whole-Sign default; per-system labels come from [`house_system_label`].
+    /// Whole-Sign default; per-system labels come from [`Self::house_system_label`].
     pub fn system_label(self) -> &'static str {
         self.table().system
     }
@@ -131,9 +132,36 @@ impl Locale {
         }
     }
 
+    /// A chart holder's display name: what was given, or the locale's anonymous
+    /// persona when nothing was. The one home for the blank-name rule — the CLI
+    /// and `birth_at_place` each used to state it.
+    pub fn name_or_anonymous(self, name: &str) -> &str {
+        let name = name.trim();
+        if name.is_empty() { self.anonymous() } else { name }
+    }
+
     /// The persona used when no name is given.
     pub fn anonymous(self) -> &'static str {
         self.table().anonymous
+    }
+
+    /// The emitted artifact's chrome. No English fallback: a locale with a
+    /// table has a complete one, and `parse` already sent anything unknown to
+    /// English before it got here.
+    pub fn artifact(self) -> &'static ArtifactChrome {
+        &self.table().artifact
+    }
+
+    /// How to title a chart's plate in this language.
+    pub fn plate_title(self) -> PlateTitle {
+        self.table().plate_title
+    }
+
+    /// The desktop app's chrome. Follows the person's language (the
+    /// `default_locale` preference), not the reading's — an astrologer writing
+    /// an English reading still wants their own buttons.
+    pub fn app(self) -> &'static AppChrome {
+        &self.table().app
     }
 
     /// Fixed PDF chrome for this locale.
@@ -151,18 +179,7 @@ impl Locale {
         system: &str,
         zodiac: &str,
     ) -> String {
-        let place = if place.is_empty() { String::new() } else { format!(", {place}") };
-        match self {
-            Locale::En => format!(
-                "Fig. I. \u{2014} The natal figure of {name}, calculated for {born}{place}. \
-                 {system} houses upon the {} zodiac.",
-                zodiac.to_lowercase()
-            ),
-            Locale::Ru => format!(
-                "Рис. I. \u{2014} Натальная карта {name}, рассчитана на {born}{place}. \
-                 Система домов: {system}. Зодиак: {zodiac}."
-            ),
-        }
+        self.table().figure_caption.render(name, born, place, system, zodiac)
     }
 
     // ---- router match-terms (stage 3) ----
@@ -178,8 +195,13 @@ impl Locale {
     }
 
     /// Lowercase terms a reader would use for a 1-based house number.
+    ///
+    /// No English fallback, like every other term accessor: a locale with no
+    /// word for a house should route nothing rather than route on English
+    /// words. This used to fall back by accident, because it shared `house()`
+    /// with `house_name`, which should.
     pub fn house_terms(self, n: usize) -> &'static [&'static str] {
-        self.house(n).map_or(&[], |h| h.terms)
+        n.checked_sub(1).and_then(|i| self.table().houses.get(i)).map_or(&[], |h| h.terms)
     }
 
     /// Lowercase words that name an aspect kind in speech.
@@ -187,10 +209,51 @@ impl Locale {
         aspect(self.table().aspects, kind).map_or(&[], |a| a.match_words)
     }
 
+    /// A house entry for display, falling back to English — the name accessors
+    /// fall back, the term accessors do not. See [`house_terms`](Self::house_terms).
     fn house(self, n: usize) -> Option<&'static HouseEntry> {
         n.checked_sub(1)
             .and_then(|i| self.table().houses.get(i))
             .or_else(|| n.checked_sub(1).and_then(|i| en::TABLE.houses.get(i)))
+    }
+}
+
+/// How a language writes the plate's figure caption.
+///
+/// Its shape differs, not only its words — the same property that made
+/// [`PlateTitle`] a choice rather than a string. English folds the house system
+/// into a sentence and lowercases the zodiac word ("upon the tropical zodiac");
+/// Russian labels both as clauses and must not lowercase ("Зодиак:
+/// Тропический").
+///
+/// This was the last locale value that lived as a `match` in this file's body
+/// rather than in its tables, so a language's text sat in two files and the
+/// completeness tests — which iterate `Locale::ALL` over table fields — could
+/// not reach it.
+#[derive(Debug, Clone, Copy)]
+pub struct FigureCaption {
+    /// Placeholders: `{name}`, `{born}`, `{place}`, `{system}`, `{zodiac}`.
+    /// `{place}` is empty when the chart has none, and otherwise carries
+    /// [`place_prefix`](Self::place_prefix) in front of it.
+    pub template: &'static str,
+    /// What separates the place from the birth moment when there is one.
+    pub place_prefix: &'static str,
+    /// Whether the zodiac word is lowercased into the sentence.
+    pub lowercase_zodiac: bool,
+}
+
+impl FigureCaption {
+    pub fn render(self, name: &str, born: &str, place: &str, system: &str, zodiac: &str) -> String {
+        let place =
+            if place.is_empty() { String::new() } else { format!("{}{place}", self.place_prefix) };
+        let zodiac =
+            if self.lowercase_zodiac { zodiac.to_lowercase() } else { zodiac.to_string() };
+        self.template
+            .replace("{name}", name)
+            .replace("{born}", born)
+            .replace("{place}", &place)
+            .replace("{system}", system)
+            .replace("{zodiac}", &zodiac)
     }
 }
 
@@ -218,7 +281,41 @@ pub struct LocaleTable {
     /// The trailing word shared by every house name (`" House"`, `" дом"`) —
     /// lets a viewer show the bare ordinal without re-encoding the mapping.
     pub house_suffix: &'static str,
+    /// How this language titles a chart's plate — shared by both renditions.
+    pub plate_title: PlateTitle,
+    /// How this language writes the PDF plate's figure caption.
+    pub figure_caption: FigureCaption,
+    /// The desktop app's own window furniture.
+    pub app: AppChrome,
     pub pdf: PdfChrome,
+    pub artifact: ArtifactChrome,
+}
+
+/// How a language titles a chart's plate. The *shape* differs, not only the
+/// words, which is why this is a choice and not a string.
+///
+/// English takes a possessive, so the holder's name is inside the phrase and the
+/// plate has one line. Russian cannot: a possessive there requires declining the
+/// name into the genitive, which no format string can do, so it keeps the line
+/// above the name and lets the name stand undeclined beneath it.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlateTitle {
+    /// One line, with `{name}` substituted into it. No separate name follows.
+    Inline(&'static str),
+    /// A line set above the name, which the rendition sets separately.
+    Above(&'static str),
+}
+
+impl PlateTitle {
+    /// The plate's headline for a holder, and the name to set beneath it —
+    /// `None` when the headline already contains it.
+    pub fn render(self, name: &str) -> (String, Option<&str>) {
+        match self {
+            PlateTitle::Inline(fmt) => (fmt.replace("{name}", name), None),
+            PlateTitle::Above(line) => (line.to_string(), Some(name)),
+        }
+    }
 }
 
 /// A named element and the words that route to it.
@@ -241,15 +338,118 @@ pub struct AspectEntry {
     pub match_words: &'static [&'static str],
 }
 
-/// Fixed rubrics rendered into the PDF (the artifact's chrome lives in the
-/// template instead — see `templates/reading.html`).
+/// Fixed rubrics rendered into the PDF. The artifact's own furniture is
+/// [`ArtifactChrome`]; the two are separate because the renditions differ (the
+/// artifact has filter controls and empty states, paper has neither), but both
+/// live here.
 pub struct PdfChrome {
-    /// Title line before the holder's name.
-    pub nativity_of: &'static str,
     /// Branding line before the astrologer's name (rendered uppercase).
     pub prepared_by: &'static str,
     pub index_of_elements: &'static str,
     pub commentary: &'static str,
+}
+
+/// A count and its noun, in the form the count calls for.
+///
+/// English inflects: one passage, two passages. The Russian that ships does not
+/// — the artifact has always rendered one fixed genitive form for every count
+/// (`"{shown} из {total} фрагментов"`), so both entries here are the same
+/// string. Russian really has three categories, and wiring them up is a
+/// separate job from moving these words; what this shape buys is that English
+/// stops saying "1 passages", which it did when this was one string.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+pub struct Plural {
+    /// The form for exactly one. `{n}` is the count.
+    pub one: &'static str,
+    /// The form for every other count, zero included. `{n}` is the count.
+    pub other: &'static str,
+}
+
+/// Everything in the desktop app's own window that is not chart data.
+///
+/// The core localizes element names, the PDF has [`PdfChrome`] and the artifact
+/// [`ArtifactChrome`] — and the window that produces both was English-only, with
+/// eleven of these strings already written in `ArtifactChrome` and one of them
+/// character-for-character identical.
+///
+/// This covers the reading view's *frame*: its headings, its controls, its
+/// counts and its empty states. What is still English in its component is
+/// anything whose whole sentence has no Russian yet — the forms, the
+/// preferences panel, the toasts, and the empty states' sub-captions.
+/// Translating those is authoring copy in a language, not moving it, and every
+/// string here is one that already had a Russian counterpart.
+///
+/// Counts are format strings with a fixed noun, matching what the artifact
+/// already ships — neither rendition inflects a Russian plural by its count.
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+pub struct AppChrome {
+    pub index_of_elements: &'static str,
+    /// Column heads of the index, in order: planets, signs, houses, aspects.
+    pub bands: [&'static str; 4],
+    pub commentary: &'static str,
+    pub passages_touching: &'static str,
+    pub any: &'static str,
+    pub all: &'static str,
+    pub any_title: &'static str,
+    pub all_title: &'static str,
+    pub of_selection: &'static str,
+    pub clear: &'static str,
+    /// `{shown}` of `{total}` passages.
+    pub count: &'static str,
+    /// A bare count of passages — the hub read-out, the density bar, the
+    /// library's rows.
+    pub passages: Plural,
+    pub fewer: &'static str,
+    /// `{n}` more.
+    pub more: &'static str,
+    pub wheel_aria: &'static str,
+    pub empty_none_routed: &'static str,
+    /// `{word}` is [`any`](Self::any) or [`all`](Self::all).
+    pub empty_no_match: &'static str,
+}
+
+/// Everything on the emitted artifact's page that is not chart data.
+///
+/// It used to be a `UI = { en, ru }` object inside `templates/reading.html`,
+/// parallel to this module rather than derived from it: adding a language meant
+/// editing a Rust table *and* an HTML template, and the two had already drifted
+/// — the PDF's title line said "The Nativity of" where the artifact's said "The
+/// Birth Chart of" (since resolved; see [`PlateTitle`]). `emit` now substitutes
+/// this beside the chart, so the template holds no strings of its own.
+///
+/// The three fields ending in a placeholder are format strings; the viewer
+/// substitutes `{…}` by name.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactChrome {
+    /// Browser tab title, after the holder's name.
+    pub natal_reading: &'static str,
+    pub index_of_elements: &'static str,
+    /// Column heads of the index, in order: planets, signs, houses, aspects.
+    pub bands: [&'static str; 4],
+    pub passages_touching: &'static str,
+    pub any: &'static str,
+    pub all: &'static str,
+    pub any_title: &'static str,
+    pub all_title: &'static str,
+    pub of_selection: &'static str,
+    pub clear: &'static str,
+    pub commentary: &'static str,
+    pub prepared_by: &'static str,
+    pub wheel_aria: &'static str,
+    /// `{shown}` of `{total}` passages.
+    pub count: &'static str,
+    pub no_passages_routed: &'static str,
+    pub empty_none_routed: &'static str,
+    /// `{word}` is [`any`](Self::any) or [`all`](Self::all).
+    pub empty_no_match: &'static str,
+    pub fewer: &'static str,
+    /// `{n}` more.
+    pub more: &'static str,
 }
 
 fn entry(table: &'static [Entry], slug: &str) -> Option<&'static Entry> {
@@ -267,6 +467,230 @@ fn aspect(table: &'static [AspectEntry], kind: &str) -> Option<&'static AspectEn
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every locale must ship complete artifact chrome. This was a `UI` object
+    /// in an HTML template with no check at all — a language could be added to
+    /// Rust and the artifact would silently render English furniture around its
+    /// data. Now the table will not compile without it, and this pins the
+    /// strings against being left blank.
+    #[test]
+    fn every_locale_ships_complete_artifact_chrome() {
+        for loc in Locale::ALL {
+            let a = loc.artifact();
+            let singles = [
+                ("natalReading", a.natal_reading),
+                ("indexOfElements", a.index_of_elements),
+                ("passagesTouching", a.passages_touching),
+                ("any", a.any),
+                ("all", a.all),
+                ("anyTitle", a.any_title),
+                ("allTitle", a.all_title),
+                ("ofSelection", a.of_selection),
+                ("clear", a.clear),
+                ("commentary", a.commentary),
+                ("preparedBy", a.prepared_by),
+                ("wheelAria", a.wheel_aria),
+                ("count", a.count),
+                ("noPassagesRouted", a.no_passages_routed),
+                ("emptyNoneRouted", a.empty_none_routed),
+                ("emptyNoMatch", a.empty_no_match),
+                ("fewer", a.fewer),
+                ("more", a.more),
+            ];
+            for (field, value) in singles {
+                assert!(!value.trim().is_empty(), "{:?} has an empty {field}", loc.code());
+            }
+            assert!(
+                a.bands.iter().all(|b| !b.trim().is_empty()),
+                "{:?} has a blank index column head",
+                loc.code()
+            );
+            let (headline, _) = loc.plate_title().render("Mira Holt");
+            assert!(!headline.trim().is_empty(), "{:?} has a blank plate title", loc.code());
+        }
+    }
+
+    /// The two shapes a plate title takes. English's possessive puts the
+    /// holder's name inside the headline; Russian's cannot, because the name
+    /// would have to be declined into the genitive, so it sets the name
+    /// separately beneath an unchanging line.
+    #[test]
+    fn a_plate_title_either_carries_the_name_or_hands_it_back() {
+        for loc in Locale::ALL {
+            let (headline, beneath) = loc.plate_title().render("Mira Holt");
+            match beneath {
+                None => assert!(
+                    headline.contains("Mira Holt"),
+                    "{:?} sets no name beneath, so the headline must carry it: {headline:?}",
+                    loc.code()
+                ),
+                Some(name) => {
+                    assert_eq!(name, "Mira Holt");
+                    assert!(
+                        !headline.contains("Mira Holt"),
+                        "{:?} sets the name beneath, so the headline must not repeat it",
+                        loc.code()
+                    );
+                }
+            }
+            assert!(!headline.contains('{'), "{:?} left a placeholder unfilled", loc.code());
+        }
+    }
+
+    #[test]
+    fn english_titles_a_plate_with_a_possessive() {
+        let (headline, beneath) = Locale::En.plate_title().render("Mira Holt");
+        assert_eq!(headline, "Mira Holt's birth chart");
+        assert_eq!(beneath, None, "one line, so nothing is set beneath it");
+    }
+
+    #[test]
+    fn russian_keeps_the_name_undeclined_beneath_its_title() {
+        let (headline, beneath) = Locale::Ru.plate_title().render("Мира Холт");
+        assert_eq!(headline, "Натальная карта");
+        assert_eq!(beneath, Some("Мира Холт"));
+    }
+
+    /// English must not say "1 passages" — which it did when a bare count was one
+    /// string. A language that does not inflect says so by giving both forms the
+    /// same words, which is what the shipped Russian does.
+    #[test]
+    fn a_count_takes_the_form_its_number_calls_for() {
+        let en = Locale::En.app().passages;
+        assert_eq!(en.one.replace("{n}", "1"), "1 passage");
+        assert_eq!(en.other.replace("{n}", "2"), "2 passages");
+        assert_eq!(en.other.replace("{n}", "0"), "0 passages", "zero takes the plural");
+        assert_ne!(en.one, en.other, "English inflects");
+
+        let ru = Locale::Ru.app().passages;
+        assert_eq!(ru.one, ru.other, "the shipped Russian uses one fixed form");
+    }
+
+    /// The window's own chrome, like the artifact's, must be complete for every
+    /// language or a Russian reading renders inside an English frame.
+    #[test]
+    fn every_locale_ships_complete_app_chrome() {
+        for loc in Locale::ALL {
+            let a = loc.app();
+            let code = loc.code();
+            for (field, value) in [
+                ("indexOfElements", a.index_of_elements),
+                ("commentary", a.commentary),
+                ("passagesTouching", a.passages_touching),
+                ("any", a.any),
+                ("all", a.all),
+                ("anyTitle", a.any_title),
+                ("allTitle", a.all_title),
+                ("ofSelection", a.of_selection),
+                ("clear", a.clear),
+                ("count", a.count),
+                ("passages.one", a.passages.one),
+                ("passages.other", a.passages.other),
+                ("fewer", a.fewer),
+                ("more", a.more),
+                ("wheelAria", a.wheel_aria),
+                ("emptyNoneRouted", a.empty_none_routed),
+                ("emptyNoMatch", a.empty_no_match),
+            ] {
+                assert!(!value.trim().is_empty(), "{code}: blank {field}");
+            }
+            assert!(a.bands.iter().all(|b| !b.trim().is_empty()), "{code}: blank band head");
+            assert!(a.count.contains("{shown}") && a.count.contains("{total}"), "{code}: count");
+            assert!(a.passages.one.contains("{n}"), "{code}: passages.one");
+            assert!(a.passages.other.contains("{n}"), "{code}: passages.other");
+            assert!(a.more.contains("{n}"), "{code}: more");
+            assert!(a.empty_no_match.contains("{word}"), "{code}: emptyNoMatch");
+        }
+    }
+
+    /// The app and the artifact say the same things about the same reading, so
+    /// where they share a string it should be the same string.
+    #[test]
+    fn the_app_and_the_artifact_agree_where_they_overlap() {
+        for loc in Locale::ALL {
+            let (app, art) = (loc.app(), loc.artifact());
+            let code = loc.code();
+            for (field, a, b) in [
+                ("indexOfElements", app.index_of_elements, art.index_of_elements),
+                ("commentary", app.commentary, art.commentary),
+                ("passagesTouching", app.passages_touching, art.passages_touching),
+                ("any", app.any, art.any),
+                ("all", app.all, art.all),
+                ("ofSelection", app.of_selection, art.of_selection),
+                ("clear", app.clear, art.clear),
+                ("count", app.count, art.count),
+                ("fewer", app.fewer, art.fewer),
+                ("more", app.more, art.more),
+                ("wheelAria", app.wheel_aria, art.wheel_aria),
+            ] {
+                assert_eq!(a, b, "{code}: the two renditions disagree on {field}");
+            }
+        }
+    }
+
+    /// The figure caption was the last locale value living as a `match` in this
+    /// file rather than in its tables, and the only one no test could reach.
+    #[test]
+    fn every_locale_writes_a_complete_figure_caption() {
+        for loc in Locale::ALL {
+            let code = loc.code();
+            let caption =
+                loc.pdf_figure_caption("Mira Holt", "1990-07-13 14:30", "Berlin", "Whole Sign", "Tropical");
+            for needle in ["Mira Holt", "1990-07-13 14:30", "Berlin", "Whole Sign"] {
+                assert!(caption.contains(needle), "{code}: caption drops {needle:?}: {caption}");
+            }
+            assert!(!caption.contains('{'), "{code}: unfilled placeholder in {caption}");
+            assert!(caption.trim_end().ends_with('.'), "{code}: {caption}");
+        }
+    }
+
+    /// A chart built from bare coordinates has no place label, and the caption
+    /// must read as a sentence without one rather than leaving a dangling comma.
+    #[test]
+    fn a_caption_with_no_place_has_no_dangling_separator() {
+        for loc in Locale::ALL {
+            let code = loc.code();
+            let caption = loc.pdf_figure_caption("Mira", "1990-07-13", "", "Whole Sign", "Tropical");
+            let prefix = loc.table().figure_caption.place_prefix;
+            assert!(!caption.contains(&format!("{prefix}.")), "{code}: dangling: {caption}");
+            assert!(!caption.contains(", ."), "{code}: {caption}");
+            assert!(!caption.contains('{'), "{code}: {caption}");
+        }
+    }
+
+    /// English folds the zodiac into a sentence ("upon the tropical zodiac");
+    /// Russian labels it as a clause and must keep its capital. The difference
+    /// is the whole reason this is a shaped field and not a string.
+    #[test]
+    fn the_zodiac_word_is_cased_the_way_each_language_needs() {
+        let en = Locale::En.pdf_figure_caption("M", "b", "p", "Whole Sign", "Tropical");
+        assert!(en.contains("tropical zodiac"), "{en}");
+        assert!(!en.contains("Tropical"), "English lowercases it into the sentence: {en}");
+
+        let ru = Locale::Ru.pdf_figure_caption("M", "b", "p", "Целые знаки", "Тропический");
+        assert!(ru.contains("Тропический"), "Russian keeps the capital: {ru}");
+    }
+
+    /// The chrome's format strings carry the placeholders the viewer
+    /// substitutes. A typo here renders a literal `{shown}` on the page.
+    #[test]
+    fn the_chrome_format_strings_carry_their_placeholders() {
+        for loc in Locale::ALL {
+            let a = loc.artifact();
+            let code = loc.code();
+            assert!(a.count.contains("{shown}") && a.count.contains("{total}"), "{code}: count");
+            assert!(a.empty_no_match.contains("{word}"), "{code}: emptyNoMatch");
+            assert!(a.more.contains("{n}"), "{code}: more");
+            // And no other field pretends to take one.
+            for (field, value) in [
+                ("natalReading", a.natal_reading),
+                ("clear", a.clear),
+                ("fewer", a.fewer),
+            ] {
+                assert!(!value.contains('{'), "{code}: {field} has a stray placeholder");
+            }
+        }
+    }
 
     #[test]
     fn parse_is_lenient_and_defaults_to_english() {

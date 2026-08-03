@@ -2,86 +2,37 @@
 //! renders; every capability (ephemeris, gazetteer, whisper, routing,
 //! emission) runs natively here, exactly as in the CLI/TUI.
 
+mod library;
 mod prefs;
 #[cfg(desktop)]
 mod record;
+mod session;
 
 use astro::chart::parse_time;
 use astro::contract::{ChartData, Excerpt};
-use astro::route::{Transcript, index_transcript, lexicon_for, next_ordinal, retag};
-#[cfg(desktop)]
-use astro::route::append_transcript;
+use astro::chart::systems;
+use astro::route::{next_ordinal, retag};
 use astro::{TranscriptSource, geo};
 use serde::{Deserialize, Serialize};
+use library::{Library, ReadingEntry};
+use session::{Reading, Session};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
 
-/// Backend-held session: the built chart (so saving never round-trips the
-/// webview), the passages it was built with, and the live-recording session
-/// accumulated on top of them.
+/// The backend's one piece of mutable state: the reading session. Every
+/// command that needs a reading reaches it through [`Session`]'s guard, so the
+/// "no chart has been built yet" refusal exists once (`session::NO_READING`)
+/// rather than in each command that remembered to check.
 #[derive(Default)]
-struct Inner {
-    /// The chart's excerpt list is authoritative — takes append to it and
-    /// curation (merge/correct) edits it in place.
-    chart: Option<ChartData>,
-    /// Total seconds recorded this session — offsets each new take's
-    /// timestamps so folio anchors run continuously.
-    session_secs: f64,
-    #[cfg(desktop)]
-    model: Option<PathBuf>,
-    #[cfg(desktop)]
-    recorder: Option<record::Recorder>,
-    /// `{readings_dir}/{name}_{date}/` when a readings folder is configured —
-    /// chart.json and transcriptions auto-save here through the session.
-    session_dir: Option<PathBuf>,
-    /// Suggested export name, `{name}_{date}.html` — set at build.
-    artifact_name: String,
-    /// Live takes persisted this session (numbers `take-{n}.jsonl`).
-    takes: usize,
-}
+struct AppState(Mutex<Session>);
 
-/// Filesystem-safe name stem: lowercase, runs of anything non-alphanumeric
-/// collapse to one `_`. The library folder is `{slug}_{YYYY-MM-DD}`.
-fn slug(name: &str) -> String {
-    let parts: Vec<String> = name
-        .to_lowercase()
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|p| !p.is_empty())
-        .map(String::from)
-        .collect();
-    if parts.is_empty() { "reading".to_string() } else { parts.join("_") }
+impl AppState {
+    fn session(&self) -> std::sync::MutexGuard<'_, Session> {
+        self.0.lock().unwrap()
+    }
 }
-
-fn save_chart_json(dir: &Path, chart: &ChartData) -> Result<(), String> {
-    let path = dir.join("chart.json");
-    let json = serde_json::to_string_pretty(chart).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| format!("cannot write {}: {e}", path.display()))
-}
-
-/// Highest `n` among the `take-{n}.jsonl` files already in a reading folder, so
-/// a take recorded after reopening never overwrites one. 0 when none exist or
-/// the folder can't be read.
-fn max_take_ordinal(dir: &Path) -> usize {
-    std::fs::read_dir(dir)
-        .map(|entries| {
-            entries
-                .flatten()
-                .filter_map(|e| e.file_name().into_string().ok())
-                .filter_map(|n| {
-                    n.strip_prefix("take-")
-                        .and_then(|r| r.strip_suffix(".jsonl"))
-                        .and_then(|d| d.parse::<usize>().ok())
-                })
-                .max()
-                .unwrap_or(0)
-        })
-        .unwrap_or(0)
-}
-
-#[derive(Default)]
-struct AppState(Mutex<Inner>);
 
 /// Just enough for the typeahead: the id round-trips to `geo::by_id` at
 /// build time — coordinates and zone stay backend-side.
@@ -107,64 +58,6 @@ struct LocaleDto {
     house_suffix: String,
 }
 
-/// One row of the readings library: enough to list and reopen a saved
-/// reading without the frontend touching the filesystem.
-#[derive(Serialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
-#[serde(rename_all = "camelCase")]
-struct ReadingEntry {
-    /// `{dir}/chart.json` — fed straight to `load_chart`.
-    chart_path: String,
-    /// The reading's folder — fed to `delete_reading`.
-    dir: String,
-    name: String,
-    born: String,
-    place: String,
-    excerpts: usize,
-    /// `chart.json`'s mtime, ms since the epoch — sort key and "saved" date.
-    /// Serialized as a JSON number; ms-since-epoch stays within JS's safe
-    /// integer range for millennia, so the binding is `number`, not `bigint`.
-    #[cfg_attr(feature = "ts", ts(type = "number | null"))]
-    modified_ms: Option<u64>,
-}
-
-/// Read a library folder's `chart.json` into a listing row. `None` (skipped
-/// from the list) when the folder holds no chart or an unreadable one.
-fn reading_entry(dir: &Path) -> Option<ReadingEntry> {
-    let chart_path = dir.join("chart.json");
-    let raw = std::fs::read_to_string(&chart_path).ok()?;
-    let chart: ChartData = serde_json::from_str(&raw).ok()?;
-    let modified_ms = std::fs::metadata(&chart_path)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as u64);
-    Some(ReadingEntry {
-        chart_path: chart_path.to_string_lossy().into_owned(),
-        dir: dir.to_string_lossy().into_owned(),
-        name: chart.meta.name,
-        born: chart.meta.born,
-        place: chart.meta.place,
-        excerpts: chart.excerpts.len(),
-        modified_ms,
-    })
-}
-
-/// Resolve a delete target safely: it must canonicalize to a *direct* child of
-/// the library root and actually be a saved reading (contain `chart.json`), so
-/// no path outside the library or non-reading folder can be removed.
-fn reading_to_remove(root: &Path, dir: &str) -> Result<PathBuf, String> {
-    let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
-    let target = std::fs::canonicalize(dir).map_err(|e| format!("no folder at {dir}: {e}"))?;
-    if target.parent() != Some(root.as_path()) {
-        return Err("that folder is not in the readings library".to_string());
-    }
-    if !target.join("chart.json").is_file() {
-        return Err("that folder is not a saved reading".to_string());
-    }
-    Ok(target)
-}
-
 // async: keeps the gazetteer scan (and a possible cold-parse stall on the
 // very first keystroke) off the main thread
 #[tauri::command]
@@ -188,6 +81,43 @@ fn list_locales() -> Vec<LocaleDto> {
             house_suffix: l.house_suffix().to_string(),
         })
         .collect()
+}
+
+/// The app's own window furniture, in the person's language.
+///
+/// The core has localized element names since the beginning, the PDF and the
+/// artifact have had chrome tables for a while, and the window that produces
+/// both was English-only. This serves the reading view's share of it; the forms
+/// are still English in their components.
+#[tauri::command]
+fn app_chrome(app: AppHandle) -> &'static astro::i18n::AppChrome {
+    // The person's language, not the reading's: an astrologer writing an
+    // English reading still wants their own buttons.
+    astro::i18n::Locale::parse(prefs::load(&app).default_locale.as_deref().unwrap_or("en")).app()
+}
+
+/// The calculation a form starts from when nothing has been chosen and nothing
+/// is preferred — served so the webview stops restating the three codes.
+#[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+struct CalculationDefaults {
+    house_system: String,
+    zodiac: String,
+    ayanamsa: String,
+}
+
+/// The three default codes. `"whole-sign"`, `"tropical"` and `"lahiri"` used to
+/// be written out in five places on this side of the wire and five more on the
+/// other; `chart::systems::DEFAULTS` is now the only one.
+#[tauri::command]
+fn calculation_defaults() -> CalculationDefaults {
+    let d = systems::DEFAULTS;
+    CalculationDefaults {
+        house_system: d.house_system.expect("a default house system").to_string(),
+        zodiac: d.zodiac.expect("a default zodiac").to_string(),
+        ayanamsa: d.ayanamsa.expect("a default ayanamsa").to_string(),
+    }
 }
 
 /// A calculation-option row for a UI selector: the stable wire `code` and its
@@ -256,16 +186,19 @@ fn resolve_input(
     time: &str,
     place: &geo::Place,
     locale: astro::i18n::Locale,
-    house_system: &str,
-    zodiac: &str,
-    ayanamsa: Option<&str>,
+    asked: systems::Codes,
+    preferred: systems::Codes,
 ) -> Result<astro::chart::BirthInput, String> {
-    let house = astro::chart::systems::house_system(house_system);
-    let ayanamsa = zodiac
-        .trim()
-        .eq_ignore_ascii_case("sidereal")
-        .then(|| astro::chart::systems::ayanamsa(ayanamsa.unwrap_or("lahiri")));
-    Ok(astro::birth_at_place(name, date, parse_time(time)?, place, locale, house, ayanamsa))
+    let calc = systems::resolve(asked, preferred)?;
+    Ok(astro::birth_at_place(
+        name,
+        date,
+        parse_time(time)?,
+        place,
+        locale,
+        calc.house_system,
+        calc.ayanamsa,
+    ))
 }
 
 #[tauri::command]
@@ -294,9 +227,12 @@ async fn build(
         &form.time,
         place,
         locale,
-        form.house_system.as_deref().or(p.default_house_system.as_deref()).unwrap_or("whole-sign"),
-        form.zodiac.as_deref().or(p.default_zodiac.as_deref()).unwrap_or("tropical"),
-        form.ayanamsa.as_deref().or(p.default_ayanamsa.as_deref()),
+        systems::Codes::new(
+            form.house_system.as_deref(),
+            form.zodiac.as_deref(),
+            form.ayanamsa.as_deref(),
+        ),
+        preferred(&p),
     )?;
     let source = TranscriptSource::classify(
         form.transcript.as_deref().unwrap_or(""),
@@ -304,50 +240,23 @@ async fn build(
     )
     .map_err(|e| e.to_string())?;
 
-    // Unlike `build_reading` (the CLI/TUI path), the desktop keeps the
-    // transcript at hand so the readings library can persist it verbatim.
-    // Only the audio arm reports progress; on mobile that arm is compiled out.
-    #[cfg(desktop)]
+    // The whole pipeline, on the blocking pool. `build_reading` hands back the
+    // transcript it routed from (`report.transcript`), which is what the
+    // readings library persists verbatim — the desktop used to fork this entire
+    // match for want of that one value.
     let progress_app = app.clone();
-    type Persisted = Option<(String, String)>; // (filename, contents) for the library
-    let (mut chart, transcript_file, warnings) = tauri::async_runtime::spawn_blocking(
-        move || -> Result<(ChartData, Persisted, Vec<String>), String> {
-            let (transcript, persisted): (Option<Transcript>, Persisted) = match source {
-                TranscriptSource::None => (None, None),
-                TranscriptSource::File(path) => {
-                    let raw = std::fs::read_to_string(&path)
-                        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("txt");
-                    (Some(Transcript::load(&raw)), Some((format!("transcript.{ext}"), raw)))
-                }
-                #[cfg(desktop)]
-                TranscriptSource::Audio { wav, model } => {
-                    let segments =
-                        astro::transcribe::transcribe(&wav, &model, Some(locale.whisper_lang()), move |pct| {
-                            let _ = progress_app.emit("transcribe-progress", pct);
-                        })?;
-                    let jsonl = astro::transcribe::to_jsonl(&segments);
-                    (
-                        Some(Transcript::from_segments(segments)),
-                        Some(("transcript.jsonl".to_string(), jsonl)),
-                    )
-                }
-            };
-            let (mut chart, mut warnings) = astro::chart::compute_chart_reporting(&input)?;
-            if let Some(t) = &transcript {
-                let router = lexicon_for(&chart);
-                warnings.extend(index_transcript(&mut chart, t, &router).warnings);
-            }
-            Ok((chart, persisted, warnings))
-        },
-    )
+    let (mut chart, report) = tauri::async_runtime::spawn_blocking(move || {
+        astro::build_reading(&input, source, move |pct| {
+            let _ = progress_app.emit("transcribe-progress", pct);
+        })
+    })
     .await
     .map_err(|e| format!("build task failed: {e}"))??;
 
     // Surface non-fatal warnings (DST-ambiguous birth time, Verify-gate
     // rejections) the pipeline used to write to stderr; the webview toasts them.
-    if !warnings.is_empty() {
-        let _ = app.emit("build-warnings", &warnings);
+    if !report.warnings.is_empty() {
+        let _ = app.emit("build-warnings", &report.warnings);
     }
 
     // Practitioner branding rides on the chart's meta (and thus into both
@@ -363,29 +272,17 @@ async fn build(
         time: form.time.clone(),
     });
 
-    let stem = format!("{}_{}", slug(&chart.meta.name), chrono::Local::now().format("%Y-%m-%d"));
-    let session_dir = match p.readings_dir.as_deref().map(str::trim) {
-        Some(root) if !root.is_empty() => {
-            let dir = PathBuf::from(root).join(&stem);
-            std::fs::create_dir_all(&dir)
-                .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-            if let Some((name, contents)) = &transcript_file {
-                std::fs::write(dir.join(name), contents)
-                    .map_err(|e| format!("cannot write {name}: {e}"))?;
-            }
-            save_chart_json(&dir, &chart)?;
-            Some(dir)
-        }
-        _ => None,
+    // Auto-save when a readings folder is configured; a reading without one is
+    // held in the session and exported by hand.
+    let stem = library::stem(&chart.meta.name, chrono::Local::now().date_naive());
+    let session_dir = match Library::configured(p.readings_dir.as_deref()) {
+        Some(lib) => Some(lib.create(&stem, &chart, report.transcript.as_ref())?),
+        None => None,
     };
 
-    let mut inner = state.0.lock().unwrap();
-    inner.session_secs = 0.0;
-    inner.takes = 0;
-    inner.session_dir = session_dir;
-    inner.artifact_name = format!("{stem}.html");
-    inner.chart = Some(chart.clone());
-    drop(inner);
+    state
+        .session()
+        .open(Reading::new(chart.clone(), session_dir, library::artifact_name(&stem)))?;
     Ok(chart)
 }
 
@@ -399,18 +296,12 @@ fn start_recording(state: State<'_, AppState>, model: String) -> Result<(), Stri
     if !model.exists() {
         return Err(format!("no model file at {}", model.display()));
     }
-    let mut inner = state.0.lock().unwrap();
-    if inner.recorder.is_some() {
-        return Err("already recording".to_string());
-    }
-    if inner.chart.is_none() {
-        return Err("no chart has been built yet".to_string());
-    }
     let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
     let out = std::env::temp_dir().join(format!("astro-take-{millis}.wav"));
-    inner.recorder = Some(record::start(out)?);
-    inner.model = Some(model);
-    Ok(())
+    // The session guards first and only then opens the device.
+    state.session().begin_take(model, || {
+        record::start(out).map(|r| Box::new(r) as Box<dyn session::Capture>)
+    })
 }
 
 /// Stop capturing, transcribe the take (progress on the shared event), and
@@ -422,75 +313,109 @@ async fn stop_recording(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ChartData, String> {
-    let (recorder, model, offset, locale) = {
-        let mut inner = state.0.lock().unwrap();
-        // Transcribe the take in the chart's own language.
-        let locale = inner
-            .chart
-            .as_ref()
-            .map(|c| astro::i18n::Locale::parse(&c.meta.locale))
-            .unwrap_or_default();
-        (
-            inner.recorder.take().ok_or("not recording")?,
-            inner.model.clone().ok_or("no model on record")?,
-            inner.session_secs,
-            locale,
-        )
-    };
-    let (wav, secs) = recorder.stop()?;
+    // Stopping only ends the capture: the take is in flight until its words
+    // land, and the session refuses to start another meanwhile.
+    let pending = state.session().end_take()?;
+    let (wav, model, locale) = (pending.wav.clone(), pending.model.clone(), pending.locale);
 
     let progress_app = app.clone();
-    let mut segments = tauri::async_runtime::spawn_blocking(move || {
+    let transcribed = tauri::async_runtime::spawn_blocking(move || {
         astro::transcribe::transcribe(&wav, &model, Some(locale.whisper_lang()), move |pct| {
             let _ = progress_app.emit("transcribe-progress", pct);
         })
     })
     .await
-    .map_err(|e| format!("transcription task failed: {e}"))??;
-    for seg in &mut segments {
-        seg.start += offset;
-    }
+    .map_err(|e| format!("transcription task failed: {e}"));
 
-    let mut guard = state.0.lock().unwrap();
-    let inner = &mut *guard;
-    inner.session_secs = offset + secs;
-    let chart = inner.chart.as_mut().ok_or("no chart has been built yet")?;
+    // However it failed, the take does not land — put the reading back so the
+    // astrologer can simply record again.
+    let segments = match transcribed.and_then(|r| r) {
+        Ok(segments) => segments,
+        Err(e) => {
+            state.session().abandon_take();
+            return Err(e);
+        }
+    };
 
-    // Route ONLY the new take and append, so earlier curation (merges,
-    // corrections) survives every stop.
-    let jsonl = astro::transcribe::to_jsonl(&segments);
-    let take = Transcript::from_segments(segments);
-    let warnings = append_transcript(chart, &take, &lexicon_for(chart)).warnings;
+    let mut guard = state.session();
+    let landed = guard.land_take(pending, segments)?;
+    let reading = guard.reading()?;
 
     // library auto-save: the take's transcription (session-offset anchors,
     // matching the folio) and the refreshed chart
-    if let Some(dir) = &inner.session_dir {
-        inner.takes += 1;
-        let path = dir.join(format!("take-{}.jsonl", inner.takes));
-        std::fs::write(&path, jsonl).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-        save_chart_json(dir, chart)?;
+    if let Some(dir) = &reading.dir {
+        let path = dir.join(&landed.filename);
+        std::fs::write(&path, &landed.jsonl)
+            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        library::save_chart(dir, &reading.chart)?;
     }
-    if !warnings.is_empty() {
-        let _ = app.emit("build-warnings", &warnings);
+    let chart = reading.chart.clone();
+    drop(guard);
+
+    if !landed.warnings.is_empty() {
+        let _ = app.emit("build-warnings", &landed.warnings);
     }
-    Ok(chart.clone())
+    Ok(chart)
 }
 
-/// The shared frame of every curation command: lock, require a chart,
-/// mutate, refresh the library's chart.json, return the updated clone for
-/// the webview.
+/// The shared frame of every curation command: require a reading, mutate its
+/// chart, refresh the library's chart.json, return the updated clone for the
+/// webview. Deliberately available mid-take — curating while the recorder runs
+/// is not refused, and the take appends to whatever it finds.
 fn with_chart(
     state: &State<'_, AppState>,
     mutate: impl FnOnce(&mut ChartData) -> Result<(), String>,
 ) -> Result<ChartData, String> {
-    let mut guard = state.0.lock().unwrap();
-    let inner = &mut *guard;
-    let chart = inner.chart.as_mut().ok_or("no chart has been built yet")?;
-    mutate(chart)?;
-    if let Some(dir) = &inner.session_dir {
-        save_chart_json(dir, chart)?;
+    let mut guard = state.session();
+    let reading = guard.reading_mut()?;
+    mutate(&mut reading.chart)?;
+    if let Some(dir) = &reading.dir {
+        library::save_chart(dir, &reading.chart)?;
     }
-    Ok(chart.clone())
+    Ok(reading.chart.clone())
+}
+
+/// Everything a reproject takes from the old chart. Only the geometry is
+/// recomputed, so the identity that produced it (name, language, birth seed),
+/// the routed passages, and the practitioner's branding all cross over
+/// untouched — and the seed crosses too, or the *next* recalculation would find
+/// nothing to recompute from.
+///
+/// Split out from the command so this can be tested: passages surviving a
+/// house-system swap is the whole point of a reproject, and `State` cannot be
+/// constructed in a test.
+#[derive(Debug)]
+struct Carried {
+    name: String,
+    locale: astro::i18n::Locale,
+    seed: astro::contract::BirthSeed,
+    excerpts: Vec<Excerpt>,
+    astrologer: Option<String>,
+    logo: Option<String>,
+}
+
+impl Carried {
+    fn from(old: &ChartData) -> Result<Carried, String> {
+        Ok(Carried {
+            name: old.meta.name.clone(),
+            locale: astro::i18n::Locale::parse(&old.meta.locale),
+            seed: old
+                .meta
+                .birth
+                .clone()
+                .ok_or("this reading has no saved birth data to recalculate from")?,
+            excerpts: old.excerpts.clone(),
+            astrologer: old.meta.astrologer.clone(),
+            logo: old.meta.logo.clone(),
+        })
+    }
+
+    fn onto(self, chart: &mut ChartData) {
+        chart.excerpts = self.excerpts;
+        chart.meta.astrologer = self.astrologer;
+        chart.meta.logo = self.logo;
+        chart.meta.birth = Some(self.seed);
+    }
 }
 
 /// Recompute the current chart's geometry under a new house system / zodiac,
@@ -505,46 +430,41 @@ fn reproject(
     zodiac: String,
     ayanamsa: Option<String>,
 ) -> Result<ChartData, String> {
-    let mut guard = state.0.lock().unwrap();
-    let inner = &mut *guard;
-    let old = inner.chart.as_ref().ok_or("no chart has been built yet")?;
-    let seed = old
-        .meta
-        .birth
-        .clone()
-        .ok_or("this reading has no saved birth data to recalculate from")?;
-    // Clone everything the recompute must preserve, releasing the borrow on
-    // `inner.chart` before we replace it below.
-    let name = old.meta.name.clone();
-    let locale = astro::i18n::Locale::parse(&old.meta.locale);
-    let excerpts = old.excerpts.clone();
-    let astrologer = old.meta.astrologer.clone();
-    let logo = old.meta.logo.clone();
+    let mut guard = state.session();
+    let carried = Carried::from(guard.chart()?)?;
 
-    let place = geo::by_id(seed.place_id).ok_or("the birth place is no longer in the gazetteer")?;
-    let date = seed.date.parse().map_err(|_| "the saved birth date is invalid".to_string())?;
+    let place =
+        geo::by_id(carried.seed.place_id).ok_or("the birth place is no longer in the gazetteer")?;
+    let date =
+        carried.seed.date.parse().map_err(|_| "the saved birth date is invalid".to_string())?;
     let input = resolve_input(
-        &name,
+        &carried.name,
         date,
-        &seed.time,
+        &carried.seed.time.clone(),
         place,
-        locale,
-        &house_system,
-        &zodiac,
-        ayanamsa.as_deref(),
+        carried.locale,
+        systems::Codes::new(Some(&house_system), Some(&zodiac), ayanamsa.as_deref()),
+        systems::Codes::default(),
     )?;
 
     let mut chart = astro::chart::compute_chart(&input)?;
-    chart.excerpts = excerpts;
-    chart.meta.astrologer = astrologer;
-    chart.meta.logo = logo;
-    chart.meta.birth = Some(seed);
+    carried.onto(&mut chart);
 
-    if let Some(dir) = &inner.session_dir {
-        save_chart_json(dir, &chart)?;
+    let chart = guard.resettle(chart)?.clone();
+    let reading = guard.reading()?;
+    if let Some(dir) = &reading.dir {
+        library::save_chart(dir, &reading.chart)?;
     }
-    inner.chart = Some(chart.clone());
     Ok(chart)
+}
+
+/// The calculation tier a person's stored preferences contribute.
+fn preferred(p: &prefs::Preferences) -> systems::Codes<'_> {
+    systems::Codes::new(
+        p.default_house_system.as_deref(),
+        p.default_zodiac.as_deref(),
+        p.default_ayanamsa.as_deref(),
+    )
 }
 
 /// A live-calculator moment: date/time/place plus calculation choices. No
@@ -588,9 +508,14 @@ async fn preview(input: PreviewInput) -> Result<PreviewDto, String> {
         &input.time,
         place,
         locale,
-        input.house_system.as_deref().unwrap_or("whole-sign"),
-        input.zodiac.as_deref().unwrap_or("tropical"),
-        input.ayanamsa.as_deref(),
+        systems::Codes::new(
+            input.house_system.as_deref(),
+            input.zodiac.as_deref(),
+            input.ayanamsa.as_deref(),
+        ),
+        // No preference tier: the calculator states every choice it has, and
+        // seeds them from preferences itself at startup.
+        systems::Codes::default(),
     )?;
     let (chart, warnings) = astro::chart::compute_chart_reporting(&birth)?;
     Ok(PreviewDto { chart, warnings })
@@ -767,6 +692,27 @@ fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), Stri
     if let Some(size) = &prefs.page_size {
         astro::pdf::PageSize::parse(size)?;
     }
+    // The calculation preferences were the four this never checked, so a
+    // nonsense value persisted and then quietly became Whole Sign on every
+    // build. Resolving them here refuses at the point a person can still see
+    // what they typed.
+    //
+    // The ladder only consults an ayanamsa under a sidereal zodiac, so this asks
+    // for sidereal to have it checked, then checks the stored zodiac on its own.
+    // Both go through `systems` — the hand-written comparison this replaced
+    // trimmed and case-folded on one side only, so `" Tropical "` was refused
+    // while `" Sidereal "` passed.
+    systems::resolve(
+        systems::Codes::default(),
+        systems::Codes::new(
+            prefs.default_house_system.as_deref(),
+            Some("sidereal"),
+            prefs.default_ayanamsa.as_deref(),
+        ),
+    )?;
+    if let Some(z) = &prefs.default_zodiac {
+        systems::is_sidereal(z)?;
+    }
     for (label, dir) in [("models folder", &prefs.models_dir), ("readings folder", &prefs.readings_dir)] {
         if let Some(d) = dir {
             if !Path::new(d).is_dir() {
@@ -812,8 +758,13 @@ fn load_chart(state: State<'_, AppState>, path: String) -> Result<ChartData, Str
     let path = PathBuf::from(path.trim());
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let chart: ChartData =
+    let mut chart: ChartData =
         serde_json::from_str(&raw).map_err(|e| format!("not a Midheaven chart.json: {e}"))?;
+    // Derived fields first: charts saved before they existed carry none, and a
+    // hand-edited file's copies are not to be trusted. Recomputing from the
+    // longitudes makes both cases identical and gives `validate` real values to
+    // check rather than whatever the file claimed.
+    astro::derive::fill(&mut chart);
     // The file is untrusted: enforce the structural/vocabulary invariants the
     // compute path guarantees but deserialization doesn't, before it can reach
     // curation, PDF export, or the emitted artifact.
@@ -825,18 +776,12 @@ fn load_chart(state: State<'_, AppState>, path: String) -> Result<ChartData, Str
         .and_then(|d| d.file_name())
         .and_then(|s| s.to_str())
         .map(String::from)
-        .unwrap_or_else(|| {
-            format!("{}_{}", slug(&chart.meta.name), chrono::Local::now().format("%Y-%m-%d"))
-        });
-    let takes = dir.as_deref().map(max_take_ordinal).unwrap_or(0);
+        .unwrap_or_else(|| library::stem(&chart.meta.name, chrono::Local::now().date_naive()));
+    let takes = dir.as_deref().map(library::max_take_ordinal).unwrap_or(0);
 
-    let mut inner = state.0.lock().unwrap();
-    inner.session_secs = 0.0;
-    inner.takes = takes;
-    inner.session_dir = dir;
-    inner.artifact_name = format!("{stem}.html");
-    inner.chart = Some(chart.clone());
-    drop(inner);
+    state
+        .session()
+        .open(Reading::reopened(chart.clone(), dir, library::artifact_name(&stem), takes))?;
     Ok(chart)
 }
 
@@ -845,51 +790,38 @@ fn load_chart(state: State<'_, AppState>, path: String) -> Result<ChartData, Str
 /// folder is set. Foreign or unreadable folders are silently skipped.
 #[tauri::command]
 fn list_readings(app: AppHandle) -> Vec<ReadingEntry> {
-    let Some(root) = prefs::load(&app).readings_dir else {
-        return Vec::new();
-    };
-    let mut entries: Vec<ReadingEntry> = std::fs::read_dir(root)
-        .map(|rd| {
-            rd.flatten()
-                .map(|e| e.path())
-                .filter(|p| p.is_dir())
-                .filter_map(|p| reading_entry(&p))
-                .collect()
-        })
-        .unwrap_or_default();
-    // newest first; entries without an mtime sink to the end
-    entries.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
-    entries
+    Library::configured(prefs::load(&app).readings_dir.as_deref())
+        .map(|lib| lib.entries())
+        .unwrap_or_default()
 }
 
 /// Remove a reading from the library, folder and all. Guarded by
 /// [`reading_to_remove`] so only a real reading inside the library root can go.
 #[tauri::command]
 fn delete_reading(app: AppHandle, dir: String) -> Result<(), String> {
-    let root = prefs::load(&app).readings_dir.ok_or("no readings folder configured")?;
-    let target = reading_to_remove(Path::new(&root), &dir)?;
-    std::fs::remove_dir_all(&target)
-        .map_err(|e| format!("cannot remove {}: {e}", target.display()))
+    Library::configured(prefs::load(&app).readings_dir.as_deref())
+        .ok_or("no readings folder configured")?
+        .remove(&dir)
 }
 
 /// The generated export name, `{name}_{date}.html` — the save dialog's
 /// default, matching the library folder convention.
 #[tauri::command]
 fn artifact_filename(state: State<'_, AppState>) -> Result<String, String> {
-    let inner = state.0.lock().unwrap();
-    if inner.chart.is_none() {
-        return Err("no chart has been built yet".to_string());
-    }
-    Ok(inner.artifact_name.clone())
+    Ok(state.session().reading()?.artifact_name.clone())
 }
 
-// async: rendering + disk write stay off the main thread
+// async: rendering + disk write stay off the main thread. Both exporters clone
+// the chart out of a scoped lock first — rendering under the lock would stall
+// every other command for the length of a disk write.
 #[tauri::command]
 async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<String, String> {
-    let guard = state.0.lock().unwrap();
-    let chart = guard.chart.as_ref().ok_or("no chart has been built yet")?;
-    astro::emit::write_artifact(chart, path.as_ref())?;
-    Ok(path)
+    let chart = state.session().chart()?.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        astro::emit::write_artifact(&chart, path.as_ref()).map(|()| path)
+    })
+    .await
+    .map_err(|e| format!("artifact task failed: {e}"))?
 }
 
 /// The PDF rendition; page size comes from preferences (A4
@@ -897,15 +829,67 @@ async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<Strin
 #[tauri::command]
 async fn save_pdf(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<String, String> {
     let size = astro::pdf::PageSize::from_pref(prefs::load(&app).page_size.as_deref())?;
-    let chart = {
-        let guard = state.0.lock().unwrap();
-        guard.chart.as_ref().ok_or("no chart has been built yet")?.clone()
-    };
+    let chart = state.session().chart()?.clone();
     tauri::async_runtime::spawn_blocking(move || {
         astro::pdf::write_pdf(&chart, size, path.as_ref()).map(|()| path)
     })
     .await
     .map_err(|e| format!("pdf task failed: {e}"))?
+}
+
+/// The command set, declared once.
+///
+/// Takes the macro to hand the list to, plus any target-specific extras, so the
+/// names exist in exactly one place: [`run`] passes `handler` to register them,
+/// and the `ts` build passes `names` to generate the `CommandName` union the
+/// webview calls through. Renaming a command means renaming its entry here —
+/// which will not compile until the function matches, and regenerates the union,
+/// so the webview cannot keep calling the old name and pass CI.
+///
+/// It does not cover *argument* names: those are still matched by hand in
+/// `api.ts` against each function's parameters.
+macro_rules! commands {
+    ($mac:ident $(, $extra:ident)*) => {
+        $mac![
+            search_places,
+            list_locales,
+            list_house_systems,
+            list_ayanamsas,
+            calculation_defaults,
+            app_chrome,
+            build,
+            reproject,
+            preview,
+            last_place,
+            set_last_place,
+            save_artifact,
+            save_pdf,
+            merge_up,
+            correct_excerpt,
+            add_excerpt,
+            delete_excerpt,
+            get_preferences,
+            set_preferences,
+            open_licenses,
+            list_models,
+            artifact_filename,
+            load_chart,
+            list_readings,
+            delete_reading
+            $(, $extra)*
+        ]
+    };
+}
+
+/// Register the list with Tauri.
+macro_rules! handler {
+    ($($name:ident),* $(,)?) => { tauri::generate_handler![$($name),*] };
+}
+
+/// The list as strings, for the generated TypeScript.
+#[cfg(feature = "ts")]
+macro_rules! names {
+    ($($name:ident),* $(,)?) => { [$(stringify!($name)),*] };
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -920,86 +904,61 @@ pub fn run() {
             Ok(())
         });
 
-    // The recording commands only exist on desktop; `generate_handler!` can't
-    // take `#[cfg]` on its entries, so the handler list is registered per target.
+    // The recording pair only exists on desktop; `generate_handler!` can't take
+    // `#[cfg]` on its entries, so each target passes its own extras to the one
+    // shared list in `commands!`.
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        search_places,
-        list_locales,
-        list_house_systems,
-        list_ayanamsas,
-        build,
-        reproject,
-        preview,
-        last_place,
-        set_last_place,
-        save_artifact,
-        save_pdf,
-        start_recording,
-        stop_recording,
-        merge_up,
-        correct_excerpt,
-        add_excerpt,
-        delete_excerpt,
-        get_preferences,
-        set_preferences,
-        open_licenses,
-        list_models,
-        artifact_filename,
-        load_chart,
-        list_readings,
-        delete_reading
-    ]);
+    let builder = builder.invoke_handler(commands!(handler, start_recording, stop_recording));
     #[cfg(mobile)]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        search_places,
-        list_locales,
-        list_house_systems,
-        list_ayanamsas,
-        build,
-        reproject,
-        preview,
-        last_place,
-        set_last_place,
-        save_artifact,
-        save_pdf,
-        merge_up,
-        correct_excerpt,
-        add_excerpt,
-        delete_excerpt,
-        get_preferences,
-        set_preferences,
-        open_licenses,
-        list_models,
-        artifact_filename,
-        load_chart,
-        list_readings,
-        delete_reading
-    ]);
+    let builder = builder.invoke_handler(commands!(handler));
 
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
+/// Generate the webview's `CommandName` union from the same list `run()`
+/// registers, alongside the ts-rs DTO bindings.
+///
+/// A test rather than a build script because that is how the DTO bindings are
+/// generated too — `npm run gen:types` (and CI) run both in one `cargo test
+/// ... export_bindings`, and the committed output is diffed. Named to match that
+/// filter.
+#[cfg(all(test, feature = "ts"))]
+#[test]
+fn export_bindings_command_names() {
+    // Same convention as ts-rs: the export dir comes from the environment, and
+    // paths are relative to it. Without it there is nothing to write to.
+    let Ok(dir) = std::env::var("TS_RS_EXPORT_DIR") else {
+        return;
+    };
+    // Length inferred — adding a command should not need a number bumped here.
+    let names = commands!(names, start_recording, stop_recording);
+    let mut out = String::from(
+        "// This file was generated from the command list in \
+         `desktop/src-tauri/src/lib.rs`. Do not edit this file manually.\n\n\
+         /** Every command the backend registers. `api.ts` calls through this, so a\n\
+         \x20* command renamed in Rust becomes a TypeScript error rather than a runtime\n\
+         \x20* rejection. Includes the desktop-only recording pair, which a mobile build\n\
+         \x20* does not register. */\nexport type CommandName =\n",
+    );
+    for name in names {
+        out.push_str(&format!("  | \"{name}\"\n"));
+    }
+    out.push_str("  ;\n");
+
+    let path = std::path::Path::new(&dir).join("generated").join("commands.ts");
+    std::fs::create_dir_all(path.parent().expect("generated dir")).expect("create generated dir");
+    std::fs::write(&path, out).expect("write commands.ts");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use astro::route::{Filing, route_into};
 
     fn chart_fixture() -> ChartData {
-        let input = astro::chart::BirthInput {
-            name: "T".into(),
-            date: "1990-07-13".parse().unwrap(),
-            time: "14:30:00".parse().unwrap(),
-            lat: 52.52,
-            lon: 13.405,
-            tz: chrono_tz::Europe::Berlin,
-            place: "Berlin".into(),
-            locale: astro::i18n::Locale::En,
-            house_system: astro::chart::systems::house_system("whole-sign"),
-            ayanamsa: None,
-        };
-        astro::chart::compute_chart(&input).unwrap()
+        astro::fixtures::berlin_chart()
     }
 
     fn ex(id: &str, text: &str, tags: &[&str]) -> Excerpt {
@@ -1013,30 +972,9 @@ mod tests {
     }
 
     #[test]
-    fn reading_to_remove_only_accepts_readings_inside_the_library() {
-        let base = std::env::temp_dir().join("astro-lib-remove-test");
-        std::fs::remove_dir_all(&base).ok(); // clean any prior run
-        let root = base.join("readings");
-        let reading = root.join("mira_2026-07-18");
-        std::fs::create_dir_all(&reading).unwrap();
-        std::fs::write(reading.join("chart.json"), "{}").unwrap();
-        let stray = root.join("notes"); // a folder, but no chart.json
-        std::fs::create_dir_all(&stray).unwrap();
-        let outside = base.join("elsewhere"); // not a child of root
-        std::fs::create_dir_all(&outside).unwrap();
-
-        assert!(reading_to_remove(&root, reading.to_str().unwrap()).is_ok());
-        assert!(reading_to_remove(&root, stray.to_str().unwrap()).is_err());
-        assert!(reading_to_remove(&root, outside.to_str().unwrap()).is_err());
-        assert!(reading_to_remove(&root, root.join("ghost").to_str().unwrap()).is_err());
-
-        std::fs::remove_dir_all(&base).ok();
-    }
-
-    #[test]
     fn chart_json_round_trips_for_loading() {
         // The load_chart path relies on ChartData deserializing from the same
-        // pretty JSON `save_chart_json` writes. Route a passage first so the
+        // pretty JSON `library::save_chart` writes. Route a passage first so the
         // excerpt list is non-empty.
         let mut chart = chart_fixture();
         chart.excerpts = vec![ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"])];
@@ -1051,6 +989,58 @@ mod tests {
         assert_eq!(back.excerpts[0].span, [0, "The sun in cancer.".len()]);
         // `Aspect::kind` is #[serde(skip)] — it defaults to "" on load.
         assert!(back.aspects.iter().all(|a| a.kind.is_empty()));
+    }
+
+    /// A reproject changes only the geometry. Everything else — the routed
+    /// passages, the practitioner's branding, and the birth seed that makes the
+    /// *next* recalculation possible — must cross onto the recomputed chart.
+    #[test]
+    fn a_reproject_carries_passages_branding_and_the_seed_onto_the_new_geometry() {
+        let mut old = chart_fixture();
+        old.meta.birth = Some(astro::contract::BirthSeed {
+            place_id: 2950159,
+            date: "1990-07-13".into(),
+            time: "14:30".into(),
+        });
+        old.meta.astrologer = Some("A. Practitioner".into());
+        old.meta.logo = Some("data:image/png;base64,AAAA".into());
+        old.excerpts = vec![ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"])];
+
+        let carried = Carried::from(&old).expect("a seeded chart can be recalculated");
+        assert_eq!(carried.name, old.meta.name);
+        assert_eq!(carried.locale, astro::i18n::Locale::En);
+
+        // The recomputed chart arrives with fresh geometry and nothing else.
+        let mut fresh = {
+            let mut input = astro::fixtures::berlin();
+            input.house_system = systems::house_system("placidus").unwrap();
+            astro::chart::compute_chart(&input).unwrap()
+        };
+        assert!(fresh.excerpts.is_empty());
+        assert_ne!(fresh.house_cusps, old.house_cusps, "the geometry really changed");
+
+        carried.onto(&mut fresh);
+
+        assert_eq!(fresh.excerpts.len(), 1);
+        assert_eq!(fresh.excerpts[0].text, "The sun in cancer.");
+        assert_eq!(fresh.meta.astrologer.as_deref(), Some("A. Practitioner"));
+        assert_eq!(fresh.meta.logo.as_deref(), Some("data:image/png;base64,AAAA"));
+        assert!(fresh.meta.birth.is_some(), "still recalculable afterwards");
+        // The carried tags remain in the new chart's vocabulary — that is what
+        // makes carrying them legitimate rather than a leak.
+        assert!(fresh.validate().is_ok(), "{:?}", fresh.validate());
+    }
+
+    /// A chart with no birth seed (CLI output, or one saved before seeds
+    /// existed) simply cannot be recalculated, and says so.
+    #[test]
+    fn a_reproject_refuses_a_chart_with_no_birth_seed() {
+        let mut old = chart_fixture();
+        old.meta.birth = None;
+        assert_eq!(
+            Carried::from(&old).unwrap_err(),
+            "this reading has no saved birth data to recalculate from"
+        );
     }
 
     #[test]
@@ -1100,28 +1090,36 @@ mod tests {
     }
 
     #[test]
-    fn resolve_input_maps_zodiac_onto_ayanamsa_and_rejects_bad_times() {
+    fn resolve_input_carries_the_calculation_and_gates_the_time() {
         let place = geo::search("Berlin", 1).into_iter().next().expect("gazetteer has Berlin");
         let date: chrono::NaiveDate = "1990-07-13".parse().unwrap();
         let en = astro::i18n::Locale::En;
-        // Tropical ignores any ayanamsa code; sidereal defaults to Lahiri.
-        let trop = resolve_input("", date, "14:30", place, en, "whole-sign", "tropical", Some("raman")).unwrap();
-        assert_eq!(trop.ayanamsa, None);
-        let sid = resolve_input("", date, "14:30", place, en, "placidus", "Sidereal", None).unwrap();
-        assert_eq!(sid.ayanamsa, Some(astro::chart::systems::ayanamsa("lahiri")));
-        assert_eq!(sid.house_system, astro::chart::systems::house_system("placidus"));
-        // A blank name resolves to the locale's anonymous label.
-        assert!(!trop.name.is_empty());
-        // The shared time rule still gates: nonsense fails here, not deeper.
-        assert!(resolve_input("", date, "25:00", place, en, "", "tropical", None).is_err());
-    }
+        let none = systems::Codes::default();
+        let asked = |h, z, a| systems::Codes::new(Some(h), Some(z), a);
 
-    #[test]
-    fn slug_collapses_to_filesystem_safe_stems() {
-        assert_eq!(slug("Mira Holt"), "mira_holt");
-        assert_eq!(slug("  Ana-María d'Été  "), "ana_maría_d_été");
-        assert_eq!(slug("···"), "reading");
-        assert_eq!(slug(""), "reading");
+        // The ladder itself is tested in `chart::systems`; what this checks is
+        // that the command layer hands it through to the birth input.
+        let sid = resolve_input("", date, "14:30", place, en, asked("placidus", "Sidereal", None), none)
+            .unwrap();
+        assert_eq!(sid.house_system, systems::house_system("placidus").unwrap());
+        assert_eq!(sid.ayanamsa, Some(systems::ayanamsa("lahiri").unwrap()));
+        // A blank name resolves to the locale's anonymous label.
+        assert!(!sid.name.is_empty());
+
+        // A preference tier reaches it too.
+        let pref = resolve_input("", date, "14:30", place, en, none, asked("koch", "tropical", None))
+            .unwrap();
+        assert_eq!(pref.house_system, systems::house_system("koch").unwrap());
+        assert_eq!(pref.ayanamsa, None);
+
+        // The shared time rule still gates: nonsense fails here, not deeper.
+        assert!(
+            resolve_input("", date, "25:00", place, en, none, none).is_err(),
+            "an impossible time is refused"
+        );
+        // And so does an impossible calculation.
+        assert!(resolve_input("", date, "14:30", place, en, asked("bogus", "tropical", None), none)
+            .is_err());
     }
 
     #[test]
@@ -1143,8 +1141,7 @@ mod tests {
             start: 0.0,
             text: "The moon in pisces.".into(),
         }]);
-        let router = lexicon_for(&chart);
-        astro::route::append_transcript(&mut chart, &take, &router);
+        route_into(&mut chart, &take, Filing::Append);
         let mut ids: Vec<&str> = chart.excerpts.iter().map(|e| e.id.as_str()).collect();
         let before = ids.len();
         ids.sort();

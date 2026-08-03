@@ -4,7 +4,12 @@
   import { SvelteSet } from "svelte/reactivity";
   import type { ChartData, Excerpt } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
-  import { app, isBusy, notify, selected, toggle } from "$lib/state.svelte";
+  import { updateChart } from "$lib/session.svelte";
+  import { isBusy } from "$lib/busy.svelte";
+  import { hoveredTag, isPinned, mode, pinCount, toggle, touchesPins } from "$lib/focus.svelte";
+  import { notify } from "$lib/toasts.svelte";
+  import { fmt, t } from "$lib/chrome.svelte";
+  import { reason } from "$lib/failure";
 
   let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
 
@@ -15,7 +20,7 @@
   // unambiguous when nothing filters the list — no selection and no hover
   // preview. amend/remove/add are id-based and safe under any filter, so they
   // stay available whenever the app isn't busy.
-  const mergeable = $derived(selected.size === 0 && app.hovered === null && !isBusy());
+  const mergeable = $derived(pinCount() === 0 && hoveredTag() === null && !isBusy());
   const editable = $derived(!isBusy());
 
   let editing = $state<string | null>(null);
@@ -24,10 +29,10 @@
 
   async function join(id: string) {
     try {
-      app.chart = await mergeUp(id);
+      updateChart(await mergeUp(id));
       notify("two passages joined");
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
@@ -43,10 +48,10 @@
     editing = null;
     if (draft.trim() === original) return;
     try {
-      app.chart = await correctExcerpt(id, draft);
+      updateChart(await correctExcerpt(id, draft));
       notify("passage amended — re-sectioned");
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
@@ -70,10 +75,10 @@
     });
     if (!sure) return;
     try {
-      app.chart = await deleteExcerpt(exId);
+      updateChart(await deleteExcerpt(exId));
       notify("passage removed");
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
@@ -92,10 +97,10 @@
     if (!draftText.trim()) return;
     composing = false;
     try {
-      app.chart = await addExcerpt(draftText, [...draftTags]);
+      updateChart(await addExcerpt(draftText, [...draftTags]));
       notify("passage added");
     } catch (e) {
-      notify(`${e}`, "error");
+      notify(reason(e), "error");
     }
   }
 
@@ -111,21 +116,21 @@
   </button>
 {/snippet}
 
-<h2 class="rubric">Commentary</h2>
+<h2 class="rubric">{t().commentary}</h2>
 {#if visible.length === 0}
   <div class="empty-plate">
     <span class="mark" aria-hidden="true">✶</span>
     {#if chart.excerpts.length === 0}
-      <p class="caption">No passages are filed under this chart yet.</p>
+      <p class="caption">{t().emptyNoneRouted}</p>
       <p class="sub">Transcribe a session or add one by hand to begin the commentary.</p>
     {:else}
-      <p class="caption">No passage touches the selection.</p>
+      <p class="caption">{fmt(t().emptyNoMatch, { word: mode() === "all" ? t().all : t().any })}</p>
       <p class="sub">Clear the selection to see the whole reading again.</p>
     {/if}
   </div>
 {/if}
 {#each visible as ex, i (ex.id)}
-  {@const pinned = selected.size > 0 && ex.tags.some((t) => selected.has(t))}
+  {@const pinned = touchesPins(ex)}
   <article class="passage" class:pinned>
     <div class="folio">
       {#if pinned}<span class="pin-mark astro" title="tied to the pinned selection">☞</span>{/if}
@@ -169,7 +174,7 @@
       {#each ex.tags as tag, i (tag)}
         {@const el = lookup.get(tag)}
         {#if i > 0}<span class="sep"> · </span>{/if}
-        {@render refButton(tag, el?.glyph ?? "", el?.name ?? tag, selected.has(tag), () => toggle(tag))}
+        {@render refButton(tag, el?.glyph ?? "", el?.name ?? tag, isPinned(tag), () => toggle(tag))}
       {/each}
     </div>
   </article>

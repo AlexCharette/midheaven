@@ -1,41 +1,50 @@
 <script lang="ts">
   import type { ChartData } from "$lib/types";
-  import { catOf, degInSign, planetById, signAt, textGlyph } from "$lib/types";
-  import { app, excerptsMatching, focusedTag, notify } from "$lib/state.svelte";
+  import { SIDEREAL, calculationOf, catOf, planetById, signOf, textGlyph } from "$lib/types";
+  // A cusp is a longitude the chart carries, not a body, so it has no derived
+  // position to read — the one case in this file that still derives.
+  import { positionOf } from "$lib/derive";
+  import { passageCount } from "$lib/focus";
+  import { focusedTag } from "$lib/focus.svelte";
+  import { defaults } from "$lib/options.svelte";
+  import { notify } from "$lib/toasts.svelte";
+  import { plural, t } from "$lib/chrome.svelte";
+  import { applyRecalculation, whyCannotRecalculate } from "$lib/session.svelte";
+  import { during, isBusy } from "$lib/busy.svelte";
   import { reproject } from "$lib/api";
   import CalcOptions from "./CalcOptions.svelte";
   import { swapDuration } from "$lib/motion";
   import { fade } from "svelte/transition";
+  import { reason } from "$lib/failure";
 
   let { chart }: { chart: ChartData } = $props();
 
   const coreSwap = { duration: swapDuration() };
 
-  // Live calculation controls. They mirror the chart's current codes and
-  // re-sync whenever the chart changes (a reproject or a reopen), so the line
-  // always reflects the active calculation.
-  let houseSystem = $state("whole-sign");
-  let zodiac = $state("tropical");
-  let ayanamsa = $state("lahiri");
-  let reprojecting = $state(false);
-  $effect(() => {
-    houseSystem = chart.meta.house_system || "whole-sign";
-    zodiac = chart.meta.ayanamsa ? "sidereal" : "tropical";
-    ayanamsa = chart.meta.ayanamsa ?? "lahiri";
-  });
+  // What the chart WAS computed with, read from the chart itself — a
+  // projection, not a copy. Three `$state` slots used to mirror it, re-synced by
+  // an `$effect` that also had to be called by hand on every error path.
+  const settled = $derived(calculationOf(chart, defaults()));
+  // What the astrologer is ASKING for, or null when the selects simply show the
+  // chart. A refusal or a failure drops it; there is nothing to roll back to.
+  let asked = $state<{ houseSystem: string; zodiac: string; ayanamsa: string } | null>(null);
+  const shown = $derived(asked ?? settled);
 
-  async function recalc() {
-    reprojecting = true;
+  async function recalc(next: { houseSystem: string; zodiac: string; ayanamsa: string }) {
+    asked = next;
+    // `during` puts the reproject on the shared busy phase, so the record
+    // button is disabled for its duration rather than only looking safe.
     try {
-      app.chart = await reproject(houseSystem, zodiac, zodiac === "sidereal" ? ayanamsa : null);
+      const chart = await during("compute", () =>
+        reproject(next.houseSystem, next.zodiac, next.zodiac === SIDEREAL ? next.ayanamsa : null),
+      );
+      // Refused at the write, not only when the control was clicked: a take can
+      // begin while the round trip is out, and the machine is what knows.
+      applyRecalculation(chart);
     } catch (e) {
-      notify(`${e}`, "error");
-      // Snap the selects back to what the (unchanged) chart actually is.
-      houseSystem = chart.meta.house_system || "whole-sign";
-      zodiac = chart.meta.ayanamsa ? "sidereal" : "tropical";
-      ayanamsa = chart.meta.ayanamsa ?? "lahiri";
+      notify(reason(e), "error");
     } finally {
-      reprojecting = false;
+      asked = null;
     }
   }
 
@@ -45,9 +54,9 @@
   const focusTag = $derived(focusedTag());
   const cat = $derived(focusTag ? catOf(focusTag) : "");
   const count = $derived(
-    focusTag ? excerptsMatching(chart, [focusTag], "any").length : 0,
+    focusTag ? passageCount(chart, focusTag) : 0,
   );
-  const passages = (n: number) => `${n} ${n === 1 ? "passage" : "passages"}`;
+  const passages = (n: number) => plural(t().passages, n);
 
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
   const planetGlyph = (id: string) => planetById(chart, id)?.glyph ?? "";
@@ -60,7 +69,7 @@
 
   // planets standing in a sign / tenanting a house — the read-out's "occupants"
   const planetsInSign = (signId: string) =>
-    chart.planets.filter((p) => signAt(chart, p.lon).id === signId);
+    chart.planets.filter((p) => signOf(chart, p).id === signId);
   const planetsInHouse = (n: number) => chart.planets.filter((p) => p.house === n);
 </script>
 
@@ -71,13 +80,13 @@
   <p class="vitals">{chart.meta.place}</p>
   <span class="double-rule" aria-hidden="true"></span>
   {#if chart.meta.birth}
-    <div class="calc-line">
+    <div class="calc-line" title={whyCannotRecalculate() ?? undefined}>
       <CalcOptions
         variant="caption"
-        bind:houseSystem
-        bind:zodiac
-        bind:ayanamsa
-        disabled={reprojecting}
+        houseSystem={shown.houseSystem}
+        zodiac={shown.zodiac}
+        ayanamsa={shown.ayanamsa}
+        disabled={isBusy() || whyCannotRecalculate() !== null}
         onchange={recalc}
       />
     </div>
@@ -95,12 +104,12 @@
       {#if cat === "planet"}
         {@const p = planetById(chart, focusTag)}
         {#if p}
-          {@const s = signAt(chart, p.lon)}
+          {@const s = signOf(chart, p)}
           {@const aspects = chart.aspects.filter((a) => a.a === focusTag || a.b === focusTag)}
           <span class="glyph g-planet">{textGlyph(p.glyph)}</span>
           <p class="name">{p.name}</p>
           <p class="pos">
-            {degInSign(p.lon)}° <span class="astro g-sign">{textGlyph(s.glyph)}</span> {s.name}
+            {p.deg}° <span class="astro g-sign">{textGlyph(s.glyph)}</span> {s.name}
           </p>
           <p class="pos sub">House {roman(p.house)}</p>
           {#if aspects.length}
@@ -133,12 +142,12 @@
         {@const h = chart.houses.find((x) => x.id === focusTag)}
         {#if h}
           {@const n = Number(focusTag.split(":")[1])}
-          {@const cusp = chart.houseCusps[n - 1]}
-          {@const cs = signAt(chart, cusp)}
+          {@const cuspAt = positionOf(chart.houseCusps[n - 1])}
+          {@const cs = chart.signs[cuspAt.sign]}
           {@const occ = planetsInHouse(n)}
           <span class="glyph roman g-house">{h.label}</span>
           <p class="name">{h.name}</p>
-          <p class="pos sub">cusp {degInSign(cusp)}° <span class="astro g-sign">{textGlyph(cs.glyph)}</span></p>
+          <p class="pos sub">cusp {cuspAt.deg}° <span class="astro g-sign">{textGlyph(cs.glyph)}</span></p>
           <p class="occ">
             {#if occ.length}
               {#each occ as p (p.id)}<span class="astro g-planet" title={p.name}>{textGlyph(p.glyph)}</span>{/each}

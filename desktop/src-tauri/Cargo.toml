@@ -35,8 +35,12 @@ chrono = "0.4"
 ts-rs = { version = "12", optional = true }
 
 [features]
-# Emit TypeScript bindings from the command DTOs when running the tests.
-ts = ["dep:ts-rs"]
+# Emit TypeScript bindings from the command DTOs when running the tests. The
+# DTOs reference the contract types, so this implies the core crate's own `ts`
+# feature — otherwise the bindings only generate when both packages happen to be
+# selected on the same command line, which is how half of them ended up outside
+# the CI drift check.
+ts = ["dep:ts-rs", "astro/ts"]
 
 # Desktop-only: microphone capture (cpal) + WAV writing (hound), and the
 # transcription feature of the core crate. `cfg(desktop)` isn't known to Cargo
@@ -47,5 +51,8 @@ cpal = "0.18.1"
 hound = "3.5.1"
 
 [dev-dependencies]
-chrono-tz = "0.10.4"
+# The core crate's shared test fixtures. Not a third declaration for its own
+# sake — dev-dependencies are inactive in a normal build, so `testing` reaches
+# the tests and nothing else.
+astro = { path = "../..", features = ["testing"] }
 

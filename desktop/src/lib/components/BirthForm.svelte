@@ -5,11 +5,18 @@
   // into the reading view.
   import { open } from "@tauri-apps/plugin-dialog";
   import { build, getPreferences, setLastPlace } from "$lib/api";
-  import { app, isBusy, locales, notify, selected } from "$lib/state.svelte";
+  import { openReading } from "$lib/session.svelte";
+  import { busy, during, isBusy } from "$lib/busy.svelte";
+  import { resetFocus } from "$lib/focus.svelte";
+  import { defaults, locales, setModelPath } from "$lib/options.svelte";
+  import { SIDEREAL } from "$lib/types";
+  import { notify } from "$lib/toasts.svelte";
   import CalcOptions from "./CalcOptions.svelte";
   import PlacePicker from "./PlacePicker.svelte";
   import type { PlaceDto } from "$lib/types";
   import { onMount } from "svelte";
+  import { basename } from "$lib/files";
+  import { reason } from "$lib/failure";
 
   type Initial = Partial<{
     date: string;
@@ -44,14 +51,11 @@
   /* svelte-ignore state_referenced_locally */
   let houseSystem = $state(initial?.houseSystem ?? "");
   /* svelte-ignore state_referenced_locally */
-  let zodiac = $state(initial?.zodiac ?? "tropical");
+  let zodiac = $state(initial?.zodiac ?? defaults().zodiac);
   /* svelte-ignore state_referenced_locally */
   let ayanamsa = $state(initial?.ayanamsa ?? "");
   let error = $state("");
 
-  // the model is picked as a file but read as a name — the path is backend
-  // detail, the basename is what a person recognizes
-  const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
   // the preferred model / default language prefill untouched fields; the
   // calculator's `initial` values were seeded above, so they win
@@ -59,8 +63,8 @@
     const p = await getPreferences();
     if (!model.trim() && p.default_model) model = p.default_model;
     if (!lang) lang = p.default_locale ?? "en";
-    if (!houseSystem) houseSystem = p.default_house_system ?? "whole-sign";
-    if (!ayanamsa) ayanamsa = p.default_ayanamsa ?? "lahiri";
+    if (!houseSystem) houseSystem = p.default_house_system ?? defaults().houseSystem;
+    if (!ayanamsa) ayanamsa = p.default_ayanamsa ?? defaults().ayanamsa;
     // Zodiac is a real toggle (default tropical); a set preference moves it
     // only when the calculator didn't hand one over.
     if (initial?.zodiac === undefined && p.default_zodiac) zodiac = p.default_zodiac;
@@ -78,44 +82,47 @@
     }
   }
 
+  // A local binding so the template can narrow the discriminated phase; a
+  // bare `busy()` call cannot be narrowed across two reads.
+  const phase = $derived(busy());
+
   async function compute() {
     error = "";
     if (!picked) {
       error = "pick a place from the suggestions";
       return;
     }
-    app.busy = { kind: "compute" };
+    const place = picked;
     try {
-      const chart = await build({
-        name,
-        date,
-        time,
-        place_id: picked.id,
-        transcript: transcript || null,
-        model: model || null,
-        lang: lang || null,
-        house_system: houseSystem || null,
-        zodiac: zodiac || null,
-        ayanamsa: zodiac === "sidereal" ? ayanamsa || null : null,
-      });
+      const chart = await during("compute", () =>
+        build({
+          name,
+          date,
+          time,
+          place_id: place.id,
+          transcript: transcript || null,
+          model: model || null,
+          lang: lang || null,
+          house_system: houseSystem || null,
+          zodiac: zodiac || null,
+          ayanamsa: zodiac === SIDEREAL ? ayanamsa || null : null,
+        }),
+      );
       // a built reading is the strongest "last used place" signal
-      setLastPlace(picked.id).catch(() => {});
-      // the calculator's plate shares the pin/hover state — a fresh reading
-      // must not inherit stale selections
-      selected.clear();
-      app.hovered = null;
-      app.chart = chart;
+      setLastPlace(place.id).catch(() => {});
+      // the calculator's plate shares the focus — a fresh reading must not
+      // inherit stale pins or a stale hover
+      resetFocus();
+      openReading(chart);
       // Only worth announcing the routing when a transcript was actually
       // supplied; a bare chart with no transcript routes nothing.
       if (transcript.trim()) {
         const n = chart.excerpts.length;
         notify(`${n} ${n === 1 ? "passage" : "passages"} routed past the verify gate`);
       }
-      app.model = model.trim();
+      setModelPath(model.trim());
     } catch (e) {
-      error = String(e);
-    } finally {
-      app.busy = { kind: "idle" };
+      error = reason(e);
     }
   }
 </script>
@@ -177,17 +184,17 @@
 
   <div class="actions">
     <button type="submit" class="frame-btn compute" disabled={isBusy()}>
-      {#if app.busy.kind === "transcribe"}
-        transcribing… {app.busy.pct}%
-      {:else if app.busy.kind === "compute"}
+      {#if phase.kind === "transcribe"}
+        transcribing… {phase.pct}%
+      {:else if phase.kind === "compute"}
         computing the chart…
       {:else}
         compute the chart
       {/if}
     </button>
   </div>
-  {#if app.busy.kind === "transcribe"}
-    <div class="bar"><div class="fill" style="width: {app.busy.pct}%"></div></div>
+  {#if phase.kind === "transcribe"}
+    <div class="bar"><div class="fill" style="width: {phase.pct}%"></div></div>
   {/if}
 
   {#if onclose}

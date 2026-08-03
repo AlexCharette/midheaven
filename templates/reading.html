@@ -292,7 +292,7 @@
         <circle cx="22" cy="22" r="7" opacity="0.4"/>
       </g>
     </svg>
-    <p class="overline">The Birth Chart of</p>
+    <p class="overline"></p>
     <h1 id="h-name"></h1>
     <p class="details" id="h-details"></p>
     <p class="details system" id="h-system"></p>
@@ -337,6 +337,15 @@
 
 <script>
 const DATA = /*__DATA__*/null;
+// The engraved plate's geometry, emitted from src/plate.rs by the same binary
+// that renders the PDF. This file used to carry its own copy of the radii, the
+// tick classes and the de-crowding rule, and named the PDF as its mirror.
+const PLATE = /*__PLATE__*/null;
+// The viewer's own furniture, in the reading's language, emitted from
+// src/i18n. This file used to carry a `UI = { en, ru }` table parallel to the
+// Rust one, so adding a language meant editing both — and the two had already
+// drifted on the title line.
+const CHROME = /*__CHROME__*/null;
 
 (function () {
   if (!DATA) { document.body.innerHTML = '<p style="padding:2rem">No chart data embedded.</p>'; return; }
@@ -369,16 +378,16 @@ const DATA = /*__DATA__*/null;
     const t = document.createElementNS(svgNS, 'title');
     t.textContent = text; parent.appendChild(t);
   };
+  // Arc construction only — this viewer's own geometry. Everything derived
+  // FROM a longitude (which sign, how far into it, how wide a house is) now
+  // arrives on the contract: bodies carry `sign`/`deg`/`min` and the chart
+  // carries `houseSweeps`, computed once in src/derive.rs. This file used to
+  // re-derive all three, and had drifted (its fmtPos took `lon % 30` without
+  // normalizing first, and could print a 30th degree no sign has).
   const norm360 = x => ((x % 360) + 360) % 360;
-  const wholeDeg = lon => Math.floor(norm360(lon) % 30);
   const glyphOf = x => x.glyph || x.label || '';
-  const signAt = lon => DATA.signs[Math.floor(norm360(lon) / 30)];
-  const fmtPos = lon => {
-    const within = lon % 30;
-    let d = Math.floor(within), m = Math.round((within - d) * 60);
-    if (m >= 60) { d += 1; m = 0; } // rounding carry — src/pdf's fmt_pos mirrors this
-    return `${d}°${String(m).padStart(2, '0')}′ ${signAt(lon).name}`;
-  };
+  const signOf = b => DATA.signs[b.sign];
+  const fmtPos = b => `${b.deg}°${String(b.min).padStart(2, '0')}′ ${signOf(b).name}`;
   // Annular sector path between longitudes l1→l2 (ccw), radii r1<r2.
   const sector = (l1, l2, r1, r2) => {
     const [x1, y1] = pt(l1, r2), [x2, y2] = pt(l2, r2);
@@ -390,66 +399,20 @@ const DATA = /*__DATA__*/null;
   };
 
   // ---------- localized chrome ----------
-  // Element names/glyphs arrive already localized in DATA; only the viewer's
-  // own chrome (labels, controls, empty states) lives here, keyed by
-  // DATA.meta.locale. Adding a language = adding a block. en must stay
-  // byte-identical to the original strings.
-  const UI = {
-    en: {
-      natalReading: 'Natal Reading',
-      birthChartOf: 'The Birth Chart of',
-      indexOfElements: 'Index of Elements',
-      bands: ['planets', 'signs', 'houses', 'aspects'],
-      passagesTouching: 'passages touching',
-      any: 'any', all: 'all',
-      anyTitle: 'Passages touching any selected element',
-      allTitle: 'Only passages touching every selected element',
-      ofSelection: 'of the selection ·',
-      clear: 'clear',
-      commentary: 'Commentary',
-      preparedBy: 'prepared by',
-      houseSuffix: ' House',
-      wheelAria: 'Natal chart wheel; the index of elements offers the same filters',
-      count: (v, t) => `${v} of ${t} passages`,
-      noPassagesRouted: 'no passages routed',
-      emptyNoneRouted: 'No transcript passages were routed to this chart.',
-      emptyNoMatch: word =>
-        `No passage touches ${word} of the selected elements — clear the selection to see everything.`,
-      fewer: '· fewer',
-      more: n => `· ${n} more`,
-    },
-    ru: {
-      natalReading: 'Натальный разбор',
-      birthChartOf: 'Натальная карта',
-      indexOfElements: 'Указатель элементов',
-      bands: ['планеты', 'знаки', 'дома', 'аспекты'],
-      passagesTouching: 'фрагменты, затрагивающие',
-      any: 'любой', all: 'все',
-      anyTitle: 'Фрагменты, затрагивающие любой выбранный элемент',
-      allTitle: 'Только фрагменты, затрагивающие все выбранные элементы',
-      ofSelection: 'из выбранного ·',
-      clear: 'сбросить',
-      commentary: 'Комментарий',
-      preparedBy: 'подготовил',
-      houseSuffix: ' дом',
-      wheelAria: 'Колесо натальной карты; указатель элементов даёт те же фильтры',
-      count: (v, t) => `${v} из ${t} фрагментов`,
-      noPassagesRouted: 'нет отнесённых фрагментов',
-      emptyNoneRouted: 'Ни один фрагмент транскрипта не отнесён к этой карте.',
-      emptyNoMatch: word =>
-        `Ни один фрагмент не затрагивает ${word} выбранных элементов — сбросьте выбор, чтобы увидеть всё.`,
-      fewer: '· свернуть',
-      more: n => `· ещё ${n}`,
-    },
-  };
-  const T = UI[DATA.meta.locale] || UI.en;
+  // Element names and glyphs arrive already localized in DATA; the viewer's own
+  // labels, controls and empty states arrive in CHROME, from the same i18n
+  // tables the PDF reads. Adding a language means adding a table in Rust and
+  // nothing here.
+  const T = CHROME;
+  // The three chrome strings that take values are format strings; `{name}` is
+  // replaced by `vals.name`.
+  const fmt = (s, vals) => s.replace(/\{(\w+)\}/g, (_, k) => vals[k]);
 
   // ---------- title plate & caption ----------
   const m = DATA.meta;
   document.documentElement.lang = m.locale || 'en';
   document.title = `${m.name} — ${T.natalReading}`;
   const setText = (sel, text) => { const el = document.querySelector(sel); if (el) el.textContent = text; };
-  setText('.overline', T.birthChartOf);
   setText('.index-label', T.indexOfElements);
   document.querySelectorAll('.index h3').forEach((h, i) => { if (T.bands[i]) h.textContent = T.bands[i]; });
   document.querySelectorAll('.apparatus .lbl').forEach((el, i) => {
@@ -463,7 +426,18 @@ const DATA = /*__DATA__*/null;
   setText('h2.rubric', T.commentary);
   document.getElementById('wheel').setAttribute('aria-label', T.wheelAria);
 
-  document.getElementById('h-name').textContent = m.name;
+  // The plate's headline. English puts the holder's name inside it ("Mira
+  // Holt's birth chart") and the overline goes away; Russian sets a line above
+  // the name, because a possessive there would need the name declined into the
+  // genitive and a format string cannot do that.
+  const overline = document.querySelector('.overline');
+  if (T.plateTitle.inline) {
+    document.getElementById('h-name').textContent = fmt(T.plateTitle.inline, { name: m.name });
+    overline.remove();
+  } else {
+    overline.textContent = T.plateTitle.above;
+    document.getElementById('h-name').textContent = m.name;
+  }
   document.getElementById('h-details').textContent = `${m.born}${m.place ? ' · ' + m.place : ''}`;
   // The calculation basis, mirroring the live desktop plate caption
   // (ChartCore.svelte): the localized house-system and zodiac labels.
@@ -486,9 +460,7 @@ const DATA = /*__DATA__*/null;
   // ---------- wheel ----------
   const wheel = document.getElementById('wheel');
   const taggable = [];            // svg nodes carrying data-tag
-  // canonical radii — mirrored by desktop/src/lib/components/Wheel.svelte
-  // and src/pdf/wheel.rs; change here first, then both mirrors
-  const R = { outer: 348, bandOut: 344, signIn: 306, gradIn: 294, planet: 260, wedgeOut: 230, chord: 222, hub: 92, houseLbl: 112 };
+  const R = PLATE.radii;
 
   // engraved concentric rings (pathLength lets CSS draw them in)
   [R.outer, R.bandOut, R.signIn, R.gradIn, R.wedgeOut, R.hub, R.hub - 4].forEach((r, i) =>
@@ -500,8 +472,9 @@ const DATA = /*__DATA__*/null;
   // graduation band: 1° / 5° / 10° ticks between gradIn and signIn
   const grads = el('g', { class: 'fade-mid' }, wheel);
   for (let d = 0; d < 360; d++) {
-    const len = d % 10 === 0 ? 12 : d % 5 === 0 ? 8 : 4.5;
-    const w = d % 10 === 0 ? 0.9 : d % 5 === 0 ? 0.7 : 0.45;
+    const TICK = PLATE.ticks;
+    const len = d % 10 === 0 ? TICK.decadeLen : d % 5 === 0 ? TICK.fiveLen : TICK.unitLen;
+    const w = d % 10 === 0 ? TICK.decadeWidth : d % 5 === 0 ? TICK.fiveWidth : TICK.unitWidth;
     const [x1, y1] = pt(d, R.signIn), [x2, y2] = pt(d, R.signIn - len);
     el('line', { x1, y1, x2, y2, class: 'grad', 'stroke-width': w }, grads);
   }
@@ -530,7 +503,7 @@ const DATA = /*__DATA__*/null;
     svgTitle(band, `${s.name} — ${s.element}`);
     band.addEventListener('click', () => toggle(s.id));
     taggable.push(band);
-    const [gx, gy] = pt(lon + 15, 325);
+    const [gx, gy] = pt(lon + 15, R.signGlyph);
     el('text', {
       x: gx, y: gy, class: 'sign-glyph', 'text-anchor': 'middle', 'dominant-baseline': 'central',
     }, bands).textContent = textGlyph(s.glyph);
@@ -540,9 +513,10 @@ const DATA = /*__DATA__*/null;
   const houses = el('g', { class: 'fade-mid' }, wheel);
   const cusps = DATA.houseCusps;
   cusps.forEach((c, i) => {
-    const next = cusps[(i + 1) % 12];
+    // the derived sweep, including the coincident-cusp rule
+    const sweep = DATA.houseSweeps[i];
     const wedge = el('path', {
-      d: sector(c, next === c ? c + 30 : next, R.hub, R.wedgeOut),
+      d: sector(c, c + sweep, R.hub, R.wedgeOut),
       class: 'house-wedge', 'data-tag': DATA.houses[i].id,
     }, houses);
     svgTitle(wedge, DATA.houses[i].name);
@@ -550,8 +524,7 @@ const DATA = /*__DATA__*/null;
     taggable.push(wedge);
     const [x1, y1] = pt(c, R.hub), [x2, y2] = pt(c, R.gradIn);
     el('line', { x1, y1, x2, y2, class: 'cusp-spoke' }, houses);
-    const sweep = norm360(next - c) || 30;
-    const [lx, ly] = pt(c + sweep / 2, R.houseLbl);
+    const [lx, ly] = pt(c + sweep / 2, R.houseLabel);
     el('text', {
       x: lx, y: ly, class: 'house-label', 'text-anchor': 'middle', 'dominant-baseline': 'central',
     }, houses).textContent = DATA.houses[i].label;
@@ -562,7 +535,7 @@ const DATA = /*__DATA__*/null;
    [DATA.axes.asc + 180, 'DC'], [DATA.axes.mc + 180, 'IC']].forEach(([lon, label]) => {
     const [x1, y1] = pt(lon, R.hub), [x2, y2] = pt(lon, R.outer);
     el('line', { x1, y1, x2, y2, class: 'axis fade-mid' }, wheel);
-    const [tx, ty] = pt(lon, R.outer + 13);
+    const [tx, ty] = pt(lon, R.outer + PLATE.axisLabelGap);
     el('text', {
       x: tx, y: ty, class: 'axis-label fade-mid', 'text-anchor': 'middle', 'dominant-baseline': 'central',
     }, wheel).textContent = label;
@@ -586,15 +559,16 @@ const DATA = /*__DATA__*/null;
   const byLon = [...DATA.planets].sort((a, b) => a.lon - b.lon);
   let prevLon = null, prevR = null;
   const radiusFor = lon => {
-    const crowded = prevLon !== null && Math.min(Math.abs(lon - prevLon), 360 - Math.abs(lon - prevLon)) < 8;
-    const r = crowded ? Math.max(prevR - 27, 176) : R.planet;
+    const CROWD = PLATE.crowding;
+    const crowded = prevLon !== null && Math.min(Math.abs(lon - prevLon), 360 - Math.abs(lon - prevLon)) < CROWD.thresholdDeg;
+    const r = crowded ? Math.max(prevR - CROWD.step, CROWD.floor) : R.planet;
     prevLon = lon; prevR = r;
     return r;
   };
   byLon.forEach((p, i) => {
     const r = radiusFor(p.lon);
     const g = el('g', { class: 'planet', 'data-tag': p.id, style: `--d: ${(0.55 + i * 0.045).toFixed(3)}s` }, wheel);
-    const [x1, y1] = pt(p.lon, R.gradIn - 8), [x2, y2] = pt(p.lon, R.gradIn);
+    const [x1, y1] = pt(p.lon, R.gradIn - PLATE.bodyTickLen), [x2, y2] = pt(p.lon, R.gradIn);
     el('line', { x1, y1, x2, y2, class: 'tick' }, g);
     const [gx, gy] = pt(p.lon, r);
     el('circle', { cx: gx, cy: gy, r: 15, class: 'halo' }, g);
@@ -603,11 +577,11 @@ const DATA = /*__DATA__*/null;
     }, g);
     t.textContent = textGlyph(p.glyph);
     if (p.glyph.length > 1) t.setAttribute('font-size', '13');
-    const [dx, dy] = pt(p.lon, r - 21);
+    const [dx, dy] = pt(p.lon, r - PLATE.degreeLabelDrop);
     el('text', {
       x: dx, y: dy, class: 'deg', 'text-anchor': 'middle', 'dominant-baseline': 'central',
-    }, g).textContent = `${wholeDeg(p.lon)}°`;
-    svgTitle(g, `${p.name} · ${fmtPos(p.lon)} · ${DATA.houses[p.house - 1].name}`);
+    }, g).textContent = `${p.deg}°`;
+    svgTitle(g, `${p.name} · ${fmtPos(p)} · ${DATA.houses[p.house - 1].name}`);
     g.addEventListener('click', () => toggle(p.id));
     taggable.push(g);
   });
@@ -634,7 +608,7 @@ const DATA = /*__DATA__*/null;
   const bandP = document.getElementById('band-planets');
   DATA.planets.forEach(p => {
     makeEntry(bandP, p.id, 'planet', p.glyph, p.name,
-      `${wholeDeg(p.lon)}° ${textGlyph(signAt(p.lon).glyph)}`, fmtPos(p.lon));
+      `${p.deg}° ${textGlyph(signOf(p).glyph)}`, fmtPos(p));
   });
   const bandS = document.getElementById('band-signs');
   DATA.signs.forEach(s => makeEntry(bandS, s.id, 'sign', s.glyph, s.name, '', ''));
@@ -648,7 +622,7 @@ const DATA = /*__DATA__*/null;
   // a sign/house entry is visible when OCCUPIED (some body stands in it),
   // OR selected (an active filter must never hide itself), OR its column is
   // expanded. The Ascendant point counts as a body.
-  const occupied = new Set(DATA.planets.flatMap(p => [signAt(p.lon).id, 'house:' + p.house]));
+  const occupied = new Set(DATA.planets.flatMap(p => [signOf(p).id, 'house:' + p.house]));
   const expanded = { sign: false, house: false };
   const expanders = {};
   for (const [cat, band] of [['sign', bandS], ['house', bandH]]) {
@@ -676,7 +650,7 @@ const DATA = /*__DATA__*/null;
         b.textContent = T.fewer;
         b.style.display = '';
       } else if (hidden[cat] > 0) {
-        b.textContent = T.more(hidden[cat]);
+        b.textContent = fmt(T.more, { n: hidden[cat] });
         b.style.display = '';
       } else {
         b.style.display = 'none';
@@ -688,6 +662,11 @@ const DATA = /*__DATA__*/null;
   const catOf = tag => tag.split(':')[0];
   const excerptsHost = document.getElementById('excerpts');
 
+  // The passage filter. The app states the same rule in
+  // `desktop/src/lib/focus.ts` as `matching`; this artifact is a standalone
+  // file and cannot import it, so the two are deliberate mirrors — keep them in
+  // step. Same semantics: an empty selection shows everything, `any` is an
+  // intersection, `all` a superset.
   const matches = ex => {
     if (selected.size === 0) return true;
     const t = new Set(ex.tags);
@@ -700,11 +679,11 @@ const DATA = /*__DATA__*/null;
     const visible = DATA.excerpts.filter(matches);
     document.getElementById('count').textContent =
       DATA.excerpts.length === 0 ? T.noPassagesRouted
-        : T.count(visible.length, DATA.excerpts.length);
+        : fmt(T.count, { shown: visible.length, total: DATA.excerpts.length });
     excerptsHost.innerHTML = visible.length === 0
       ? `<p class="empty">${DATA.excerpts.length === 0
           ? T.emptyNoneRouted
-          : T.emptyNoMatch(mode === 'all' ? T.all : T.any)}</p>`
+          : fmt(T.emptyNoMatch, { word: mode === 'all' ? T.all : T.any })}</p>`
       : '';
     for (const ex of visible) {
       const art = document.createElement('article');

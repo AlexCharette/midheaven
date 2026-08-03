@@ -41,6 +41,11 @@ xalen-time = "0.6.0"
 # cross-compiling whisper.cpp and shipping multi-hundred-MB models is deferred.
 default = ["transcribe"]
 transcribe = ["dep:whisper-rs", "dep:hound"]
+# Shared test fixtures (`astro::fixtures`). Off by default so they never ship;
+# turned on in this crate's own dev-dependencies (below) so `tests/` sees them,
+# and in `astro-desktop`'s so the other crate does too. `#[cfg(test)]` could not
+# serve either — it applies only to the crate being tested.
+testing = []
 # Emit TypeScript bindings from the contract types when running the tests.
 ts = ["dep:ts-rs"]
 
@@ -55,3 +60,8 @@ required-features = ["transcribe"]
 flate2 = "1.1.9"
 ureq = "3.3.0"
 zip = "8.6.0"
+
+# The crate depends on itself for its integration tests, which is how `tests/`
+# gets the `testing` feature without the library ever shipping it.
+[dev-dependencies]
+astro = { path = ".", features = ["testing"] }
