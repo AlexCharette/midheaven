@@ -98,4 +98,55 @@ mod tests {
         }
         assert!(checked >= 8, "only {checked} ids checked — did the scan break?");
     }
+
+    /// Every field of the plate the viewer's script reads has to be a field the
+    /// plate actually serializes.
+    ///
+    /// A missing one is silent: the radius comes back `undefined`, the arithmetic
+    /// on it is `NaN`, and SVG reads a `NaN` coordinate as zero — so the affected
+    /// glyphs pile up in the top-left corner of the plate instead of failing.
+    /// That is how `R.houseLbl` outlived the rename to `houseLabel` and shipped a
+    /// wheel with all twelve house numerals stacked in the corner. The other two
+    /// renditions cannot have this bug: `src/pdf/wheel.rs` reads the struct and
+    /// the compiler checks it, and `Wheel.svelte` reads the generated
+    /// `plate.ts` under `svelte-check`. Only this template reads the plate as
+    /// untyped JSON, so this is that rendition's type check.
+    #[test]
+    fn every_plate_field_the_script_reads_is_one_the_plate_emits() {
+        let plate = serde_json::to_value(crate::plate::PLATE).expect("the plate serializes");
+        // The aliases the script binds the plate's three sub-objects to. They are
+        // shouted precisely so this scan can find them: `t` and `c` also name a
+        // DOM node and a cusp longitude elsewhere in the file.
+        let scopes = [
+            ("PLATE", &plate),
+            ("R", &plate["radii"]),
+            ("TICK", &plate["ticks"]),
+            ("CROWD", &plate["crowding"]),
+        ];
+        let mut checked = 0;
+        for (alias, object) in scopes {
+            let keys = object.as_object().expect("a plate object");
+            let needle = format!("{alias}.");
+            for (at, _) in TEMPLATE.match_indices(&needle) {
+                // `CROWD.step` is not a use of `D.`, and `prevR.x` is not one of `R.`
+                let before = TEMPLATE[..at].chars().next_back();
+                if before.is_some_and(|ch| ch.is_alphanumeric() || ch == '_') {
+                    continue;
+                }
+                let rest = &TEMPLATE[at + needle.len()..];
+                let end = rest.find(|ch: char| !ch.is_alphanumeric() && ch != '_').unwrap_or(0);
+                let field = &rest[..end];
+                assert!(
+                    keys.contains_key(field),
+                    "the script reads {alias}.{field}, which the plate does not emit — \
+                     it has {:?}",
+                    keys.keys().collect::<Vec<_>>()
+                );
+                checked += 1;
+            }
+        }
+        // Every radius, every tick class, every crowding term, and the three
+        // loose fields: a scan that stopped finding them would pass by default.
+        assert!(checked >= 25, "only {checked} plate reads checked — did the scan break?");
+    }
 }

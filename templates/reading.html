@@ -472,9 +472,9 @@ const CHROME = /*__CHROME__*/null;
   // graduation band: 1° / 5° / 10° ticks between gradIn and signIn
   const grads = el('g', { class: 'fade-mid' }, wheel);
   for (let d = 0; d < 360; d++) {
-    const t = PLATE.ticks;
-    const len = d % 10 === 0 ? t.decadeLen : d % 5 === 0 ? t.fiveLen : t.unitLen;
-    const w = d % 10 === 0 ? t.decadeWidth : d % 5 === 0 ? t.fiveWidth : t.unitWidth;
+    const TICK = PLATE.ticks;
+    const len = d % 10 === 0 ? TICK.decadeLen : d % 5 === 0 ? TICK.fiveLen : TICK.unitLen;
+    const w = d % 10 === 0 ? TICK.decadeWidth : d % 5 === 0 ? TICK.fiveWidth : TICK.unitWidth;
     const [x1, y1] = pt(d, R.signIn), [x2, y2] = pt(d, R.signIn - len);
     el('line', { x1, y1, x2, y2, class: 'grad', 'stroke-width': w }, grads);
   }
@@ -524,7 +524,7 @@ const CHROME = /*__CHROME__*/null;
     taggable.push(wedge);
     const [x1, y1] = pt(c, R.hub), [x2, y2] = pt(c, R.gradIn);
     el('line', { x1, y1, x2, y2, class: 'cusp-spoke' }, houses);
-    const [lx, ly] = pt(c + sweep / 2, R.houseLbl);
+    const [lx, ly] = pt(c + sweep / 2, R.houseLabel);
     el('text', {
       x: lx, y: ly, class: 'house-label', 'text-anchor': 'middle', 'dominant-baseline': 'central',
     }, houses).textContent = DATA.houses[i].label;
@@ -559,9 +559,9 @@ const CHROME = /*__CHROME__*/null;
   const byLon = [...DATA.planets].sort((a, b) => a.lon - b.lon);
   let prevLon = null, prevR = null;
   const radiusFor = lon => {
-    const c = PLATE.crowding;
-    const crowded = prevLon !== null && Math.min(Math.abs(lon - prevLon), 360 - Math.abs(lon - prevLon)) < c.thresholdDeg;
-    const r = crowded ? Math.max(prevR - c.step, c.floor) : R.planet;
+    const CROWD = PLATE.crowding;
+    const crowded = prevLon !== null && Math.min(Math.abs(lon - prevLon), 360 - Math.abs(lon - prevLon)) < CROWD.thresholdDeg;
+    const r = crowded ? Math.max(prevR - CROWD.step, CROWD.floor) : R.planet;
     prevLon = lon; prevR = r;
     return r;
   };
