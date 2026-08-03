@@ -99,6 +99,10 @@
   --z-dropdown: 20;
   --z-sticky: 30;
   --z-footer: 40;
+  /* app chrome pinned outside any view — the corner preferences control. Same
+     tier as the footer (over the decorative frame, under the overlay veil),
+     named separately because it is not the footer. */
+  --z-chrome: 40;
   --z-overlay: 50; /* modal veil: above the fixed footer, below toasts */
   --z-toast: 60;
   --z-tooltip: 70;
