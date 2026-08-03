@@ -12,6 +12,7 @@
   import { SIDEREAL } from "$lib/types";
   import { notify } from "$lib/toasts.svelte";
   import CalcOptions from "./CalcOptions.svelte";
+  import MomentField from "./MomentField.svelte";
   import PlacePicker from "./PlacePicker.svelte";
   import type { PlaceDto } from "$lib/types";
   import { onMount } from "svelte";
@@ -88,6 +89,17 @@
 
   async function compute() {
     error = "";
+    // In reading order, and all three the same way: the pickers hand back a
+    // complete value or an empty string, so "incomplete" is now something this
+    // form can see and answer inline rather than send off and be told about.
+    if (!date) {
+      error = "enter a birth date";
+      return;
+    }
+    if (!time) {
+      error = "enter a birth time";
+      return;
+    }
     if (!picked) {
       error = "pick a place from the suggestions";
       return;
@@ -140,9 +152,9 @@
   </label>
   <div class="duo">
     <label class="lbl" for="f-date">born on</label>
-    <input id="f-date" bind:value={date} placeholder="YYYY-MM-DD" />
+    <MomentField id="f-date" type="date" value={date} width="10.5rem" oncommit={(v) => (date = v)} />
     <label class="lbl" for="f-time">at</label>
-    <input id="f-time" bind:value={time} placeholder="HH:MM" title="24-hour clock" />
+    <MomentField id="f-time" type="time" value={time} width="8rem" oncommit={(v) => (time = v)} />
   </div>
   <label class="place">
     <span>in</span>
@@ -234,17 +246,17 @@
     align-items: baseline;
     margin-bottom: 0.7rem;
   }
-  .duo input {
-    width: 8.5rem;
+  /* The two fields are `MomentField`s, so their widths are props rather than
+     rules here — a selector in this component cannot reach an input another
+     component renders. What stays ours is the spacing between them: the pair
+     reads as one clause, with "at" pressed up against the date. */
+  .duo :global(input) {
     margin-left: 1rem;
   }
   .duo label[for="f-time"] {
-    margin-left: 0.6rem; /* pressed up against the date */
+    margin-left: 0.6rem;
   }
-  /* the time needs only five characters; sized to them and kept snug against
-     the date so the pair reads as one clause and never clips in the fly-out */
-  .duo input#f-time {
-    width: 5.5rem;
+  .duo label[for="f-time"] + :global(input) {
     margin-left: 0.6rem;
   }
   .browse {

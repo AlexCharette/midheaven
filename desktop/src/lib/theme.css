@@ -47,6 +47,13 @@
 }
 
 :root {
+  /* The app is only ever dark, and saying so is what makes the platform's own
+     chrome agree: the date and time pickers' popovers, native dropdowns,
+     scrollbars and form-control internals all render dark instead of arriving
+     as light panels over the plate. It replaces the `select option` colouring
+     that used to approximate this from the outside. */
+  color-scheme: dark;
+
   --bg: #131735;
   --bg-deep: #0d1026;
   --ink: #e9e4d3;
@@ -59,6 +66,12 @@
   --verdigris: #35ab7c;
   --steel: #7ba0e0;
   --oxblood: #c05468;
+  /* The other half of `color-scheme`: it darkens the platform's panels, but the
+     accent inside them stays system blue — the focused segment of a date field,
+     the selected day in its popover. Brass is this app's accent everywhere else,
+     so it is the accent here too. (The picker's own glyph ignores this and is
+     re-tinted in MomentField.) */
+  accent-color: var(--brass);
 
   /* Type stacks. Hosted face first, then the old system stack as the tail so
      a missing file degrades gracefully rather than to a sans default. */
@@ -169,6 +182,12 @@ select {
   border-bottom: 1px solid var(--line);
   padding: 0.1rem 0;
 }
+/* Kept alongside `color-scheme: dark` rather than replaced by it. The dev loop
+   that would have shown whether the declaration alone is enough was itself
+   broken (the production CSP was blocking vite's HMR socket), and the one native
+   control we could see ignored `color-scheme` entirely — so removing a working
+   workaround on the strength of a declaration nobody has watched work would be
+   trading a certainty for a hope. Redundant if the scheme lands; a floor if not. */
 select option {
   background: var(--bg-deep);
   color: var(--ink);
