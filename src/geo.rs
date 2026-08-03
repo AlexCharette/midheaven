@@ -16,8 +16,8 @@ use std::sync::OnceLock;
 static PLACES_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/places.tsv.gz"));
 
 /// One gazetteer row. Owned strings are kept to a minimum: `admin1`,
-/// `country`, and `cc` repeat across thousands of rows and are interned
-/// (see [`Interner`]); the lowercase display name is stored only for the
+/// `country`, and `cc` repeat across thousands of rows and are interned by the
+/// private `Interner`; the lowercase display name is stored only for the
 /// minority of names where it differs from the folded ascii form.
 pub struct Place {
     pub id: u32,

@@ -15,7 +15,7 @@
 //!    the self-contained HTML viewer.
 //!
 //! [`contract`] holds the `ChartData` types — the contract between stages; no
-//! stage owns it. [`derive`] is the same kind of module for behaviour rather
+//! stage owns it. [`mod@derive`] is the same kind of module for behaviour rather
 //! than data: the longitude arithmetic every renderer would otherwise
 //! re-derive, computed once so its results can ride on `ChartData` fields.
 //! [`plate`] is the third of that kind: the engraved wheel's geometry, stated

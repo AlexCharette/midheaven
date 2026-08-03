@@ -4,9 +4,10 @@
 //! subset, nothing external. The dark rendition stays the artifact's; paper
 //! gets dark inks on warm cream.
 //!
-//! The module is split by concern: [`palette`] (the color table),
-//! [`primitives`] (paint/path helpers), [`text`] (typography), [`wheel`] (the
-//! chart plate), and [`flow`] (the pages-2+ layout engine). This file is the
+//! The module is split by concern — all five submodules private, so these are
+//! source paths rather than links: `palette` (the color table), `primitives`
+//! (paint/path helpers), `text` (typography), `wheel` (the chart plate), and
+//! `flow` (the pages-2+ layout engine). This file is the
 //! driver: page geometry, ornaments, and the [`render`] entry point.
 
 mod flow;

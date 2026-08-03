@@ -1,7 +1,8 @@
 //! Per-locale display names and router match-terms, keyed by the
 //! language-neutral catalog (`chart::catalog`). This is the one place a
 //! language's astrology vocabulary lives; adding a language means adding a
-//! table module (`en`, `ru`, …) and one arm in [`Locale::parse`]/[`Locale::table`].
+//! table module (`en`, `ru`, …) and one arm in [`Locale::parse`] and one in its
+//! private `table`.
 //!
 //! The catalog stays language-neutral (slugs, glyphs, elements, ids, angles);
 //! only the *text* — element names and the words a reader would say — is here.
@@ -103,7 +104,7 @@ impl Locale {
     }
 
     /// Default house-system label ("Whole Sign" / "Целые знаки"). Kept for the
-    /// Whole-Sign default; per-system labels come from [`house_system_label`].
+    /// Whole-Sign default; per-system labels come from [`Self::house_system_label`].
     pub fn system_label(self) -> &'static str {
         self.table().system
     }
