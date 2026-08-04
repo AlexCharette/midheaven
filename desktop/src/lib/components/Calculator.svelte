@@ -22,7 +22,7 @@
     minutes as draftMinutes,
     warnings,
   } from "$lib/preview.svelte";
-  import { fromMinutes, nowMoment, parseDate, parseTime, setYear, toMinutes } from "$lib/civil";
+  import { fromMinutes, nowMoment, setYear, toMinutes } from "$lib/civil";
   import type { PlaceDto } from "$lib/types";
   import BirthForm from "./BirthForm.svelte";
   import CalcOptions from "./CalcOptions.svelte";
@@ -131,23 +131,10 @@
     </div>
 
     <div class="moment">
-      <span class="lbl">on</span>
-      <MomentField
-        value={moment.date}
-        placeholder="YYYY-MM-DD"
-        label="date"
-        parse={parseDate}
-        oncommit={commitDate}
-      />
-      <span class="lbl">at</span>
-      <MomentField
-        value={moment.time}
-        placeholder="HH:MM"
-        label="time"
-        width="5.5rem"
-        parse={parseTime}
-        oncommit={commitTime}
-      />
+      <label class="lbl" for="calc-date">on</label>
+      <MomentField id="calc-date" type="date" value={moment.date} width="10.5rem" oncommit={commitDate} />
+      <label class="lbl" for="calc-time">at</label>
+      <MomentField id="calc-time" type="time" value={moment.time} width="8rem" oncommit={commitTime} />
       <span class="lbl">year</span>
       <span class="year-switch">
         <button type="button" class="ghost chev" onclick={() => stepYear(-1)} aria-label="previous year">‹</button>
