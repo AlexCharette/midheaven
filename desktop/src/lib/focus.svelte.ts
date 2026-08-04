@@ -25,6 +25,10 @@ export const focusedTag = (): string | null => rules.focusedTag(store.value);
 
 export const isPinned = (tag: string): boolean => rules.isPinned(store.value, tag);
 export const pinCount = (): number => store.value.pinned.length;
+/** The pinned elements, in the order they were pinned — what a note being
+ * written is filed under. A copy, because nothing outside this file writes the
+ * focus. */
+export const pinnedTags = (): string[] => [...store.value.pinned];
 export const hoveredTag = (): string | null => store.value.hovered;
 export const mode = (): Mode => store.value.mode;
 

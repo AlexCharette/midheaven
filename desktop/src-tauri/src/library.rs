@@ -86,6 +86,10 @@ pub struct ReadingEntry {
     pub name: String,
     pub born: String,
     pub place: String,
+    /// The reading's own language (`en`, `ru`). Not shown in the library list,
+    /// but a note filed under this chart reads and searches in it wherever it
+    /// appears — including in the journal, which holds no chart to ask.
+    pub locale: String,
     /// How many notes are filed under the chart. Named for the wire, which
     /// still spells a note `excerpt` — see `contract::ChartData::notes`.
     pub excerpts: usize,
@@ -114,6 +118,14 @@ struct ListingMeta {
     name: String,
     born: String,
     place: String,
+    /// Charts saved before `meta.locale` existed carry none; the contract reads
+    /// those as English, and so does this.
+    #[serde(default = "english")]
+    locale: String,
+}
+
+fn english() -> String {
+    "en".to_string()
 }
 
 /// A folder of saved readings.
@@ -323,6 +335,7 @@ fn row(dir: &Path, raw: &str) -> Option<ReadingEntry> {
         name: listing.meta.name,
         born: listing.meta.born,
         place: listing.meta.place,
+        locale: listing.meta.locale,
         excerpts: listing.excerpts.len(),
         modified_ms,
     })

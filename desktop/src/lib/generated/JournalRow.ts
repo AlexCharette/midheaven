@@ -16,6 +16,15 @@ export type JournalRow = {
  */
 writtenAt: string, text: string, tags: Array<string>, 
 /**
+ * `tags` as words, in the row's own language — parallel to it.
+ *
+ * Composed here because a row carries no chart to derive them from, and
+ * because nobody searches for `planet:saturn`. The row's language is the
+ * chart's, not the app's: a note written under a Russian reading reads and
+ * searches in Russian wherever it is shown.
+ */
+tagLabels: Array<string>, 
+/**
  * Whether a transcript stands behind it. The view does not distinguish the
  * two, but the journal shows both and something has to carry the fact.
  */

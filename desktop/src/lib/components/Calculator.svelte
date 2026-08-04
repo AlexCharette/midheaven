@@ -26,6 +26,7 @@
   import type { PlaceDto } from "$lib/types";
   import BirthForm from "./BirthForm.svelte";
   import CalcOptions from "./CalcOptions.svelte";
+  import Composer from "./Composer.svelte";
   import Library from "./Library.svelte";
   import MomentField from "./MomentField.svelte";
   import Overlay from "./Overlay.svelte";
@@ -40,6 +41,13 @@
   // layout now owns it and its corner control.
   let libraryOpen = $state(false);
   let birthOpen = $state(false);
+  // Composing is the one state in which the calculator's plate is an index
+  // rather than a display: `Wheel`'s own comment says `interactive` off means
+  // "a display of a moment rather than an index of a reading", and while a note
+  // is being written that is exactly what it stops being. Pins are cleared on
+  // the way in and out by the composer, so nothing a previous note was filed
+  // under can leak into the next one or leave the plate lit.
+  let composing = $state(false);
 
   onMount(async () => {
     // A first run seeds the moment and the calculation choices from
@@ -108,7 +116,7 @@
       <div class="stack">
         <div class="wheel-slot">
           {#if chart}
-            <Wheel {chart} interactive={false} scrubbing={scrubbing()} />
+            <Wheel {chart} interactive={composing} scrubbing={scrubbing()} />
           {/if}
         </div>
         <TimeRings />
@@ -157,11 +165,18 @@
     <p class="note" class:err={error() !== null} aria-live="polite">
       {error() ?? warnings().join(" · ")}
     </p>
+
+    {#if composing}
+      <Composer onclose={() => (composing = false)} />
+    {/if}
   </aside>
 </div>
 
 <footer>
   <button type="button" class="ghost" onclick={() => (libraryOpen = true)}>open a saved reading</button>
+  <button type="button" class="ghost" onclick={() => (composing = true)} disabled={composing || !chart}>
+    write a note
+  </button>
   <button type="button" class="frame-btn cast" onclick={() => (birthOpen = true)}>
     cast a natal chart
   </button>

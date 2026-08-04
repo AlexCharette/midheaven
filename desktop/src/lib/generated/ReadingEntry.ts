@@ -14,6 +14,12 @@ chartPath: string,
  */
 dir: string, name: string, born: string, place: string, 
 /**
+ * The reading's own language (`en`, `ru`). Not shown in the library list,
+ * but a note filed under this chart reads and searches in it wherever it
+ * appears — including in the journal, which holds no chart to ask.
+ */
+locale: string, 
+/**
  * How many notes are filed under the chart. Named for the wire, which
  * still spells a note `excerpt` — see `contract::ChartData::notes`.
  */

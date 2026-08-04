@@ -722,10 +722,15 @@ fn write_journal_note(
     if text.is_empty() {
         return Err("a note needs words".to_string());
     }
-    let vocab = chart_of(&anchor)?.vocab();
-    if let Some(bad) = tags.iter().find(|t| !vocab.contains(*t)) {
+    let chart = chart_of(&anchor)?;
+    if let Some(bad) = tags.iter().find(|t| !chart.vocab().contains(*t)) {
         return Err(format!("unknown tag {bad}"));
     }
+    // The place as the gazetteer says it, not as the webview typed it — the id
+    // is the truth, and a stored label that disagreed with it would be a row
+    // naming somewhere the note was not written over.
+    let mut anchor = anchor;
+    anchor.place = chart.meta.place.clone();
     let mut tags = tags;
     tags.sort();
     tags.dedup();
@@ -790,10 +795,44 @@ struct JournalRow {
     written_at: String,
     text: String,
     tags: Vec<String>,
+    /// `tags` as words, in the row's own language — parallel to it.
+    ///
+    /// Composed here because a row carries no chart to derive them from, and
+    /// because nobody searches for `planet:saturn`. The row's language is the
+    /// chart's, not the app's: a note written under a Russian reading reads and
+    /// searches in Russian wherever it is shown.
+    tag_labels: Vec<String>,
     /// Whether a transcript stands behind it. The view does not distinguish the
     /// two, but the journal shows both and something has to carry the fact.
     spoken: bool,
     source: RowSource,
+}
+
+/// A tag id as the words a reader would search for.
+///
+/// A journal row deliberately carries no chart — that is what makes listing a
+/// few hundred of them affordable — so the names have to be composed from the
+/// id and the row's language alone. `planet:`, `sign:` and `house:` all name
+/// themselves from `i18n`. An aspect's proper name needs its kind, which only
+/// its chart knows, so it becomes its two endpoints: still the words someone
+/// would type, which is what this is for.
+fn tag_label(tag: &str, loc: astro::i18n::Locale) -> String {
+    let Some((cat, slug)) = tag.split_once(':') else {
+        return tag.to_string();
+    };
+    let named = match cat {
+        "planet" => loc.planet_name(slug).to_string(),
+        "sign" => loc.sign_name(slug).to_string(),
+        "house" => slug.parse().map(|n| loc.house_name(n).to_string()).unwrap_or_default(),
+        "aspect" => match slug.split_once('-') {
+            Some((a, b)) => format!("{} – {}", loc.planet_name(a), loc.planet_name(b)),
+            None => String::new(),
+        },
+        _ => String::new(),
+    };
+    // An id outside the vocabulary names nothing. Fall back to the id rather
+    // than to a blank chip nobody could search for or click.
+    if named.trim().is_empty() { tag.to_string() } else { named }
 }
 
 /// Milliseconds into a recording from an `"HH:MM:SS"` anchor; 0 for a note with
@@ -826,12 +865,15 @@ fn list_journal(app: AppHandle) -> Vec<JournalRow> {
             let at = chrono::DateTime::parse_from_rfc3339(&e.written_at)
                 .map(|d| d.timestamp_millis())
                 .unwrap_or(0);
+            let loc = astro::i18n::Locale::parse(&e.anchor.locale);
+            let tag_labels = e.note.tags.iter().map(|t| tag_label(t, loc)).collect();
             rows.push((
                 at,
                 JournalRow {
                     written_at: e.written_at,
                     text: e.note.text,
                     tags: e.note.tags,
+                    tag_labels,
                     spoken: e.note.span.is_some(),
                     source: RowSource::Journal { id: e.note.id, anchor: e.anchor },
                 },
@@ -843,6 +885,7 @@ fn list_journal(app: AppHandle) -> Vec<JournalRow> {
         for (entry, notes) in lib.notes() {
             let saved_ms = entry.modified_ms.unwrap_or(0) as i64;
             let saved_at = rfc3339(saved_ms);
+            let loc = astro::i18n::Locale::parse(&entry.locale);
             for note in notes {
                 // The reading's save time composed with the note's offset into
                 // the recording: readings order against each other and against
@@ -853,6 +896,7 @@ fn list_journal(app: AppHandle) -> Vec<JournalRow> {
                     saved_ms + offset_ms(&note.time),
                     JournalRow {
                         written_at: saved_at.clone(),
+                        tag_labels: note.tags.iter().map(|t| tag_label(t, loc)).collect(),
                         text: note.text,
                         tags: note.tags,
                         spoken: note.span.is_some(),
@@ -1532,6 +1576,34 @@ mod tests {
             needs_migrating(None, true),
             "the same install, once it has a folder, still has a migration to run"
         );
+    }
+
+    /// A journal row carries no chart, so its elements have to name themselves
+    /// from the id and the row's language alone — and nobody searches for
+    /// `planet:saturn`.
+    #[test]
+    fn a_tag_names_itself_in_the_rows_own_language() {
+        use astro::i18n::Locale::{En, Ru};
+        assert_eq!(tag_label("planet:saturn", En), "Saturn");
+        assert_eq!(tag_label("sign:leo", En), "Leo");
+        assert_eq!(tag_label("house:5", En), "Fifth House");
+        assert_eq!(tag_label("aspect:sun-moon", En), "Sun – Moon");
+
+        // The reading's language, not the app's — a note written under a
+        // Russian reading searches in Russian wherever it is shown.
+        assert_ne!(tag_label("planet:saturn", Ru), tag_label("planet:saturn", En));
+        assert!(!tag_label("planet:saturn", Ru).is_empty());
+        assert!(!tag_label("house:5", Ru).is_empty());
+    }
+
+    /// An id nothing can name still has to be searchable and clickable, so it
+    /// falls back to itself rather than to a blank chip.
+    #[test]
+    fn an_unnameable_tag_falls_back_to_its_id() {
+        use astro::i18n::Locale::En;
+        for odd in ["planet:vulcan", "house:99", "house:not-a-number", "aspect:lonely", "nonsense"] {
+            assert_eq!(tag_label(odd, En), odd, "{odd} named itself something else");
+        }
     }
 
     #[test]
