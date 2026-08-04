@@ -27,6 +27,7 @@
   import BirthForm from "./BirthForm.svelte";
   import CalcOptions from "./CalcOptions.svelte";
   import Composer from "./Composer.svelte";
+  import Journal from "./Journal.svelte";
   import Library from "./Library.svelte";
   import MomentField from "./MomentField.svelte";
   import Overlay from "./Overlay.svelte";
@@ -40,6 +41,7 @@
   // why it was unreachable from a reading — it belongs to the app, and the
   // layout now owns it and its corner control.
   let libraryOpen = $state(false);
+  let journalOpen = $state(false);
   let birthOpen = $state(false);
   // Composing is the one state in which the calculator's plate is an index
   // rather than a display: `Wheel`'s own comment says `interactive` off means
@@ -177,6 +179,7 @@
   <button type="button" class="ghost" onclick={() => (composing = true)} disabled={composing || !chart}>
     write a note
   </button>
+  <button type="button" class="ghost" onclick={() => (journalOpen = true)}>the journal</button>
   <button type="button" class="frame-btn cast" onclick={() => (birthOpen = true)}>
     cast a natal chart
   </button>
@@ -199,6 +202,10 @@
 {:else if libraryOpen}
   <Overlay label="saved readings" onclose={() => (libraryOpen = false)}>
     <Library onclose={() => (libraryOpen = false)} />
+  </Overlay>
+{:else if journalOpen}
+  <Overlay label="the journal" onclose={() => (journalOpen = false)}>
+    <Journal onclose={() => (journalOpen = false)} />
   </Overlay>
 {/if}
 
