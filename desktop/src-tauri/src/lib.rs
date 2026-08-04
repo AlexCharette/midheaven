@@ -2,6 +2,7 @@
 //! renders; every capability (ephemeris, gazetteer, whisper, routing,
 //! emission) runs natively here, exactly as in the CLI/TUI.
 
+mod journal;
 mod library;
 mod prefs;
 #[cfg(desktop)]

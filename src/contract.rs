@@ -237,7 +237,10 @@ pub struct Meta {
 /// recalculation: the gazetteer place id (re-resolves lat/lon/tz) plus the raw
 /// birth date and time. Name, locale, and the calculation codes come from the
 /// rest of `Meta`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Compared by value, so two notes written over the same moment can be
+/// recognised as being about the same sky.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct BirthSeed {
     pub place_id: u32,
