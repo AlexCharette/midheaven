@@ -92,7 +92,7 @@ pub fn compute_chart_reporting(input: &BirthInput) -> Result<(ChartData, Vec<Str
         signs: sign_refs(loc),
         houses: house_refs(loc),
         aspects,
-        excerpts: Vec::new(),
+        notes: Vec::new(),
     };
     // Derived fields last: they read the measured longitudes and cusps above,
     // and every renderer reads them instead of re-deriving.
@@ -269,6 +269,10 @@ fn birth_meta(input: &BirthInput) -> Meta {
     let loc = input.locale;
     let house_code = systems::house_code(input.house_system);
     Meta {
+        // Identity belongs to a *saved* reading, and the compute stage does not
+        // save — the library mints one when the folder is created, so a chart
+        // that is only ever previewed never acquires one it doesn't need.
+        id: None,
         name: input.name.clone(),
         // The zone/offset stays out of `born`: it drives the local→UT
         // conversion but is noise to the reader.
@@ -402,10 +406,10 @@ mod tests {
     }
 
     #[test]
-    fn excerpts_survive_a_house_system_reproject() {
-        // A live reproject recomputes geometry and carries the routed passages
+    fn notes_survive_a_house_system_reproject() {
+        // A live reproject recomputes geometry and carries the routed notes
         // onto the new chart. The cusps change, but the vocabulary (sign/house/
-        // aspect ids) is stable, so pre-existing excerpt tags stay valid.
+        // aspect ids) is stable, so pre-existing note tags stay valid.
         let mut input = birth("1990-07-13", "14:30:00", 52.52, 13.405, "Europe/Berlin");
         let whole = compute_chart(&input).unwrap();
         input.house_system = HouseSystem::Placidus;
@@ -417,16 +421,17 @@ mod tests {
             "house:5".to_string(),
             whole.aspects.first().map(|a| a.id.clone()).unwrap_or_else(|| whole.signs[1].id.clone()),
         ];
-        let carried = crate::contract::Excerpt {
+        // written by hand, so no span — a reproject must carry it either way
+        let carried = crate::contract::Note {
             id: "x1".into(),
             time: String::new(),
-            span: [0, 0],
+            span: None,
             text: "t".into(),
             tags,
         };
         let mut reprojected = placidus;
-        reprojected.excerpts = vec![carried];
-        assert!(reprojected.validate().is_ok(), "carried excerpt must stay valid");
+        reprojected.notes = vec![carried];
+        assert!(reprojected.validate().is_ok(), "a carried note must stay valid");
     }
 
     #[test]

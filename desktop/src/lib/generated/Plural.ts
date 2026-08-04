@@ -3,12 +3,12 @@
 /**
  * A count and its noun, in the form the count calls for.
  *
- * English inflects: one passage, two passages. The Russian that ships does not
+ * English inflects: one note, two notes. The Russian that ships does not
  * — the artifact has always rendered one fixed genitive form for every count
  * (`"{shown} из {total} фрагментов"`), so both entries here are the same
  * string. Russian really has three categories, and wiring them up is a
  * separate job from moving these words; what this shape buys is that English
- * stops saying "1 passages", which it did when this was one string.
+ * stops saying "1 notes", which it did when this was one string.
  */
 export type Plural = { 
 /**

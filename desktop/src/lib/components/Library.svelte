@@ -128,7 +128,7 @@
               >
             </span>
             <span class="meta apparatus-text">
-              {plural(t().passages, e.excerpts)}{e.modifiedMs
+              {plural(t().notes, e.excerpts)}{e.modifiedMs
                 ? ` · saved ${savedLabel(e.modifiedMs)}`
                 : ""}
             </span>

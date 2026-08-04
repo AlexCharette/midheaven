@@ -73,9 +73,9 @@ webview only renders.
 **Live session recording:** when the form's model field points at a ggml
 file, the reading page shows *begin transcribing* — the microphone records
 natively (cpal) while the reading happens; *stop* transcribes the take and
-routes its passages into the index and commentary, appending across takes
+routes its notes into the index and commentary, appending across takes
 with running time anchors (a transcript loaded at build time keeps its
-passages). macOS asks for microphone permission on first use
+notes). macOS asks for microphone permission on first use
 (`NSMicrophoneUsageDescription` ships in the bundle's Info.plist).
 
 **Preferences** (the quiet link under the birth form): a models folder with a

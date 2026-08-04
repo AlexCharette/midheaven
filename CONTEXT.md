@@ -14,17 +14,36 @@ what gets built, curated, saved to the library, and exported.
 ## Chart
 
 The computed natal chart — `contract::ChartData`. Positions, houses, aspects and
-the localized names for them, plus any passages filed against them.
+the localized names for them, plus any notes filed against them.
 
-## Passage · Excerpt
+## Note
 
-**The same thing.** A verbatim span of the transcript filed under the chart
-elements it refers to. The type is `contract::Excerpt`; the UI, the PDF and most
-comments say "passage". Prefer *passage* in prose and user-facing text, *excerpt*
-only when naming the type or its field.
+One piece of writing filed under the chart elements it refers to. The type is
+`contract::Note`. Say *note* everywhere — prose, UI, comments, code. It replaced
+two words for one thing: the type was `Excerpt`, the UI and the PDF said
+"passage", and the doc that told you which to use where was this entry.
 
-Passages are always verbatim: the text must equal the transcript slice its span
-points at. That is provenance, not a formatting preference.
+A note is **spoken** or **written**, and its `span` is what tells them apart.
+
+A **spoken** note came from the transcript. It carries byte offsets into it, and
+its text must equal the transcript slice those offsets point at. That is
+provenance, not a formatting preference, and the **Verify gate** exists to
+establish it.
+
+A **written** note was authored by hand — from the reading view, or from the
+home page over a chart the astrologer was only looking at. There is no
+transcript behind it, so it carries no span.
+
+The distinction is *provenance only*. Both kinds file under the same vocabulary,
+filter through the same rules, and render alike in the app, the PDF and the
+artifact. A reader is not told which is which; a note may carry no tags at all,
+in which case it shows whenever no filter is active.
+
+The wire is unchanged and deliberately out of step: the list is still spelled
+`excerpts` on `ChartData`, in every `chart.json` and in the `const DATA` of every
+artifact ever exported, and a written note's absent span is still written
+`[0, 0]`. That is compatibility, not vocabulary — `contract::span` maps between
+the two so nothing already on disk, or already in someone's hands, has to change.
 
 ## Tag id
 
@@ -40,9 +59,15 @@ gate rejects anything outside it.
 
 ## Verify gate
 
-The provenance check between a router's output and a chart's passages: the span
-must be a real slice of the transcript, and every tag must be in the chart's
-vocabulary. Rejections surface as warnings rather than failing the build.
+The provenance check between a router's output and a chart's notes: the span
+must be a real slice of the transcript and non-empty, and every tag must be in
+the chart's vocabulary. Rejections surface as warnings rather than failing the
+build.
+
+The gate only ever sees *spoken* notes — it is what makes them spoken. A written
+note never passes through it, which is why an empty span is refused here: that is
+how a written note is spelled on the wire, and a routed note carrying one would
+come back from disk as the wrong kind.
 
 ## Artifact
 
@@ -84,7 +109,7 @@ the same stretch of the recording. A take that fails to transcribe is
 ## Reproject
 
 Recompute a chart's geometry for a different house system or zodiac, carrying its
-passages onto the result. Only the geometry changes; the vocabulary is stable
+notes onto the result. Only the geometry changes; the vocabulary is stable
 enough that existing tags stay valid.
 
 ## Derivation · Derived field

@@ -4,7 +4,7 @@
   // A cusp is a longitude the chart carries, not a body, so it has no derived
   // position to read — the one case in this file that still derives.
   import { positionOf } from "$lib/derive";
-  import { passageCount } from "$lib/focus";
+  import { noteCount } from "$lib/focus";
   import { focusedTag } from "$lib/focus.svelte";
   import { defaults } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
@@ -54,9 +54,9 @@
   const focusTag = $derived(focusedTag());
   const cat = $derived(focusTag ? catOf(focusTag) : "");
   const count = $derived(
-    focusTag ? passageCount(chart, focusTag) : 0,
+    focusTag ? noteCount(chart, focusTag) : 0,
   );
-  const passages = (n: number) => plural(t().passages, n);
+  const notes = (n: number) => plural(t().notes, n);
 
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
   const planetGlyph = (id: string) => planetById(chart, id)?.glyph ?? "";
@@ -122,7 +122,7 @@
               {/each}
             </p>
           {/if}
-          <p class="count">{passages(count)}</p>
+          <p class="count">{notes(count)}</p>
         {/if}
       {:else if cat === "sign"}
         {@const s = chart.signs.find((x) => x.id === focusTag)}
@@ -136,7 +136,7 @@
               {#each occ as p (p.id)}<span class="astro g-planet" title={p.name}>{textGlyph(p.glyph)}</span>{/each}
             {:else}<span class="empty">no bodies here</span>{/if}
           </p>
-          <p class="count">{passages(count)}</p>
+          <p class="count">{notes(count)}</p>
         {/if}
       {:else if cat === "house"}
         {@const h = chart.houses.find((x) => x.id === focusTag)}
@@ -153,7 +153,7 @@
               {#each occ as p (p.id)}<span class="astro g-planet" title={p.name}>{textGlyph(p.glyph)}</span>{/each}
             {:else}<span class="empty">no bodies here</span>{/if}
           </p>
-          <p class="count">{passages(count)}</p>
+          <p class="count">{notes(count)}</p>
         {/if}
       {:else if cat === "aspect"}
         {@const a = chart.aspects.find((x) => x.id === focusTag)}
@@ -162,7 +162,7 @@
           <p class="name">{planetName(a.a)} – {planetName(a.b)}</p>
           <p class="pos sub nature-{a.nature}">{a.name} · {a.nature}</p>
           <p class="pos sub">{fmtOrb(a.orb)}</p>
-          <p class="count">{passages(count)}</p>
+          <p class="count">{notes(count)}</p>
         {/if}
       {/if}
       </div>

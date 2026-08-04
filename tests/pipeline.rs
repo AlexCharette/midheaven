@@ -24,18 +24,20 @@ fn transcript_to_artifact() {
     let router = LexiconRouter::new(&vocab, &chart.aspects, Locale::En);
     route_into_with(&mut chart, &transcript, &router, Filing::Fresh);
 
-    // Nine routed sentences coalesce into five passages (consecutive
-    // passages sharing a tag merge); spot-check known tags.
-    assert_eq!(chart.excerpts.len(), 5);
-    let first = &chart.excerpts[0];
+    // Nine routed sentences coalesce into five notes (consecutive
+    // notes sharing a tag merge); spot-check known tags.
+    assert_eq!(chart.notes.len(), 5);
+    let first = &chart.notes[0];
     assert!(first.tags.contains(&"planet:sun".to_string()));
     assert!(first.tags.contains(&"sign:cancer".to_string()));
     assert!(first.tags.contains(&"house:10".to_string()));
     assert_eq!(first.time, "00:00:42");
     // Provenance invariant holds end to end.
-    for ex in &chart.excerpts {
-        assert_eq!(ex.text, &transcript.text[ex.span[0]..ex.span[1]]);
-        assert!(ex.tags.iter().all(|t| vocab.contains(t)));
+    for note in &chart.notes {
+        // Every note here is spoken, so every span is real.
+        let [s, e] = note.span.expect("a routed note carries its provenance");
+        assert_eq!(note.text, &transcript.text[s..e]);
+        assert!(note.tags.iter().all(|t| vocab.contains(t)));
     }
 
     let html = emit(&chart).expect("emit succeeds");
@@ -48,21 +50,22 @@ fn transcript_to_artifact() {
         concat!(env!("CARGO_MANIFEST_DIR"), "/examples/transcript.jsonl").into(),
     );
     let (via_lib, report) = build_reading(&input, source, |_| {}).expect("build_reading");
-    assert_eq!(via_lib.excerpts.len(), chart.excerpts.len());
+    assert_eq!(via_lib.notes.len(), chart.notes.len());
     assert_eq!(report.n_routed, 9, "router emits sentence-level spans before coalescing");
     assert!(report.warnings.is_empty(), "clean chart routes without warnings: {:?}", report.warnings);
 
     // The transcript comes back for callers that archive the reading — the
     // desktop writes exactly this into the library folder. Verbatim, and named
-    // after the source's kind, so a saved passage's span still points at it.
+    // after the source's kind, so a saved note's span still points at it.
     let archived = report.transcript.expect("a file build archives its transcript");
     assert_eq!(archived.filename, "transcript.jsonl");
     assert_eq!(archived.contents, raw, "archived verbatim");
-    for ex in &via_lib.excerpts {
+    for note in &via_lib.notes {
         let reparsed = Transcript::load(&archived.contents);
+        let [s, e] = note.span.expect("a routed note carries its provenance");
         assert_eq!(
-            ex.text,
-            &reparsed.text[ex.span[0]..ex.span[1]],
+            note.text,
+            &reparsed.text[s..e],
             "spans must still resolve against the archived transcript"
         );
     }
@@ -75,7 +78,7 @@ fn a_chart_only_build_archives_no_transcript() {
     let input = fixtures::named("No Words");
     let (chart, report) =
         build_reading(&input, TranscriptSource::None, |_| {}).expect("build_reading");
-    assert!(chart.excerpts.is_empty());
+    assert!(chart.notes.is_empty());
     assert_eq!(report.n_routed, 0);
     assert_eq!(report.transcript, None);
 }
@@ -97,9 +100,9 @@ fn a_text_transcript_keeps_its_extension() {
     let archived = report.transcript.expect("archived");
     assert_eq!(archived.filename, "transcript.txt");
     assert_eq!(archived.contents, words);
-    assert!(!chart.excerpts.is_empty(), "the words name chart elements");
-    // Plain text carries no time anchors, so passages have no time.
-    assert!(chart.excerpts.iter().all(|ex| ex.time.is_empty()));
+    assert!(!chart.notes.is_empty(), "the words name chart elements");
+    // Plain text carries no time anchors, so notes have no time.
+    assert!(chart.notes.iter().all(|n| n.time.is_empty()));
 
     std::fs::remove_dir_all(&dir).ok();
 }

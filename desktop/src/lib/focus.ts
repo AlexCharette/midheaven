@@ -6,16 +6,16 @@
 //
 // These rules used to be scattered: the pin-locks-hover rule lived here, the
 // hover-preview half of it in `+page.svelte`, and the tag-matching rule was
-// restated four times — once as the canonical `excerptsMatching`, once in
+// restated four times — once as the canonical `notesMatching`, once in
 // `+page.svelte` for the hover preview, once in `ChartCore` for the hub count,
 // and once in `Commentary` as an inline `.some(t => selected.has(t))`. Each
 // restatement was the same rule spelled differently, so a change to it had four
 // places to reach.
 
-import type { ChartData, Excerpt } from "./types";
+import type { ChartData, Note } from "./types";
 import { catOf, planetById, signOf } from "./types";
 
-/** How a multi-tag selection filters: `any` = the passage touches one of the
+/** How a multi-tag selection filters: `any` = the note touches one of the
  * tags, `all` = it touches every one. */
 export type Mode = "any" | "all";
 
@@ -63,7 +63,7 @@ export const withMode = (f: Focus, mode: Mode): Focus => ({ ...f, mode });
 
 // ---- what the focus selects ----
 
-/** An empty tag list shows everything; `any` = the passage touches one of the
+/** An empty tag list shows everything; `any` = the note touches one of the
  * tags, `all` = it touches every one.
  *
  * The one home for this rule in the app. The emitted artifact states it a second
@@ -71,34 +71,34 @@ export const withMode = (f: Focus, mode: Mode): Focus => ({ ...f, mode });
  * that cannot import this one — that copy is the only other, and it says so.
  * Rust used to carry a third in `contract.rs`, documented as the shared one and
  * called by nobody. */
-export function matching(chart: ChartData, tags: string[], mode: Mode): Excerpt[] {
+export function matching(chart: ChartData, tags: string[], mode: Mode): Note[] {
   if (tags.length === 0) return chart.excerpts;
-  const has = (ex: Excerpt) => (t: string) => ex.tags.includes(t);
+  const has = (note: Note) => (t: string) => note.tags.includes(t);
   return chart.excerpts.filter((ex) =>
     mode === "any" ? tags.some(has(ex)) : tags.every(has(ex)),
   );
 }
 
-/** The passages the commentary shows.
+/** The notes the commentary shows.
  *
- * With nothing pinned, hovering an element previews just its passages; once
+ * With nothing pinned, hovering an element previews just its notes; once
  * anything is pinned the hover preview stops and the list tracks the pinned
  * selection (an empty selection being the whole reading). */
-export function visibleExcerpts(chart: ChartData, f: Focus): Excerpt[] {
+export function visibleNotes(chart: ChartData, f: Focus): Note[] {
   if (f.pinned.length === 0 && f.hovered !== null) {
     return matching(chart, [f.hovered], "any");
   }
   return matching(chart, f.pinned, f.mode);
 }
 
-/** Whether a passage is part of the pinned selection — the wash the commentary
+/** Whether a note is part of the pinned selection — the wash the commentary
  * puts on its pinned rows. Nothing is washed when nothing is pinned. */
-export function touchesPins(f: Focus, ex: Excerpt): boolean {
-  return f.pinned.length > 0 && ex.tags.some((t) => f.pinned.includes(t));
+export function touchesPins(f: Focus, note: Note): boolean {
+  return f.pinned.length > 0 && note.tags.some((t) => f.pinned.includes(t));
 }
 
-/** How many passages touch a single tag — the hub read-out's count. */
-export const passageCount = (chart: ChartData, tag: string): number =>
+/** How many notes touch a single tag — the hub read-out's count. */
+export const noteCount = (chart: ChartData, tag: string): number =>
   matching(chart, [tag], "any").length;
 
 // ---- what lights up with it ----
@@ -143,8 +143,8 @@ export function occupiedTags(chart: ChartData): Set<string> {
   return new Set(chart.planets.flatMap((p) => [signOf(chart, p).id, `house:${p.house}`]));
 }
 
-/** Passage weight per sign (index 0 = Aries … 11 = Pisces), for the outer
- * density track: how much the reading dwelt on each sign. A passage counts
+/** Note weight per sign (index 0 = Aries … 11 = Pisces), for the outer
+ * density track: how much the reading dwelt on each sign. A note counts
  * toward a sign when it is tagged with that sign, or with a planet standing in
  * it — so a talkative Sun lights up its own sign even when the words never
  * named the sign directly. */

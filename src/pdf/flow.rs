@@ -7,7 +7,7 @@ use super::fonts::{Face, Fonts, glyph_face};
 use super::palette::*;
 use super::primitives::hline;
 use super::text::{draw_str, draw_tracked, wrap};
-use crate::contract::{Body, ChartData, Excerpt};
+use crate::contract::{Body, ChartData, Note};
 use crate::i18n::Locale;
 use krilla::surface::Surface;
 use std::ops::Range;
@@ -40,7 +40,7 @@ impl FlowLine<'_> {
 /// Everything pagination needs to know about a line, and nothing else.
 ///
 /// Separate from [`FlowLine`] because a `FlowLine` borrows the chart it paints
-/// (`&'c str` into names and passage text), so a test could not build one
+/// (`&'c str` into names and note text), so a test could not build one
 /// without running the ephemeris. A `Measure` is two `Copy` fields, which is
 /// what makes [`slices`] testable at all.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -55,7 +55,7 @@ pub(crate) struct Measure {
 ///
 ///  1. **Fit.** Take lines while they fit in `room`.
 ///  2. **Pull back.** Give back any trailing keep-with-next run, so a rubric or
-///     a passage's folio line never sits alone above a break.
+///     a note's folio line never sits alone above a break.
 ///
 /// Progress wins over rule 2: if pulling back would empty the page, one line
 /// stays and its keep is broken — a page that took nothing would loop forever.
@@ -149,10 +149,15 @@ fn tag_chip(chart: &ChartData, tag: &str) -> Option<(String, Face, (u8, u8, u8))
     None
 }
 
-/// The passage block: folio line (time anchor + tag chips) and wrapped text.
-fn passage<'c>(
+/// A note's block: folio line (time anchor + tag chips) and wrapped text.
+///
+/// Spoken and written notes take the same treatment — the paper says nothing
+/// about which is which. A written note simply has no time anchor, so the
+/// folio's left slot stays empty, exactly as it does for a spoken note whose
+/// transcript carried no timestamps.
+fn note_block<'c>(
     chart: &'c ChartData,
-    ex: &'c Excerpt,
+    note: &'c Note,
     fonts: &Fonts,
     frame: &Frame,
 ) -> Vec<FlowLine<'c>> {
@@ -162,7 +167,7 @@ fn passage<'c>(
 
     // folio: chips laid out right-to-left from the right edge, time on the left
     let chips: Vec<(String, Face, (u8, u8, u8))> =
-        ex.tags.iter().filter_map(|t| tag_chip(chart, t)).collect();
+        note.tags.iter().filter_map(|t| tag_chip(chart, t)).collect();
     let chip_size = 10.0;
     let mut positions = Vec::new();
     let mut right = margin + cw;
@@ -172,7 +177,7 @@ fn passage<'c>(
         positions.push((right, text, face, color));
         right -= 10.0;
     }
-    let time: &'c str = &ex.time;
+    let time: &'c str = &note.time;
     out.push(FlowLine {
         h: 16.0,
         keep: true,
@@ -189,7 +194,7 @@ fn passage<'c>(
 
     let size = 10.5;
     let leading = 16.0;
-    for (i, line) in wrap(fonts, Face::Regular, size, cw, &ex.text).into_iter().enumerate() {
+    for (i, line) in wrap(fonts, Face::Regular, size, cw, &note.text).into_iter().enumerate() {
         out.push(FlowLine {
             h: leading,
             keep: i == 0, // the folio must not sit alone above a page break
@@ -246,12 +251,12 @@ pub(crate) fn build_flow<'c>(chart: &'c ChartData, fonts: &Fonts, frame: &Frame)
         }
     }
 
-    if !chart.excerpts.is_empty() {
+    if !chart.notes.is_empty() {
         flow.push(spacer(20.0));
         flow.push(rubric(frame, loc.pdf().commentary));
         flow.push(spacer(4.0));
-        for ex in &chart.excerpts {
-            flow.extend(passage(chart, ex, fonts, frame));
+        for note in &chart.notes {
+            flow.extend(note_block(chart, note, fonts, frame));
         }
     }
     flow
@@ -265,7 +270,7 @@ mod tests {
     fn line(h: f32) -> Measure {
         Measure { h, keep: false }
     }
-    /// A line that must not be the last on its page — a rubric, or a passage's
+    /// A line that must not be the last on its page — a rubric, or a note's
     /// folio line.
     fn kept(h: f32) -> Measure {
         Measure { h, keep: true }

@@ -12,7 +12,12 @@ chartPath: string,
 /**
  * The reading's folder — fed to `delete_reading`.
  */
-dir: string, name: string, born: string, place: string, excerpts: number, 
+dir: string, name: string, born: string, place: string, 
+/**
+ * How many notes are filed under the chart. Named for the wire, which
+ * still spells a note `excerpt` — see `contract::ChartData::notes`.
+ */
+excerpts: number, 
 /**
  * `chart.json`'s mtime, ms since the epoch — sort key and "saved" date.
  * Serialized as a JSON number; ms-since-epoch stays within JS's safe

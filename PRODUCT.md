@@ -10,7 +10,7 @@ Two audiences share one artifact. The reading's recipient revisits it as a keeps
 
 ## Product Purpose
 
-Turn a recorded birth-chart reading into a single, self-contained, offline HTML artifact where the astrologer's *verbatim* words are filed under the chart elements they refer to, filterable by a computed chart wheel and element token bands. Success: the artifact feels like an heirloom document, works from `file://` forever, and every excerpt is traceable to its transcript span.
+Turn a recorded birth-chart reading into a single, self-contained, offline HTML artifact where the astrologer's *verbatim* words are filed under the chart elements they refer to, filterable by a computed chart wheel and element token bands. Success: the artifact feels like an heirloom document, works from `file://` forever, and every spoken note is traceable to its transcript span.
 
 ## Brand Personality
 

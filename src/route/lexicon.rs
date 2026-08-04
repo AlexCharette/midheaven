@@ -2,7 +2,7 @@
 //! chart vocabulary; aspect tags additionally require both planet tags to
 //! have matched and a matching aspect word in the same sentence.
 
-use super::{RawExcerpt, Router, Transcript};
+use super::{RawNote, Router, Transcript};
 use crate::contract::Aspect;
 use crate::i18n::Locale;
 use std::collections::BTreeSet;
@@ -71,7 +71,7 @@ fn contains_term(haystack: &str, term: &str) -> bool {
 }
 
 impl Router for LexiconRouter {
-    fn route(&self, transcript: &Transcript) -> Vec<RawExcerpt> {
+    fn route(&self, transcript: &Transcript) -> Vec<RawNote> {
         let mut out = Vec::new();
         for (start, end) in transcript.sentences() {
             let sentence = transcript.text[start..end].to_lowercase();
@@ -94,7 +94,7 @@ impl Router for LexiconRouter {
             tags.sort();
             tags.dedup();
             if !tags.is_empty() {
-                out.push(RawExcerpt { span: (start, end), tags });
+                out.push(RawNote { span: (start, end), tags });
             }
         }
         out

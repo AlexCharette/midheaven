@@ -130,7 +130,7 @@
       // supplied; a bare chart with no transcript routes nothing.
       if (transcript.trim()) {
         const n = chart.excerpts.length;
-        notify(`${n} ${n === 1 ? "passage" : "passages"} routed past the verify gate`);
+        notify(`${n} ${n === 1 ? "note" : "notes"} routed past the verify gate`);
       }
       setModelPath(model.trim());
     } catch (e) {

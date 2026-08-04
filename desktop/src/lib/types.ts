@@ -13,7 +13,7 @@ export type { Body } from "./generated/Body";
 export type { Ref } from "./generated/Ref";
 export type { HouseRef } from "./generated/HouseRef";
 export type { Aspect } from "./generated/Aspect";
-export type { Excerpt } from "./generated/Excerpt";
+export type { Note } from "./generated/Note";
 export type { PlaceDto } from "./generated/PlaceDto";
 export type { Preferences } from "./generated/Preferences";
 export type { ReadingEntry } from "./generated/ReadingEntry";

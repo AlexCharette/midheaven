@@ -2,9 +2,9 @@
 import type { Aspect } from "./Aspect";
 import type { Axes } from "./Axes";
 import type { Body } from "./Body";
-import type { Excerpt } from "./Excerpt";
 import type { HouseRef } from "./HouseRef";
 import type { Meta } from "./Meta";
+import type { Note } from "./Note";
 import type { Ref } from "./Ref";
 
 export type ChartData = { meta: Meta, axes: Axes, houseCusps: Array<number>, 
@@ -13,4 +13,11 @@ export type ChartData = { meta: Meta, axes: Axes, houseCusps: Array<number>,
  * [`crate::derive::sweep`]. Parallel to `house_cusps`. Absent from charts
  * saved before the field existed; `derive::fill` restores it on load.
  */
-houseSweeps: Array<number>, planets: Array<Body>, signs: Array<Ref>, houses: Array<HouseRef>, aspects: Array<Aspect>, excerpts: Array<Excerpt>, };
+houseSweeps: Array<number>, planets: Array<Body>, signs: Array<Ref>, houses: Array<HouseRef>, aspects: Array<Aspect>, 
+/**
+ * Every note filed under this chart, spoken and written alike. The wire
+ * name stays `excerpts`: it is in every saved `chart.json` and in the
+ * `const DATA` of every artifact ever exported, both of which must keep
+ * loading. The word the project uses is *note* — see CONTEXT.md.
+ */
+excerpts: Array<Note>, };

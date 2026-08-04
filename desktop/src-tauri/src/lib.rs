@@ -9,7 +9,7 @@ mod record;
 mod session;
 
 use astro::chart::parse_time;
-use astro::contract::{ChartData, Excerpt};
+use astro::contract::{ChartData, Note};
 use astro::chart::systems;
 use astro::route::{next_ordinal, retag};
 use astro::{TranscriptSource, geo};
@@ -389,7 +389,7 @@ struct Carried {
     name: String,
     locale: astro::i18n::Locale,
     seed: astro::contract::BirthSeed,
-    excerpts: Vec<Excerpt>,
+    notes: Vec<Note>,
     astrologer: Option<String>,
     logo: Option<String>,
 }
@@ -404,14 +404,14 @@ impl Carried {
                 .birth
                 .clone()
                 .ok_or("this reading has no saved birth data to recalculate from")?,
-            excerpts: old.excerpts.clone(),
+            notes: old.notes.clone(),
             astrologer: old.meta.astrologer.clone(),
             logo: old.meta.logo.clone(),
         })
     }
 
     fn onto(self, chart: &mut ChartData) {
-        chart.excerpts = self.excerpts;
+        chart.notes = self.notes;
         chart.meta.astrologer = self.astrologer;
         chart.meta.logo = self.logo;
         chart.meta.birth = Some(self.seed);
@@ -421,8 +421,8 @@ impl Carried {
 /// Recompute the current chart's geometry under a new house system / zodiac,
 /// live from the reading view. Reconstructs the birth input from `meta.birth`
 /// (so it works for both freshly-built and library-reopened readings), then
-/// carries the routed passages and branding onto the new chart — excerpt tags
-/// describe spoken words, not placements, so they stay valid across the swap.
+/// carries the notes and branding onto the new chart — a note's tags
+/// describe words, not placements, so they stay valid across the swap.
 #[tauri::command]
 fn reproject(
     state: State<'_, AppState>,
@@ -544,18 +544,18 @@ fn set_last_place(app: AppHandle, id: u32) -> Result<(), String> {
     prefs::save(&app, &p)
 }
 
-/// Merge the excerpt into its predecessor: verbatim parts joined, tags
-/// unioned, the earlier passage's time anchor kept (contract semantics via
-/// [`Excerpt::absorb`]; only the text-joining strategy is ours).
-fn merge_up_in(excerpts: &mut Vec<Excerpt>, id: &str) -> Result<(), String> {
-    let i = excerpts.iter().position(|e| e.id == id).ok_or("no such passage")?;
+/// Merge a note into its predecessor: verbatim parts joined, tags
+/// unioned, the earlier note's time anchor kept (contract semantics via
+/// [`Note::absorb`]; only the text-joining strategy is ours).
+fn merge_up_in(notes: &mut Vec<Note>, id: &str) -> Result<(), String> {
+    let i = notes.iter().position(|n| n.id == id).ok_or("no such note")?;
     if i == 0 {
-        return Err("the first passage has nothing above it to merge into".to_string());
+        return Err("the first note has nothing above it to merge into".to_string());
     }
-    let cur = excerpts.remove(i);
-    let joined = format!("{} {}", excerpts[i - 1].text, cur.text);
-    excerpts[i - 1].absorb(cur);
-    excerpts[i - 1].text = joined;
+    let cur = notes.remove(i);
+    let joined = format!("{} {}", notes[i - 1].text, cur.text);
+    notes[i - 1].absorb(cur);
+    notes[i - 1].text = joined;
     Ok(())
 }
 
@@ -565,24 +565,24 @@ fn merge_up_in(excerpts: &mut Vec<Excerpt>, id: &str) -> Result<(), String> {
 fn correct_in(chart: &mut ChartData, id: &str, text: &str) -> Result<(), String> {
     let text = text.trim();
     if text.is_empty() {
-        return Err("a passage cannot be amended to nothing".to_string());
+        return Err("a note cannot be amended to nothing".to_string());
     }
     let tags = retag(chart, text); // same gated path as all routing
-    let ex = chart
-        .excerpts
+    let note = chart
+        .notes
         .iter_mut()
-        .find(|e| e.id == id)
-        .ok_or("no such passage")?;
-    ex.text = text.to_string();
+        .find(|n| n.id == id)
+        .ok_or("no such note")?;
+    note.text = text.to_string();
     if !tags.is_empty() {
-        ex.tags = tags;
+        note.tags = tags;
     }
     Ok(())
 }
 
 #[tauri::command]
 fn merge_up(state: State<'_, AppState>, id: String) -> Result<ChartData, String> {
-    with_chart(&state, |chart| merge_up_in(&mut chart.excerpts, &id))
+    with_chart(&state, |chart| merge_up_in(&mut chart.notes, &id))
 }
 
 #[tauri::command]
@@ -594,14 +594,14 @@ fn correct_excerpt(
     with_chart(&state, |chart| correct_in(chart, &id, &text))
 }
 
-/// Author a passage by hand. Hand-picked tags must exist in the chart's
+/// Write a note by hand. Hand-picked tags must exist in the chart's
 /// vocabulary (the verify gate's spirit); with none picked, the router files
-/// it from the words — and a passage it can't file stays untagged, visible
+/// it from the words — and a note it can't file stays untagged, visible
 /// whenever no filter is active.
 fn add_in(chart: &mut ChartData, text: &str, tags: Vec<String>) -> Result<(), String> {
     let text = text.trim();
     if text.is_empty() {
-        return Err("a passage needs words".to_string());
+        return Err("a note needs words".to_string());
     }
     let vocab = chart.vocab();
     if let Some(bad) = tags.iter().find(|t| !vocab.contains(*t)) {
@@ -615,10 +615,10 @@ fn add_in(chart: &mut ChartData, text: &str, tags: Vec<String>) -> Result<(), St
         tags.dedup();
         tags
     };
-    chart.excerpts.push(Excerpt {
-        id: format!("x{}", next_ordinal(&chart.excerpts)),
+    chart.notes.push(Note {
+        id: format!("x{}", next_ordinal(&chart.notes)),
         time: String::new(),
-        span: [0, 0], // authored, not anchored to a transcript
+        span: None, // written, not anchored to a transcript
         text: text.to_string(),
         tags,
     });
@@ -635,15 +635,15 @@ fn add_excerpt(
 }
 
 /// Remove a passage. The frontend confirms first; removal is final.
-fn delete_in(excerpts: &mut Vec<Excerpt>, id: &str) -> Result<(), String> {
-    let i = excerpts.iter().position(|e| e.id == id).ok_or("no such passage")?;
-    excerpts.remove(i);
+fn delete_in(notes: &mut Vec<Note>, id: &str) -> Result<(), String> {
+    let i = notes.iter().position(|n| n.id == id).ok_or("no such note")?;
+    notes.remove(i);
     Ok(())
 }
 
 #[tauri::command]
 fn delete_excerpt(state: State<'_, AppState>, id: String) -> Result<ChartData, String> {
-    with_chart(&state, |chart| delete_in(&mut chart.excerpts, &id))
+    with_chart(&state, |chart| delete_in(&mut chart.notes, &id))
 }
 
 #[tauri::command]
@@ -961,11 +961,11 @@ mod tests {
         astro::fixtures::berlin_chart()
     }
 
-    fn ex(id: &str, text: &str, tags: &[&str]) -> Excerpt {
-        Excerpt {
+    fn ex(id: &str, text: &str, tags: &[&str]) -> Note {
+        Note {
             id: id.into(),
             time: String::new(),
-            span: [0, text.len()],
+            span: Some([0, text.len()]),
             text: text.into(),
             tags: tags.iter().map(|s| s.to_string()).collect(),
         }
@@ -974,19 +974,19 @@ mod tests {
     #[test]
     fn chart_json_round_trips_for_loading() {
         // The load_chart path relies on ChartData deserializing from the same
-        // pretty JSON `library::save_chart` writes. Route a passage first so the
-        // excerpt list is non-empty.
+        // pretty JSON `library::save_chart` writes. File a note first so the
+        // note list is non-empty.
         let mut chart = chart_fixture();
-        chart.excerpts = vec![ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"])];
+        chart.notes = vec![ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"])];
         let json = serde_json::to_string_pretty(&chart).unwrap();
         let back: ChartData = serde_json::from_str(&json).unwrap();
         assert_eq!(back.meta.name, chart.meta.name);
         assert_eq!(back.planets.len(), chart.planets.len());
         assert_eq!(back.aspects.len(), chart.aspects.len());
-        assert_eq!(back.excerpts.len(), 1);
-        assert_eq!(back.excerpts[0].text, "The sun in cancer.");
-        assert_eq!(back.excerpts[0].tags, vec!["planet:sun", "sign:cancer"]);
-        assert_eq!(back.excerpts[0].span, [0, "The sun in cancer.".len()]);
+        assert_eq!(back.notes.len(), 1);
+        assert_eq!(back.notes[0].text, "The sun in cancer.");
+        assert_eq!(back.notes[0].tags, vec!["planet:sun", "sign:cancer"]);
+        assert_eq!(back.notes[0].span, Some([0, "The sun in cancer.".len()]));
         // `Aspect::kind` is #[serde(skip)] — it defaults to "" on load.
         assert!(back.aspects.iter().all(|a| a.kind.is_empty()));
     }
@@ -1004,7 +1004,7 @@ mod tests {
         });
         old.meta.astrologer = Some("A. Practitioner".into());
         old.meta.logo = Some("data:image/png;base64,AAAA".into());
-        old.excerpts = vec![ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"])];
+        old.notes = vec![ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"])];
 
         let carried = Carried::from(&old).expect("a seeded chart can be recalculated");
         assert_eq!(carried.name, old.meta.name);
@@ -1016,13 +1016,13 @@ mod tests {
             input.house_system = systems::house_system("placidus").unwrap();
             astro::chart::compute_chart(&input).unwrap()
         };
-        assert!(fresh.excerpts.is_empty());
+        assert!(fresh.notes.is_empty());
         assert_ne!(fresh.house_cusps, old.house_cusps, "the geometry really changed");
 
         carried.onto(&mut fresh);
 
-        assert_eq!(fresh.excerpts.len(), 1);
-        assert_eq!(fresh.excerpts[0].text, "The sun in cancer.");
+        assert_eq!(fresh.notes.len(), 1);
+        assert_eq!(fresh.notes[0].text, "The sun in cancer.");
         assert_eq!(fresh.meta.astrologer.as_deref(), Some("A. Practitioner"));
         assert_eq!(fresh.meta.logo.as_deref(), Some("data:image/png;base64,AAAA"));
         assert!(fresh.meta.birth.is_some(), "still recalculable afterwards");
@@ -1065,9 +1065,9 @@ mod tests {
     #[test]
     fn correction_retags_from_the_corrected_words() {
         let mut chart = chart_fixture();
-        chart.excerpts = vec![ex("x1", "Your son is in cancer.", &["sign:cancer"])];
+        chart.notes = vec![ex("x1", "Your son is in cancer.", &["sign:cancer"])];
         correct_in(&mut chart, "x1", "Your sun is in cancer.").unwrap();
-        let ex = &chart.excerpts[0];
+        let ex = &chart.notes[0];
         assert_eq!(ex.text, "Your sun is in cancer.");
         assert!(ex.tags.contains(&"planet:sun".to_string()), "tags: {:?}", ex.tags);
         assert!(ex.tags.contains(&"sign:cancer".to_string()));
@@ -1077,13 +1077,13 @@ mod tests {
     fn added_passage_validates_tags_and_continues_ids_past_gaps() {
         let mut chart = chart_fixture();
         // merged lists leave gaps: x1, x5
-        chart.excerpts = vec![
+        chart.notes = vec![
             ex("x1", "First.", &["planet:sun"]),
             ex("x5", "Fifth.", &["planet:moon"]),
         ];
         assert!(add_in(&mut chart, "Note.", vec!["planet:vulcan".into()]).is_err());
         add_in(&mut chart, "A note on the moon.", vec!["planet:moon".into()]).unwrap();
-        let added = chart.excerpts.last().unwrap();
+        let added = chart.notes.last().unwrap();
         assert_eq!(added.id, "x6");
         assert_eq!(added.tags, vec!["planet:moon"]);
         assert!(add_in(&mut chart, "   ", vec![]).is_err());
@@ -1135,14 +1135,14 @@ mod tests {
     fn appended_takes_never_collide_with_added_passage_ids() {
         // add past a merge gap, then route a take: ids must stay unique
         let mut chart = chart_fixture();
-        chart.excerpts = vec![ex("x1", "First.", &["planet:sun"]), ex("x5", "Fifth.", &["planet:moon"])];
+        chart.notes = vec![ex("x1", "First.", &["planet:sun"]), ex("x5", "Fifth.", &["planet:moon"])];
         add_in(&mut chart, "A note.", vec!["planet:sun".into()]).unwrap(); // x6
         let take = astro::route::Transcript::from_segments([astro::contract::Segment {
             start: 0.0,
             text: "The moon in pisces.".into(),
         }]);
         route_into(&mut chart, &take, Filing::Append);
-        let mut ids: Vec<&str> = chart.excerpts.iter().map(|e| e.id.as_str()).collect();
+        let mut ids: Vec<&str> = chart.notes.iter().map(|e| e.id.as_str()).collect();
         let before = ids.len();
         ids.sort();
         ids.dedup();
@@ -1150,20 +1150,20 @@ mod tests {
     }
 
     #[test]
-    fn added_passage_without_tags_is_filed_by_the_router() {
+    fn an_added_note_without_tags_is_filed_by_the_router() {
         let mut chart = chart_fixture();
         add_in(&mut chart, "The sun rules this whole chart.", vec![]).unwrap();
-        let added = chart.excerpts.last().unwrap();
+        let added = chart.notes.last().unwrap();
         assert!(added.tags.contains(&"planet:sun".to_string()), "tags: {:?}", added.tags);
-        assert_eq!(added.span, [0, 0]);
+        assert_eq!(added.span, None, "written by hand, so no provenance");
     }
 
     #[test]
     fn correction_without_router_hits_keeps_old_tags() {
         let mut chart = chart_fixture();
-        chart.excerpts = vec![ex("x1", "Something vague.", &["house:2"])];
+        chart.notes = vec![ex("x1", "Something vague.", &["house:2"])];
         correct_in(&mut chart, "x1", "Still nothing astrological here.").unwrap();
-        assert_eq!(chart.excerpts[0].tags, vec!["house:2"]);
+        assert_eq!(chart.notes[0].tags, vec!["house:2"]);
         assert!(correct_in(&mut chart, "x1", "   ").is_err());
     }
 }

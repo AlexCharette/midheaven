@@ -52,7 +52,7 @@ pub trait Capture: Send {
 /// onto it.
 #[derive(Debug)]
 pub struct Reading {
-    /// The chart's excerpt list is authoritative — takes append to it and
+    /// The chart's note list is authoritative — takes append to it and
     /// curation (merge/correct) edits it in place.
     pub chart: ChartData,
     /// `{readings_dir}/{name}_{date}/` when a readings folder is configured —
@@ -285,7 +285,7 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use astro::contract::Excerpt;
+    use astro::contract::Note;
 
     /// The second adapter behind [`Capture`]: no device, a duration we choose.
     struct FakeCapture {
@@ -426,12 +426,12 @@ mod tests {
     }
 
     #[test]
-    fn landing_a_take_appends_to_the_passages_already_there() {
+    fn landing_a_take_appends_to_the_notes_already_there() {
         let mut s = open();
-        s.reading_mut().unwrap().chart.excerpts.push(Excerpt {
+        s.reading_mut().unwrap().chart.notes.push(Note {
             id: "x1".into(),
             time: String::new(),
-            span: [0, 0],
+            span: None,
             text: "Curated by hand.".into(),
             tags: vec![],
         });
@@ -440,10 +440,10 @@ mod tests {
         let pending = s.end_take().unwrap();
         s.land_take(pending, vec![seg(0.0, "The sun is in cancer.")]).unwrap();
 
-        let excerpts = &s.reading().unwrap().chart.excerpts;
-        assert!(excerpts.len() > 1, "the take appended rather than replacing");
-        assert_eq!(excerpts[0].id, "x1", "earlier curation survives the take");
-        assert_eq!(excerpts[0].text, "Curated by hand.");
+        let notes = &s.reading().unwrap().chart.notes;
+        assert!(notes.len() > 1, "the take appended rather than replacing");
+        assert_eq!(notes[0].id, "x1", "earlier curation survives the take");
+        assert_eq!(notes[0].text, "Curated by hand.");
     }
 
     #[test]
@@ -530,14 +530,14 @@ mod tests {
 
         let mut recomputed = chart();
         recomputed.meta.system = "Placidus".into();
-        recomputed.excerpts = s.reading().unwrap().chart.excerpts.clone();
+        recomputed.notes = s.reading().unwrap().chart.notes.clone();
         s.resettle(recomputed).unwrap();
 
         let r = s.reading().unwrap();
         assert_eq!(r.chart.meta.system, "Placidus");
         assert_eq!(r.dir.as_deref(), Some(std::path::Path::new("/lib/mira")));
         assert_eq!(r.artifact_name, "mira.html");
-        assert!(!r.chart.excerpts.is_empty());
+        assert!(!r.chart.notes.is_empty());
         // The clock and the take count are the session's, not the chart's.
         s.begin_take("m.bin".into(), capture(1.0)).unwrap();
         let pending = s.end_take().unwrap();

@@ -21,7 +21,7 @@
     whyCannotRecord,
   } from "$lib/session.svelte";
   import { busy, during, isBusy, setProgress } from "$lib/busy.svelte";
-  import { clearPins, mode, resetFocus, setMode, visibleExcerpts } from "$lib/focus.svelte";
+  import { clearPins, mode, resetFocus, setMode, visibleNotes } from "$lib/focus.svelte";
   import { canRecord, loadCalcOptions, loadLocales, modelPath, setModelPath } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
   import { TROPICAL } from "$lib/types";
@@ -35,10 +35,10 @@
   import { reason } from "$lib/failure";
 
   const reading = $derived(openChart());
-  // Which passages the hover and the pins add up to is the focus module's rule,
+  // Which notes the hover and the pins add up to is the focus module's rule,
   // not this view's — the hover-preview half of it used to live here, apart from
   // the pin rule it completes.
-  const visible = $derived(reading ? visibleExcerpts(reading) : []);
+  const visible = $derived(reading ? visibleNotes(reading) : []);
   // A local binding so the template can narrow the discriminated phase.
   const phase = $derived(busy());
 
@@ -106,7 +106,7 @@
       const routed = await during("transcribe", stopRecording);
       updateChart(routed);
       // English: this whole sentence has no Russian yet, like the forms'.
-      notify(`${routed.excerpts.length} passages on the chart`);
+      notify(`${routed.excerpts.length} notes on the chart`);
     } catch (e) {
       notify(reason(e), "error");
     }
@@ -168,7 +168,7 @@
 
     <section>
       <div class="toolbar">
-        <span class="apparatus-text">{t().passagesTouching}</span>
+        <span class="apparatus-text">{t().notesTouching}</span>
         <span class="segmented">
           <button aria-pressed={mode() === "any"} onclick={() => setMode("any")} title={t().anyTitle}>{t().any}</button>
           <button aria-pressed={mode() === "all"} onclick={() => setMode("all")} title={t().allTitle}>{t().all}</button>

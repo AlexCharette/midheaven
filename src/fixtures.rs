@@ -12,7 +12,7 @@
 //! turns on in its dev-dependencies and neither ships.
 
 use crate::chart::BirthInput;
-use crate::contract::{Aspect, Axes, Body, ChartData, Excerpt, HouseRef, Meta, Ref};
+use crate::contract::{Aspect, Axes, Body, ChartData, HouseRef, Meta, Note, Ref};
 
 /// 13 July 1990, 14:30 in Berlin — tropical, Whole Sign. The birth nine tests
 /// were each spelling out.
@@ -43,7 +43,7 @@ pub fn berlin_chart() -> ChartData {
 }
 
 /// A structurally valid chart with no astronomy behind it: twelve signs, houses
-/// and cusps, one body, one aspect, no passages.
+/// and cusps, one body, one aspect, no notes.
 ///
 /// Deliberately the *fullest* minimal chart — `validate` requires twelve of each
 /// and a closed vocabulary, and a test that wants less can clear what it does
@@ -52,6 +52,7 @@ pub fn berlin_chart() -> ChartData {
 pub fn minimal_chart() -> ChartData {
     let mut chart = ChartData {
         meta: Meta {
+            id: None, // an unsaved chart; the library mints one
             name: "T".into(),
             born: "b".into(),
             place: "p".into(),
@@ -96,7 +97,7 @@ pub fn minimal_chart() -> ChartData {
             orb: 0.0,
             kind: "",
         }],
-        excerpts: Vec::new(),
+        notes: Vec::new(),
     };
     // The same filling the compute stage does, so the fixture is a chart the
     // renderers could actually be handed.
@@ -104,16 +105,24 @@ pub fn minimal_chart() -> ChartData {
     chart
 }
 
-/// A passage, tagged. `span` is `[0, text.len()]`, which is the provenance
-/// invariant for a passage authored rather than routed.
-pub fn excerpt(id: &str, text: &str, tags: &[&str]) -> Excerpt {
-    Excerpt {
+/// A spoken note, tagged. `span` is `[0, text.len()]` — the whole of a
+/// one-note transcript, so the fixture upholds the provenance invariant a
+/// routed note carries.
+///
+/// For a *written* note (no transcript, no span) use [`written_note`].
+pub fn note(id: &str, text: &str, tags: &[&str]) -> Note {
+    Note {
         id: id.into(),
         time: String::new(),
-        span: [0, text.len()],
+        span: Some([0, text.len()]),
         text: text.into(),
         tags: tags.iter().map(|t| t.to_string()).collect(),
     }
+}
+
+/// A note authored by hand: no transcript behind it, so no span.
+pub fn written_note(id: &str, text: &str, tags: &[&str]) -> Note {
+    Note { span: None, ..note(id, text, tags) }
 }
 
 #[cfg(test)]
@@ -127,7 +136,7 @@ mod tests {
         let chart = minimal_chart();
         assert!(chart.validate().is_ok(), "{:?}", chart.validate());
         assert_eq!(chart.house_sweeps.len(), 12, "derive::fill ran");
-        assert!(chart.excerpts.is_empty(), "a caller adds the passages it wants");
+        assert!(chart.notes.is_empty(), "a caller adds the notes it wants");
     }
 
     #[test]
@@ -147,9 +156,16 @@ mod tests {
     }
 
     #[test]
-    fn an_excerpt_spans_its_own_text() {
-        let ex = excerpt("x1", "The sun.", &["planet:sun"]);
-        assert_eq!(ex.span, [0, "The sun.".len()]);
-        assert_eq!(ex.tags, vec!["planet:sun"]);
+    fn a_spoken_note_spans_its_own_text() {
+        let n = note("x1", "The sun.", &["planet:sun"]);
+        assert_eq!(n.span, Some([0, "The sun.".len()]));
+        assert_eq!(n.tags, vec!["planet:sun"]);
+    }
+
+    #[test]
+    fn a_written_note_carries_no_span() {
+        let n = written_note("x1", "The sun.", &["planet:sun"]);
+        assert_eq!(n.span, None);
+        assert_eq!(n.text, "The sun.", "and is otherwise the same note");
     }
 }

@@ -144,7 +144,7 @@ pub fn birth_at_place(
 /// filename following the source's kind (`transcript.jsonl` for a recording,
 /// `transcript.{ext}` for a file) and their verbatim contents.
 ///
-/// A library that saves a reading has to save these too — a passage is verbatim
+/// A library that saves a reading has to save these too — a note is verbatim
 /// by definition, and without the transcript its span points at nothing, so
 /// provenance can no longer be re-checked. [`build_reading`] therefore hands the
 /// transcript back rather than consuming it: the desktop used to fork the whole
@@ -169,7 +169,7 @@ pub struct BuildReport {
 
 /// The whole pipeline in one call: obtain the transcript (reading a file, or
 /// transcribing audio while reporting whole-percent `progress`), compute the
-/// chart, route + verify passages into `excerpts`. Returns the chart and a
+/// chart, route + verify notes into `notes`. Returns the chart and a
 /// [`BuildReport`]. This is the single entry point every frontend shares.
 pub fn build_reading(
     input: &chart::BirthInput,

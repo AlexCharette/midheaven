@@ -209,23 +209,23 @@
   #clear:hover { color: var(--ink); border-bottom-color: var(--hairline); }
   .count { margin-left: auto; font-style: italic; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 
-  /* ---- commentary passages ---- */
-  .passage {
+  /* ---- commentary notes ---- */
+  .note {
     display: grid; grid-template-columns: 5.2rem 1fr; gap: 0 1.3rem;
     padding: 1.15rem 0;
   }
-  .passage + .passage { border-top: 1px solid var(--line); }
-  .passage .folio {
+  .note + .note { border-top: 1px solid var(--line); }
+  .note .folio {
     color: var(--ink-3); font-size: .8rem; font-variant-numeric: tabular-nums;
     letter-spacing: .06em; padding-top: .35rem; text-align: right;
   }
-  .passage blockquote {
+  .note blockquote {
     margin: 0; grid-column: 2; font-size: 1.04rem; line-height: 1.75;
     max-width: 62ch; text-wrap: pretty; text-indent: -.45em; /* hanging quote */
   }
-  .passage blockquote::before { content: "“"; color: var(--ink-3); }
-  .passage blockquote::after { content: "”"; color: var(--ink-3); }
-  .passage .refs {
+  .note blockquote::before { content: "“"; color: var(--ink-3); }
+  .note blockquote::after { content: "”"; color: var(--ink-3); }
+  .note .refs {
     grid-column: 2; margin-top: .45rem; font-size: .85rem; color: var(--ink-3); font-style: italic;
   }
   .ref { font-style: normal; color: var(--ink-2); white-space: nowrap; }
@@ -240,9 +240,9 @@
   .sep { color: var(--ink-3); font-style: normal; }
   .empty { color: var(--ink-3); font-style: italic; padding: 2.2rem 0; text-align: center; }
   @media (max-width: 560px) {
-    .passage { grid-template-columns: 1fr; }
-    .passage .folio { text-align: left; padding: 0 0 .2rem; }
-    .passage blockquote, .passage .refs { grid-column: 1; }
+    .note { grid-template-columns: 1fr; }
+    .note .folio { text-align: left; padding: 0 0 .2rem; }
+    .note blockquote, .note .refs { grid-column: 1; }
   }
 
   /* ---- plate choreography (skipped under reduced motion) ---- */
@@ -277,7 +277,7 @@
     .plate-frame { background: none; }
     .plate { position: static; }
     .apparatus { display: none; }
-    .passage { break-inside: avoid; }
+    .note { break-inside: avoid; }
   }
 </style>
 </head>
@@ -319,10 +319,10 @@
       </details>
 
       <div class="apparatus">
-        <span class="lbl">passages touching</span>
+        <span class="lbl">notes touching</span>
         <div class="segmented" role="group" aria-label="Match mode">
-          <button id="mode-any" aria-pressed="true" title="Passages touching any selected element">any</button>
-          <button id="mode-all" aria-pressed="false" title="Only passages touching every selected element">all</button>
+          <button id="mode-any" aria-pressed="true" title="Notes touching any selected element">any</button>
+          <button id="mode-all" aria-pressed="false" title="Only notes touching every selected element">all</button>
         </div>
         <span class="lbl">of the selection ·</span>
         <button id="clear">clear</button>
@@ -416,7 +416,7 @@ const CHROME = /*__CHROME__*/null;
   setText('.index-label', T.indexOfElements);
   document.querySelectorAll('.index h3').forEach((h, i) => { if (T.bands[i]) h.textContent = T.bands[i]; });
   document.querySelectorAll('.apparatus .lbl').forEach((el, i) => {
-    el.textContent = i === 0 ? T.passagesTouching : T.ofSelection;
+    el.textContent = i === 0 ? T.notesTouching : T.ofSelection;
   });
   const modeAnyBtn = document.getElementById('mode-any');
   const modeAllBtn = document.getElementById('mode-all');
@@ -662,7 +662,7 @@ const CHROME = /*__CHROME__*/null;
   const catOf = tag => tag.split(':')[0];
   const excerptsHost = document.getElementById('excerpts');
 
-  // The passage filter. The app states the same rule in
+  // The note filter. The app states the same rule in
   // `desktop/src/lib/focus.ts` as `matching`; this artifact is a standalone
   // file and cannot import it, so the two are deliberate mirrors — keep them in
   // step. Same semantics: an empty selection shows everything, `any` is an
@@ -678,16 +678,16 @@ const CHROME = /*__CHROME__*/null;
   const renderExcerpts = () => {
     const visible = DATA.excerpts.filter(matches);
     document.getElementById('count').textContent =
-      DATA.excerpts.length === 0 ? T.noPassagesRouted
+      DATA.excerpts.length === 0 ? T.noNotesFiled
         : fmt(T.count, { shown: visible.length, total: DATA.excerpts.length });
     excerptsHost.innerHTML = visible.length === 0
       ? `<p class="empty">${DATA.excerpts.length === 0
-          ? T.emptyNoneRouted
+          ? T.emptyNoneFiled
           : fmt(T.emptyNoMatch, { word: mode === 'all' ? T.all : T.any })}</p>`
       : '';
     for (const ex of visible) {
       const art = document.createElement('article');
-      art.className = 'passage';
+      art.className = 'note';
       art.id = ex.id;
       const refsHtml = ex.tags.map(t => {
         const ref = lookup[t]; if (!ref) return '';

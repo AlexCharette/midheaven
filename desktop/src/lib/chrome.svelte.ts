@@ -20,20 +20,20 @@ const fallback: AppChrome = {
   indexOfElements: "Index of Elements",
   bands: ["planets", "signs", "houses", "aspects"],
   commentary: "Commentary",
-  passagesTouching: "passages touching",
+  notesTouching: "notes touching",
   any: "any",
   all: "all",
-  anyTitle: "Passages touching any selected element",
-  allTitle: "Only passages touching every selected element",
+  anyTitle: "Notes touching any selected element",
+  allTitle: "Only notes touching every selected element",
   ofSelection: "of the selection ·",
   clear: "clear",
-  count: "{shown} of {total} passages",
-  passages: { one: "{n} passage", other: "{n} passages" },
+  count: "{shown} of {total} notes",
+  notes: { one: "{n} note", other: "{n} notes" },
   fewer: "· fewer",
   more: "· {n} more",
   wheelAria: "Natal chart wheel; the index of elements offers the same filters",
-  emptyNoneRouted: "No passages are filed under this chart yet.",
-  emptyNoMatch: "No passage touches {word} of the selected elements.",
+  emptyNoneFiled: "No notes are filed under this chart yet.",
+  emptyNoMatch: "No note touches {word} of the selected elements.",
 };
 
 const store = $state({ value: fallback });
@@ -49,8 +49,8 @@ export const fmt = (template: string, vals: Record<string, string | number>): st
 /** A count in the form its number calls for.
  *
  * English inflects; the Russian that ships gives both forms the same words.
- * Four components each wrote their own `n === 1 ? "passage" : "passages"`, and
- * collapsing them onto a single un-inflected string is how "1 passages"
+ * Four components each wrote their own `n === 1 ? "note" : "notes"`, and
+ * collapsing them onto a single un-inflected string is how "1 notes"
  * happened. */
 export const plural = (forms: { one: string; other: string }, n: number): string =>
   fmt(n === 1 ? forms.one : forms.other, { n });

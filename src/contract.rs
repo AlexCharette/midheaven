@@ -22,7 +22,12 @@ pub struct ChartData {
     pub signs: Vec<Ref>,
     pub houses: Vec<HouseRef>,
     pub aspects: Vec<Aspect>,
-    pub excerpts: Vec<Excerpt>,
+    /// Every note filed under this chart, spoken and written alike. The wire
+    /// name stays `excerpts`: it is in every saved `chart.json` and in the
+    /// `const DATA` of every artifact ever exported, both of which must keep
+    /// loading. The word the project uses is *note* — see CONTEXT.md.
+    #[serde(rename = "excerpts")]
+    pub notes: Vec<Note>,
 }
 
 impl ChartData {
@@ -89,11 +94,17 @@ impl ChartData {
             check_id(&a.id, "aspect")?;
         }
         let vocab = self.vocab();
-        for ex in &self.excerpts {
-            for tag in &ex.tags {
+        for note in &self.notes {
+            for tag in &note.tags {
                 if !vocab.contains(tag) {
-                    return Err(format!("excerpt {:?} references unknown tag {tag:?}", ex.id));
+                    return Err(format!("note {:?} references unknown tag {tag:?}", note.id));
                 }
+            }
+            // An empty span is the wire sentinel for a written note, so a
+            // spoken one may never carry it — otherwise the two kinds become
+            // indistinguishable on the next round-trip.
+            if note.span.is_some_and(|[s, e]| s >= e) {
+                return Err(format!("note {:?} has an empty span", note.id));
             }
         }
         if self.meta.logo.as_deref().is_some_and(|l| !l.starts_with("data:")) {
@@ -131,22 +142,29 @@ pub struct Segment {
     pub text: String,
 }
 
-// The excerpt filter mode and `Excerpt::matches` used to live here, documented
+// The note filter mode and `Note::matches` used to live here, documented
 // as "shared by every viewer". They were shared by none: both viewers are
 // JavaScript and implement it themselves — `desktop/src/lib/focus.ts`'s
 // `matching` for the app, and `templates/reading.html`'s `matches` for the
-// artifact — and nothing in Rust ever filtered a passage, because the PDF prints
+// artifact — and nothing in Rust ever filtered a note, because the PDF prints
 // them all. A third statement of a rule, in the module whose job is to be the
 // shared contract, that no caller could reach. Deleting it concentrated nothing,
 // which is what made it safe to delete.
 
-impl Excerpt {
-    /// Merge a later passage into this one: the span extends to cover both,
-    /// tags become the sorted union, this passage's time anchor is kept.
+impl Note {
+    /// Merge a later note into this one: the span extends to cover both,
+    /// tags become the sorted union, this note's time anchor is kept.
     /// The merged `text` is the caller's decision (verbatim transcript slice
     /// when one is at hand, joined parts otherwise).
-    pub fn absorb(&mut self, other: Excerpt) {
-        self.span[1] = other.span[1];
+    ///
+    /// A written note has no span to extend, and nothing can extend into one:
+    /// coalescing runs over a router's output, where every note is spoken. A
+    /// hand-merge that reaches a written note keeps whichever provenance was
+    /// already there rather than inventing one.
+    pub fn absorb(&mut self, other: Note) {
+        if let (Some(mine), Some(theirs)) = (self.span.as_mut(), other.span) {
+            mine[1] = theirs[1];
+        }
         let mut tags: Vec<String> = self.tags.drain(..).chain(other.tags).collect();
         tags.sort();
         tags.dedup();
@@ -163,6 +181,18 @@ fn default_locale() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Meta {
+    /// Stable identity for this reading, minted once when it is first saved.
+    ///
+    /// A reading's other names are all derived from things that move: its
+    /// folder is `{slug}_{date}` from a name the astrologer can correct, and
+    /// its path is under a library root the user can relocate. Nothing outside
+    /// the chart could point at it and still be pointing a month later.
+    ///
+    /// Absent on charts saved before this existed and on CLI output; a
+    /// migration stamps the library's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub id: Option<String>,
     pub name: String,
     pub born: String,
     pub place: String,
@@ -295,32 +325,68 @@ pub struct Aspect {
     pub kind: &'static str,
 }
 
+/// One note filed under the chart elements it refers to.
+///
+/// A note is **spoken** or **written**, and `span` is what tells them apart.
+/// A spoken note carries byte offsets into the transcript and its `text` is
+/// verbatim — that is provenance, not a formatting preference. A written note
+/// was authored by hand, has no transcript to point at, and carries no span.
+///
+/// Both kinds are the same thing to every consumer: they file under the same
+/// vocabulary, filter through the same rules, and render alike.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
-pub struct Excerpt {
-    /// Unique among the chart's excerpts (the `x{n}` scheme is convention;
+pub struct Note {
+    /// Unique among the chart's notes (the `x{n}` scheme is convention;
     /// uniqueness is the invariant consumers rely on).
     pub id: String,
-    /// "HH:MM:SS" anchor into the recording; empty when the transcript
-    /// carries no timestamps.
+    /// "HH:MM:SS" anchor into the recording; empty for a written note, and
+    /// for a spoken one whose transcript carries no timestamps.
     pub time: String,
-    /// Byte offsets into the transcript — provenance.
-    pub span: [usize; 2],
-    /// VERBATIM; must equal `transcript[span.0..span.1]`.
+    /// Byte offsets into the transcript — provenance. `None` for a written
+    /// note. See the [`span`] module for why the wire shape is unchanged.
+    #[serde(with = "span")]
+    #[cfg_attr(feature = "ts", ts(type = "[number, number]"))]
+    pub span: Option<[usize; 2]>,
+    /// VERBATIM when `span` is `Some`; must equal `transcript[span.0..span.1]`.
     pub text: String,
-    /// Tag-ids; each must exist in the chart vocabulary.
+    /// Tag-ids; each must exist in the chart vocabulary. May be empty — a note
+    /// nothing could be filed under is shown whenever no filter is active.
     pub tags: Vec<String>,
+}
+
+/// `Option<[usize; 2]>` in Rust, `[0, 0]` on the wire.
+///
+/// A written note has always been stored as `span: [0, 0]`, a sentinel upheld
+/// by a comment at its one writer and understood nowhere else. The type now
+/// says which kind a note is, and this module keeps every chart ever written —
+/// and every artifact already in someone's hands — byte-identical.
+///
+/// The mapping is total in both directions because a real span can never be
+/// `[0, 0]`: [`ChartData::validate`] and the Verify gate both reject an empty
+/// one, so the sentinel is unambiguous.
+mod span {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &Option<[usize; 2]>, s: S) -> Result<S::Ok, S::Error> {
+        v.unwrap_or([0, 0]).serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<[usize; 2]>, D::Error> {
+        let raw = <[usize; 2]>::deserialize(d)?;
+        Ok(if raw[0] == raw[1] { None } else { Some(raw) })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The shared minimal chart plus one passage, so the vocabulary check has
+    /// The shared minimal chart plus one note, so the vocabulary check has
     /// something to check. Every assertion below mutates a copy of it.
     fn valid_chart() -> ChartData {
         let mut chart = crate::fixtures::minimal_chart();
-        chart.excerpts = vec![crate::fixtures::excerpt("x1", "hi", &["planet:sun"])];
+        chart.notes = vec![crate::fixtures::note("x1", "hi", &["planet:sun"])];
         chart
     }
 
@@ -347,7 +413,13 @@ mod tests {
 
         // a tag outside the vocabulary
         let mut c = valid_chart();
-        c.excerpts[0].tags = vec!["planet:pluto".into()];
+        c.notes[0].tags = vec!["planet:pluto".into()];
+        assert!(c.validate().is_err());
+
+        // an empty span is the written-note sentinel; a spoken note claiming
+        // one would come back written on the next round-trip
+        let mut c = valid_chart();
+        c.notes[0].span = Some([7, 7]);
         assert!(c.validate().is_err());
 
         // fewer than twelve signs → PDF/wheel index panic
@@ -364,5 +436,67 @@ mod tests {
         let mut c = valid_chart();
         c.planets[0].house = 0;
         assert!(c.validate().is_err());
+    }
+
+    /// The wire is what every saved chart and every exported artifact already
+    /// holds. `Option<[usize; 2]>` is a statement about the Rust type only —
+    /// if it leaked into the JSON, charts written by older builds and artifacts
+    /// already in someone's hands would stop agreeing with this one.
+    #[test]
+    fn the_span_sentinel_keeps_the_wire_unchanged() {
+        let written = Note {
+            id: "x1".into(),
+            time: String::new(),
+            span: None,
+            text: "authored".into(),
+            tags: vec!["planet:sun".into()],
+        };
+        let json = serde_json::to_string(&written).unwrap();
+        assert!(json.contains("\"span\":[0,0]"), "a written note still writes the sentinel: {json}");
+
+        let spoken = Note { span: Some([4, 12]), ..written.clone() };
+        let json = serde_json::to_string(&spoken).unwrap();
+        assert!(json.contains("\"span\":[4,12]"), "{json}");
+
+        // and both come back as the kind they went in as
+        let back: Note = serde_json::from_str(&serde_json::to_string(&written).unwrap()).unwrap();
+        assert_eq!(back.span, None, "[0,0] reads back as written, not as a span");
+        let back: Note = serde_json::from_str(&serde_json::to_string(&spoken).unwrap()).unwrap();
+        assert_eq!(back.span, Some([4, 12]));
+
+        // any degenerate span means written — a real one can never be empty,
+        // which is what `validate` enforces
+        let degenerate: Note = serde_json::from_str(
+            r#"{"id":"x1","time":"","span":[9,9],"text":"t","tags":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(degenerate.span, None);
+    }
+
+    /// The field renamed; the JSON key did not.
+    #[test]
+    fn notes_are_still_spelled_excerpts_on_the_wire() {
+        let json = serde_json::to_string(&valid_chart()).unwrap();
+        assert!(json.contains("\"excerpts\":["), "{json}");
+        assert!(!json.contains("\"notes\":"), "{json}");
+
+        let back: ChartData = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.notes.len(), 1);
+    }
+
+    /// Absent on everything written before it existed, and absent from the
+    /// JSON when unset — a chart without an id must stay byte-identical.
+    #[test]
+    fn a_reading_id_is_optional_and_omitted_when_unset() {
+        let mut c = valid_chart();
+        assert_eq!(c.meta.id, None, "the fixture mints none");
+        // scoped to `meta` — every element in the chart carries an `id` of its own
+        let meta = serde_json::to_string(&c.meta).unwrap();
+        assert!(!meta.contains("\"id\":"), "no id key when unset: {meta}");
+
+        c.meta.id = Some("r-1".into());
+        let json = serde_json::to_string(&c).unwrap();
+        let back: ChartData = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.meta.id.as_deref(), Some("r-1"));
     }
 }

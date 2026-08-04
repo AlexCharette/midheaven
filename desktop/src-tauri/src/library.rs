@@ -85,6 +85,8 @@ pub struct ReadingEntry {
     pub name: String,
     pub born: String,
     pub place: String,
+    /// How many notes are filed under the chart. Named for the wire, which
+    /// still spells a note `excerpt` — see `contract::ChartData::notes`.
     pub excerpts: usize,
     /// `chart.json`'s mtime, ms since the epoch — sort key and "saved" date.
     /// Serialized as a JSON number; ms-since-epoch stays within JS's safe
@@ -98,7 +100,7 @@ pub struct ReadingEntry {
 /// Listing used to deserialize the *entire* `ChartData` — every body, aspect and
 /// passage — to display five strings and a count, for every folder, every time
 /// the panel opened. `IgnoredAny` gives the passage count without building a
-/// single `Excerpt`, and the rest of the chart is never looked at.
+/// single `Note`, and the rest of the chart is never looked at.
 #[derive(serde::Deserialize)]
 struct Listing {
     meta: ListingMeta,
@@ -307,18 +309,18 @@ mod tests {
     fn the_listing_shows_a_reading_by_the_fields_it_displays() {
         let t = TempLibrary::new("listing");
         let mut c = chart("Mira Holt");
-        c.excerpts = vec![
-            astro::contract::Excerpt {
+        c.notes = vec![
+            astro::contract::Note {
                 id: "x1".into(),
                 time: String::new(),
-                span: [0, 0],
+                span: None,
                 text: "one".into(),
                 tags: vec![],
             },
-            astro::contract::Excerpt {
+            astro::contract::Note {
                 id: "x2".into(),
                 time: String::new(),
-                span: [0, 0],
+                span: None,
                 text: "two".into(),
                 tags: vec![],
             },
@@ -330,7 +332,7 @@ mod tests {
         assert_eq!(entries[0].name, "Mira Holt");
         assert_eq!(entries[0].born, c.meta.born);
         assert_eq!(entries[0].place, c.meta.place);
-        assert_eq!(entries[0].excerpts, 2, "counted without building a single passage");
+        assert_eq!(entries[0].excerpts, 2, "counted without building a single note");
         assert!(entries[0].chart_path.ends_with("chart.json"));
     }
 
@@ -448,10 +450,10 @@ mod tests {
     fn a_saved_chart_reloads_as_the_same_reading() {
         let t = TempLibrary::new("roundtrip");
         let mut c = chart("Mira Holt");
-        c.excerpts = vec![astro::contract::Excerpt {
+        c.notes = vec![astro::contract::Note {
             id: "x1".into(),
             time: "00:00:12".into(),
-            span: [0, 8],
+            span: Some([0, 8]),
             text: "The sun.".into(),
             tags: vec!["planet:sun".into()],
         }];
@@ -461,8 +463,8 @@ mod tests {
         let back: ChartData = serde_json::from_str(&raw).unwrap();
         assert_eq!(back.meta.name, c.meta.name);
         assert_eq!(back.planets.len(), c.planets.len());
-        assert_eq!(back.excerpts.len(), 1);
-        assert_eq!(back.excerpts[0].tags, vec!["planet:sun"]);
+        assert_eq!(back.notes.len(), 1);
+        assert_eq!(back.notes[0].tags, vec!["planet:sun"]);
         assert!(back.validate().is_ok(), "and it is openable");
     }
 }

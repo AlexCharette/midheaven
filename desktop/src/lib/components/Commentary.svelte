@@ -2,7 +2,7 @@
   import { ask } from "@tauri-apps/plugin-dialog";
   import { addExcerpt, correctExcerpt, deleteExcerpt, mergeUp } from "$lib/api";
   import { SvelteSet } from "svelte/reactivity";
-  import type { ChartData, Excerpt } from "$lib/types";
+  import type { ChartData, Note } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
   import { updateChart } from "$lib/session.svelte";
   import { isBusy } from "$lib/busy.svelte";
@@ -11,12 +11,12 @@
   import { fmt, t } from "$lib/chrome.svelte";
   import { reason } from "$lib/failure";
 
-  let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
+  let { chart, visible }: { chart: ChartData; visible: Note[] } = $props();
 
   const elements = $derived(elementsOf(chart));
   const lookup = $derived(new Map(elements.map((e) => [e.tag, e])));
 
-  // merge ↑ joins into the previous *visible* passage, so it's only
+  // merge ↑ joins into the previous *visible* note, so it's only
   // unambiguous when nothing filters the list — no selection and no hover
   // preview. amend/remove/add are id-based and safe under any filter, so they
   // stay available whenever the app isn't busy.
@@ -30,13 +30,13 @@
   async function join(id: string) {
     try {
       updateChart(await mergeUp(id));
-      notify("two passages joined");
+      notify("two notes joined");
     } catch (e) {
       notify(reason(e), "error");
     }
   }
 
-  function beginAmend(ex: Excerpt) {
+  function beginAmend(ex: Note) {
     editing = ex.id;
     draft = ex.text;
     original = ex.text;
@@ -49,7 +49,7 @@
     if (draft.trim() === original) return;
     try {
       updateChart(await correctExcerpt(id, draft));
-      notify("passage amended — re-sectioned");
+      notify("note amended — re-sectioned");
     } catch (e) {
       notify(reason(e), "error");
     }
@@ -69,20 +69,20 @@
   const rowsFor = (t: string) => Math.max(2, Math.ceil(t.length / 70));
 
   async function remove(exId: string, preview: string) {
-    const sure = await ask(`Remove this passage?\n\n“${preview}”\n\nIts words are not recoverable.`, {
+    const sure = await ask(`Remove this note?\n\n“${preview}”\n\nIts words are not recoverable.`, {
       title: "Midheaven",
       kind: "warning",
     });
     if (!sure) return;
     try {
       updateChart(await deleteExcerpt(exId));
-      notify("passage removed");
+      notify("note removed");
     } catch (e) {
       notify(reason(e), "error");
     }
   }
 
-  // ---- manual passage composer ----
+  // ---- manual note composer ----
   let composing = $state(false);
   let draftText = $state("");
   const draftTags = new SvelteSet<string>();
@@ -98,7 +98,7 @@
     composing = false;
     try {
       updateChart(await addExcerpt(draftText, [...draftTags]));
-      notify("passage added");
+      notify("note added");
     } catch (e) {
       notify(reason(e), "error");
     }
@@ -107,7 +107,7 @@
   const composerKeys = escCommit(() => (composing = false), fileIt);
 </script>
 
-<!-- the reference chip shared by passage refs and the composer's tag picker:
+<!-- the reference chip shared by note refs and the composer's tag picker:
      a glyph + name toggle, its category coloring keyed off the tag -->
 {#snippet refButton(tag: string, glyph: string, name: string, pressed: boolean, onToggle: () => void)}
   <button class="ref" aria-pressed={pressed} onclick={onToggle}>
@@ -121,7 +121,7 @@
   <div class="empty-plate">
     <span class="mark" aria-hidden="true">✶</span>
     {#if chart.excerpts.length === 0}
-      <p class="caption">{t().emptyNoneRouted}</p>
+      <p class="caption">{t().emptyNoneFiled}</p>
       <p class="sub">Transcribe a session or add one by hand to begin the commentary.</p>
     {:else}
       <p class="caption">{fmt(t().emptyNoMatch, { word: mode() === "all" ? t().all : t().any })}</p>
@@ -131,19 +131,19 @@
 {/if}
 {#each visible as ex, i (ex.id)}
   {@const pinned = touchesPins(ex)}
-  <article class="passage" class:pinned>
+  <article class="note" class:pinned>
     <div class="folio">
       {#if pinned}<span class="pin-mark astro" title="tied to the pinned selection">☞</span>{/if}
       {ex.time || "—"}
       {#if mergeable && i > 0}
-        <button class="curate" title="join this passage to the previous one" onclick={() => join(ex.id)}
+        <button class="curate" title="join this note to the previous one" onclick={() => join(ex.id)}
           >merge ↑</button
         >
       {/if}
       {#if editable}
         <button
           class="curate destructive"
-          title="remove this passage (asks first)"
+          title="remove this note (asks first)"
           onclick={() => remove(ex.id, ex.text.length > 80 ? ex.text.slice(0, 80) + "…" : ex.text)}
           >remove</button
         >
@@ -206,13 +206,13 @@
         <button class="frame-btn" onclick={fileIt} disabled={!draftText.trim()}>file it</button>
       </div>
     {:else}
-      <button class="ghost open-composer" onclick={openComposer}>✎ add a passage</button>
+      <button class="ghost open-composer" onclick={openComposer}>✎ add a note</button>
     {/if}
   </div>
 {/if}
 
 <style>
-  .passage {
+  .note {
     display: grid;
     grid-template-columns: 5.2rem 1fr;
     gap: 0 1.3rem;
@@ -220,17 +220,17 @@
     user-select: text;
     cursor: text;
   }
-  .passage + .passage {
+  .note + .note {
     border-top: 1px solid var(--line);
   }
-  /* a pinned passage is lit like the wheel element it answers to: a faint
+  /* a pinned note is lit like the wheel element it answers to: a faint
      brass wash bleeding from the margin and a manicule in the folio, the same
      ☞ the index uses for a selected element. */
-  .passage.pinned {
+  .note.pinned {
     background: linear-gradient(90deg, var(--brass-wash) 0%, transparent 42%);
   }
   @media (prefers-reduced-motion: no-preference) {
-    .passage {
+    .note {
       transition: background var(--dur-base) var(--ease-out-quint);
     }
   }
@@ -242,7 +242,7 @@
     padding-top: 0.35rem;
     text-align: right;
   }
-  .passage.pinned .folio {
+  .note.pinned .folio {
     color: var(--ink-2);
   }
   .pin-mark {
@@ -260,7 +260,7 @@
     opacity: 0;
     transition: opacity 0.15s ease-out;
   }
-  .passage:hover .curate {
+  .note:hover .curate {
     opacity: 1;
   }
   @media (prefers-reduced-motion: reduce) {

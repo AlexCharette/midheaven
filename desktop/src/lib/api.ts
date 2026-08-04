@@ -74,7 +74,7 @@ export const appChrome = () => call<AppChrome>("app_chrome");
 export const build = (form: BirthForm) => call<ChartData>("build", { form });
 
 /** Recompute the current chart's geometry under a new house system / zodiac,
- * keeping its passages. `ayanamsa` is used only when zodiac is "sidereal". */
+ * keeping its notes. `ayanamsa` is used only when zodiac is "sidereal". */
 export const reproject = (houseSystem: string, zodiac: string, ayanamsa: string | null) =>
   call<ChartData>("reproject", { houseSystem, zodiac, ayanamsa });
 

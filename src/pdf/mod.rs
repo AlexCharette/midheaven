@@ -373,14 +373,14 @@ pub fn write_pdf(chart: &ChartData, size: PageSize, path: &Path) -> Result<(), S
 mod tests {
     use super::*;
     use crate::chart::catalog::{ASPECT_TYPES, PLANETS, SIGNS_ALL};
-    use crate::contract::Excerpt;
+    use crate::contract::Note;
 
     fn chart_fixture() -> ChartData {
         let mut chart = crate::fixtures::berlin_chart();
-        chart.excerpts.push(Excerpt {
+        chart.notes.push(Note {
             id: "x1".into(),
             time: "00:00:12".into(),
-            span: [0, 24],
+            span: Some([0, 24]),
             text: "The sun rules this chart and it keeps returning to the tenth house, \
                    again and again, whenever the year turns."
                 .into(),
@@ -437,10 +437,10 @@ mod tests {
         input.place = "Берлин, Германия".into();
         input.locale = Locale::Ru;
         let mut chart = crate::chart::compute_chart(&input).unwrap();
-        chart.excerpts.push(Excerpt {
+        chart.notes.push(Note {
             id: "x1".into(),
             time: "00:00:12".into(),
-            span: [0, 10],
+            span: Some([0, 10]),
             text: "Ваше солнце в раке освещает десятый дом.".into(),
             tags: vec!["planet:sun".into(), "house:10".into()],
         });

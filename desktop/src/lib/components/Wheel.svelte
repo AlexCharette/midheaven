@@ -61,7 +61,7 @@
     ...PLATE.radii,
     // Tracks the other two renditions do not have at all.
     drift: 398, // decorative idle-drift ring (outermost)
-    passOut: 382, // passage-density bars grow toward here
+    passOut: 382, // note-density bars grow toward here
     passIn: 356, // density baseline ring
     hubInner: 8, // cusp spokes and axes converge here, at the compass centre
     // DEPARTURE: the roman numerals sit in the house band rather than at the
@@ -110,7 +110,7 @@
     }),
   );
 
-  // Passage-density track — how much the reading dwelt on each sign.
+  // Note-density track — how much the reading dwelt on each sign.
   const density = $derived(signDensity(chart));
   const maxDensity = $derived(Math.max(1, ...density));
 
@@ -245,7 +245,7 @@
       <path d={band.d} class="wash wash-{band.s.element}" />
       <path d={band.d} class="sign-band"><title>{band.s.name} — {band.s.element}</title></path>
       {#if band.bar}
-        <path d={band.bar} class="dens-bar"><title>{plural(t().passages, band.w)} · {band.s.name}</title></path>
+        <path d={band.bar} class="dens-bar"><title>{plural(t().notes, band.w)} · {band.s.name}</title></path>
       {/if}
       <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
         >{textGlyph(band.s.glyph)}</text
@@ -318,7 +318,7 @@
   .grad {
     stroke: var(--line);
   }
-  /* --- passage-density track --- */
+  /* --- note-density track --- */
   .dens-ring {
     stroke: var(--line);
     fill: none;

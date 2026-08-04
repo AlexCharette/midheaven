@@ -14,7 +14,7 @@
 
 import * as rules from "./focus";
 import type { Focus, Mode } from "./focus";
-import type { ChartData, Excerpt } from "./types";
+import type { ChartData, Note } from "./types";
 
 const store = $state({ value: rules.NOTHING as Focus });
 
@@ -28,13 +28,13 @@ export const pinCount = (): number => store.value.pinned.length;
 export const hoveredTag = (): string | null => store.value.hovered;
 export const mode = (): Mode => store.value.mode;
 
-/** The passages the commentary shows, pins and hover preview both accounted
+/** The notes the commentary shows, pins and hover preview both accounted
  * for. */
-export const visibleExcerpts = (chart: ChartData): Excerpt[] =>
-  rules.visibleExcerpts(chart, store.value);
+export const visibleNotes = (chart: ChartData): Note[] =>
+  rules.visibleNotes(chart, store.value);
 
-/** Whether a passage is part of the pinned selection. */
-export const touchesPins = (ex: Excerpt): boolean => rules.touchesPins(store.value, ex);
+/** Whether a note is part of the pinned selection. */
+export const touchesPins = (note: Note): boolean => rules.touchesPins(store.value, note);
 
 // ---- writes ----
 
