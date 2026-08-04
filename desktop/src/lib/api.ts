@@ -19,10 +19,13 @@ import { listen } from "@tauri-apps/api/event";
 import { reason } from "./failure";
 import type { CommandName } from "./generated/commands";
 import type {
+  Anchor,
   AppChrome,
   BirthForm,
   CalculationDefaults,
   ChartData,
+  JournalNote,
+  JournalRow,
   LocaleDto,
   OptionDto,
   PlaceDto,
@@ -115,13 +118,35 @@ export const stopRecording = () => call<ChartData>("stop_recording");
 
 export const mergeUp = (id: string) => call<ChartData>("merge_up", { id });
 
-export const correctExcerpt = (id: string, text: string) =>
-  call<ChartData>("correct_excerpt", { id, text });
+export const correctNote = (id: string, text: string) =>
+  call<ChartData>("correct_note", { id, text });
 
-export const addExcerpt = (text: string, tags: string[]) =>
-  call<ChartData>("add_excerpt", { text, tags });
+export const addNote = (text: string, tags: string[]) =>
+  call<ChartData>("add_note", { text, tags });
 
-export const deleteExcerpt = (id: string) => call<ChartData>("delete_excerpt", { id });
+export const deleteNote = (id: string) => call<ChartData>("delete_note", { id });
+
+// ---- the journal ----
+//
+// The three above work on the open reading's chart. These three work on notes
+// that belong to no reading, and reach disk directly rather than through the
+// session — which is why none of them returns a `ChartData`.
+
+/** Write a note to the journal: a new one with no `id`, an amendment with one.
+ * Tags are checked against the chart the anchor names, backend-side. */
+export const writeJournalNote = (
+  text: string,
+  tags: string[],
+  anchor: Anchor,
+  id?: string,
+) => call<JournalNote>("write_journal_note", { id, text, tags, anchor });
+
+/** Every note the app holds — the journal's own and every saved reading's,
+ * spoken and written alike — newest first. */
+export const listJournal = () => call<JournalRow[]>("list_journal");
+
+export const deleteJournalNote = (id: string) =>
+  call<void>("delete_journal_note", { id });
 
 export const getPreferences = () => call<Preferences>("get_preferences");
 

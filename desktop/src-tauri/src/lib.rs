@@ -587,7 +587,7 @@ fn merge_up(state: State<'_, AppState>, id: String) -> Result<ChartData, String>
 }
 
 #[tauri::command]
-fn correct_excerpt(
+fn correct_note(
     state: State<'_, AppState>,
     id: String,
     text: String,
@@ -627,7 +627,7 @@ fn add_in(chart: &mut ChartData, text: &str, tags: Vec<String>) -> Result<(), St
 }
 
 #[tauri::command]
-fn add_excerpt(
+fn add_note(
     state: State<'_, AppState>,
     text: String,
     tags: Vec<String>,
@@ -643,8 +643,235 @@ fn delete_in(notes: &mut Vec<Note>, id: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn delete_excerpt(state: State<'_, AppState>, id: String) -> Result<ChartData, String> {
+fn delete_note(state: State<'_, AppState>, id: String) -> Result<ChartData, String> {
     with_chart(&state, |chart| delete_in(&mut chart.notes, &id))
+}
+
+// ---- the journal ----
+//
+// A note written in the reading view goes into that reading's chart, above.
+// A note written from the home page has no reading to go into, so it goes to
+// the journal — and carries the sky it was written over as a seed.
+
+/// The configured journal, or the refusal to show when no readings folder is
+/// set. The message is the one the webview turns into a folder prompt: this is
+/// the *first need*, and asking here is why the app never picks a folder for
+/// someone unasked.
+fn journal_of(app: &AppHandle) -> Result<journal::Journal, String> {
+    journal::Journal::configured(prefs::load(app).readings_dir.as_deref())
+        .ok_or_else(|| "no readings folder configured".to_string())
+}
+
+/// Recompute the chart an anchor names.
+///
+/// The webview sends the seed it was looking at, never the chart. Recomputing
+/// here is what lets the backend check a note's tags against a real vocabulary
+/// instead of taking the webview's word for them — the Verify gate's rule,
+/// applied to a note nobody spoke.
+fn chart_of(anchor: &journal::Anchor) -> Result<ChartData, String> {
+    let place = geo::by_id(anchor.seed.place_id).ok_or("that place is no longer in the gazetteer")?;
+    let date = anchor
+        .seed
+        .date
+        .parse()
+        .map_err(|_| "a date as YYYY-MM-DD, e.g. 1990-07-13".to_string())?;
+    let birth = resolve_input(
+        "",
+        date,
+        &anchor.seed.time,
+        place,
+        astro::i18n::Locale::parse(&anchor.locale),
+        systems::Codes::new(
+            Some(anchor.house_system.as_str()),
+            Some(if anchor.ayanamsa.is_some() { "sidereal" } else { "tropical" }),
+            anchor.ayanamsa.as_deref(),
+        ),
+        systems::Codes::default(),
+    )?;
+    astro::chart::compute_chart(&birth)
+}
+
+/// Write a note to the journal — a new one when `id` is absent, an amendment to
+/// an existing one when it is present.
+///
+/// Tags are checked against the vocabulary of the chart the anchor names, so a
+/// tag the webview invented, or one that belonged to a different sky, is
+/// refused. Unlike [`add_in`] there is no router fallback: a journal note is a
+/// thought, not a transcript, and inferring elements from a sentence is what the
+/// lexicon was built for and a short note is worst at.
+#[tauri::command]
+fn write_journal_note(
+    app: AppHandle,
+    id: Option<String>,
+    text: String,
+    tags: Vec<String>,
+    anchor: journal::Anchor,
+) -> Result<journal::JournalNote, String> {
+    let journal = journal_of(&app)?;
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("a note needs words".to_string());
+    }
+    let vocab = chart_of(&anchor)?.vocab();
+    if let Some(bad) = tags.iter().find(|t| !vocab.contains(*t)) {
+        return Err(format!("unknown tag {bad}"));
+    }
+    let mut tags = tags;
+    tags.sort();
+    tags.dedup();
+
+    let now = chrono::Local::now();
+    // An amendment keeps the id it was given; a new note is minted against the
+    // same clock its `writtenAt` reads from.
+    let id = match id {
+        Some(id) => id,
+        None => journal.mint_id(now.timestamp_millis().max(0) as u64),
+    };
+    let entry = journal::JournalNote {
+        written_at: now.to_rfc3339(),
+        anchor,
+        note: Note { id, time: String::new(), span: None, text: text.to_string(), tags },
+    };
+    journal.write(&entry)?;
+    Ok(entry)
+}
+
+/// Remove a note from the journal. Final, like removing a reading.
+#[tauri::command]
+fn delete_journal_note(app: AppHandle, id: String) -> Result<(), String> {
+    journal_of(&app)?.remove(&id)
+}
+
+/// Where a journal row's note actually lives, and so where clicking it goes.
+#[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+// `rename_all` on an enum renames its *variants*; the fields inside them need
+// saying separately, or a row arrives as `chart_path` beside `ReadingEntry`'s
+// `chartPath` and the webview has two spellings for one thing.
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum RowSource {
+    /// A note in the journal: its id amends and deletes it, its anchor restores
+    /// the sky it was written over.
+    #[serde(rename_all = "camelCase")]
+    Journal { id: String, anchor: journal::Anchor },
+    /// A note inside a saved reading: enough to open that reading.
+    #[serde(rename_all = "camelCase")]
+    Reading {
+        note_id: String,
+        chart_path: String,
+        dir: String,
+        name: String,
+        born: String,
+    },
+}
+
+/// One row of the journal view: every note the app holds, wherever it lives and
+/// however it was made.
+#[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+struct JournalRow {
+    /// What to show as the note's date, RFC 3339.
+    ///
+    /// For a journal note this is when it was written. For a note in a reading
+    /// it is when that reading was last saved — *not* the composed instant the
+    /// ordering uses, which is a save time plus a recording offset and would be
+    /// a lie if displayed as "spoken at".
+    written_at: String,
+    text: String,
+    tags: Vec<String>,
+    /// Whether a transcript stands behind it. The view does not distinguish the
+    /// two, but the journal shows both and something has to carry the fact.
+    spoken: bool,
+    source: RowSource,
+}
+
+/// Milliseconds into a recording from an `"HH:MM:SS"` anchor; 0 for a note with
+/// no anchor, which is what a written one and an untimestamped transcript both
+/// have.
+fn offset_ms(time: &str) -> i64 {
+    let mut parts = time.split(':').map(|p| p.parse::<i64>().ok());
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(Some(h)), Some(Some(m)), Some(Some(s))) => (h * 3600 + m * 60 + s) * 1000,
+        _ => 0,
+    }
+}
+
+/// Every note the app holds — the journal's own, and every note filed under
+/// every saved reading — newest first.
+///
+/// Spoken and written alike, because they are the same thing: a view that
+/// showed only the typed ones would be reviving a distinction the app does not
+/// otherwise make. The cost is real and worth naming: this opens and fully
+/// parses every `chart.json` in the library, which is exactly what
+/// `Library::entries`'s cheap read exists to avoid, and a few transcribed
+/// readings will outnumber the typed notes by two orders of magnitude.
+#[tauri::command]
+fn list_journal(app: AppHandle) -> Vec<JournalRow> {
+    let prefs = prefs::load(&app);
+    let mut rows: Vec<(i64, JournalRow)> = Vec::new();
+
+    if let Some(journal) = journal::Journal::configured(prefs.readings_dir.as_deref()) {
+        for e in journal.entries() {
+            let at = chrono::DateTime::parse_from_rfc3339(&e.written_at)
+                .map(|d| d.timestamp_millis())
+                .unwrap_or(0);
+            rows.push((
+                at,
+                JournalRow {
+                    written_at: e.written_at,
+                    text: e.note.text,
+                    tags: e.note.tags,
+                    spoken: e.note.span.is_some(),
+                    source: RowSource::Journal { id: e.note.id, anchor: e.anchor },
+                },
+            ));
+        }
+    }
+
+    if let Some(lib) = Library::configured(prefs.readings_dir.as_deref()) {
+        for (entry, notes) in lib.notes() {
+            let saved_ms = entry.modified_ms.unwrap_or(0) as i64;
+            let saved_at = rfc3339(saved_ms);
+            for note in notes {
+                // The reading's save time composed with the note's offset into
+                // the recording: readings order against each other and against
+                // journal notes, and notes order within a reading the way they
+                // were spoken. Approximate as an absolute instant, which is why
+                // it never leaves this function.
+                rows.push((
+                    saved_ms + offset_ms(&note.time),
+                    JournalRow {
+                        written_at: saved_at.clone(),
+                        text: note.text,
+                        tags: note.tags,
+                        spoken: note.span.is_some(),
+                        source: RowSource::Reading {
+                            note_id: note.id,
+                            chart_path: entry.chart_path.clone(),
+                            dir: entry.dir.clone(),
+                            name: entry.name.clone(),
+                            born: entry.born.clone(),
+                        },
+                    },
+                ));
+            }
+        }
+    }
+
+    // Newest first. `Library::notes` and `Journal::entries` each arrive sorted;
+    // this is what interleaves them, and it is stable, so notes sharing an
+    // instant (a transcript with no timestamps) keep the order they were filed.
+    rows.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
+    rows.into_iter().map(|(_, row)| row).collect()
+}
+
+/// Milliseconds since the epoch as an RFC 3339 local timestamp — the same shape
+/// a journal note stores, so both kinds of row read alike.
+fn rfc3339(ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map(|d| d.with_timezone(&chrono::Local).to_rfc3339())
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -866,9 +1093,12 @@ macro_rules! commands {
             save_artifact,
             save_pdf,
             merge_up,
-            correct_excerpt,
-            add_excerpt,
-            delete_excerpt,
+            correct_note,
+            add_note,
+            delete_note,
+            write_journal_note,
+            list_journal,
+            delete_journal_note,
             get_preferences,
             set_preferences,
             open_licenses,
@@ -1166,5 +1396,76 @@ mod tests {
         correct_in(&mut chart, "x1", "Still nothing astrological here.").unwrap();
         assert_eq!(chart.notes[0].tags, vec!["house:2"]);
         assert!(correct_in(&mut chart, "x1", "   ").is_err());
+    }
+
+    // ---- the journal's cross-reading view ----
+
+    fn anchor() -> journal::Anchor {
+        journal::Anchor {
+            kind: "moment".into(),
+            seed: astro::contract::BirthSeed {
+                place_id: 2_950_159,
+                date: "2026-08-04".into(),
+                time: "09:12".into(),
+            },
+            place: "Berlin, Germany".into(),
+            house_system: "whole-sign".into(),
+            ayanamsa: None,
+            locale: "en".into(),
+            reading: None,
+        }
+    }
+
+    /// The webview sends a seed, never a chart. If the backend could not turn
+    /// one back into the other there would be nothing to check a note's tags
+    /// against, and `write_journal_note` would be taking the webview's word.
+    #[test]
+    fn an_anchor_recomputes_the_chart_it_names() {
+        let chart = chart_of(&anchor()).expect("a real place and a real date compute");
+        assert!(chart.vocab().contains("planet:sun"));
+        assert_eq!(chart.planets.len(), 11);
+
+        let mut bad = anchor();
+        bad.seed.date = "the fourth".into();
+        assert!(chart_of(&bad).is_err(), "an unparseable date is refused, not defaulted");
+
+        let mut bad = anchor();
+        bad.seed.place_id = 0;
+        assert!(chart_of(&bad).is_err(), "a place that is not in the gazetteer is refused");
+    }
+
+    /// Sidereal is carried by the presence of an ayanamsa rather than by a
+    /// separate zodiac field, so a note written under one recomputes under it.
+    #[test]
+    fn an_anchors_calculation_survives_the_round_trip() {
+        let tropical = chart_of(&anchor()).unwrap();
+        let mut sidereal_anchor = anchor();
+        sidereal_anchor.ayanamsa = Some("lahiri".into());
+        let sidereal = chart_of(&sidereal_anchor).unwrap();
+        assert_ne!(
+            tropical.planets[0].lon, sidereal.planets[0].lon,
+            "the ayanamsa reached the computation"
+        );
+        assert_eq!(sidereal.meta.ayanamsa.as_deref(), Some("lahiri"));
+
+        let mut placidus = anchor();
+        placidus.house_system = "placidus".into();
+        assert_eq!(chart_of(&placidus).unwrap().meta.house_system, "placidus");
+
+        let mut nonsense = anchor();
+        nonsense.house_system = "not-a-system".into();
+        assert!(chart_of(&nonsense).is_err(), "an unknown code is refused, not defaulted");
+    }
+
+    #[test]
+    fn a_recording_offset_reads_as_milliseconds() {
+        assert_eq!(offset_ms("00:00:00"), 0);
+        assert_eq!(offset_ms("00:00:42"), 42_000);
+        assert_eq!(offset_ms("01:02:03"), 3_723_000);
+        // A written note and an untimestamped transcript both have no anchor,
+        // and both must land on the reading's own instant rather than skew it.
+        assert_eq!(offset_ms(""), 0);
+        assert_eq!(offset_ms("garbage"), 0);
+        assert_eq!(offset_ms("00:00"), 0, "a partial anchor is not half an offset");
     }
 }

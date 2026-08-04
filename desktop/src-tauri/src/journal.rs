@@ -19,12 +19,6 @@
 //! Like the library, the root is handed in rather than fetched from an
 //! `AppHandle`, and the clock is handed in rather than read — which is what
 //! makes any of this testable.
-//!
-//! Nothing calls this yet: the store lands before the commands that drive it,
-//! so its shape can be argued about against its own tests rather than through a
-//! webview. Delete the `allow` below with the commands that reach it.
-
-#![allow(dead_code)]
 
 use astro::contract::{BirthSeed, Note};
 use serde::{Deserialize, Serialize};

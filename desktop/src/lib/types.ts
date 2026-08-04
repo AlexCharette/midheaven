@@ -24,6 +24,11 @@ export type { LocaleDto } from "./generated/LocaleDto";
 export type { OptionDto } from "./generated/OptionDto";
 export type { PreviewInput } from "./generated/PreviewInput";
 export type { PreviewDto } from "./generated/PreviewDto";
+export type { Anchor } from "./generated/Anchor";
+export type { Subject } from "./generated/Subject";
+export type { JournalNote } from "./generated/JournalNote";
+export type { JournalRow } from "./generated/JournalRow";
+export type { RowSource } from "./generated/RowSource";
 
 import type { Body } from "./generated/Body";
 import type { ChartData } from "./generated/ChartData";

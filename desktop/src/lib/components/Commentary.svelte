@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ask } from "@tauri-apps/plugin-dialog";
-  import { addExcerpt, correctExcerpt, deleteExcerpt, mergeUp } from "$lib/api";
+  import { addNote, correctNote, deleteNote, mergeUp } from "$lib/api";
   import { SvelteSet } from "svelte/reactivity";
   import type { ChartData, Note } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
@@ -48,7 +48,7 @@
     editing = null;
     if (draft.trim() === original) return;
     try {
-      updateChart(await correctExcerpt(id, draft));
+      updateChart(await correctNote(id, draft));
       notify("note amended — re-sectioned");
     } catch (e) {
       notify(reason(e), "error");
@@ -75,7 +75,7 @@
     });
     if (!sure) return;
     try {
-      updateChart(await deleteExcerpt(exId));
+      updateChart(await deleteNote(exId));
       notify("note removed");
     } catch (e) {
       notify(reason(e), "error");
@@ -97,7 +97,7 @@
     if (!draftText.trim()) return;
     composing = false;
     try {
-      updateChart(await addExcerpt(draftText, [...draftTags]));
+      updateChart(await addNote(draftText, [...draftTags]));
       notify("note added");
     } catch (e) {
       notify(reason(e), "error");

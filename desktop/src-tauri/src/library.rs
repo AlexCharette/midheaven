@@ -168,6 +168,30 @@ impl Library {
         entries
     }
 
+    /// Every saved reading paired with the notes filed under it, newest first.
+    ///
+    /// Deliberately a second reader rather than a richer [`entries`](Self::entries):
+    /// that one exists to be cheap, and its `IgnoredAny` was written precisely so
+    /// listing the library never builds a single note. The journal's cross-reading
+    /// view needs the opposite — every note in every chart — so it says so, and
+    /// pays for it here where the cost is named.
+    ///
+    /// The chart is read once for both halves; going through `entries` first and
+    /// then re-opening each file would read every chart twice.
+    pub fn notes(&self) -> Vec<(ReadingEntry, Vec<astro::contract::Note>)> {
+        let mut out: Vec<(ReadingEntry, Vec<astro::contract::Note>)> = std::fs::read_dir(&self.root)
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| e.path())
+                    .filter(|p| p.is_dir())
+                    .filter_map(|p| noted_entry(&p))
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.sort_by_key(|(e, _)| std::cmp::Reverse(e.modified_ms));
+        out
+    }
+
     /// Remove a reading, folder and all.
     ///
     /// The target must canonicalize to a *direct* child of the root and hold a
@@ -195,9 +219,15 @@ impl Library {
 
 /// Read a folder's chart into a listing row, or `None` if it holds none.
 fn entry(dir: &Path) -> Option<ReadingEntry> {
+    let raw = std::fs::read_to_string(dir.join(CHART)).ok()?;
+    row(dir, &raw)
+}
+
+/// The listing row for a chart already in hand — so a caller that needs the
+/// chart's contents too pays for one read rather than two.
+fn row(dir: &Path, raw: &str) -> Option<ReadingEntry> {
     let chart_path = dir.join(CHART);
-    let raw = std::fs::read_to_string(&chart_path).ok()?;
-    let listing: Listing = serde_json::from_str(&raw).ok()?;
+    let listing: Listing = serde_json::from_str(raw).ok()?;
     let modified_ms = std::fs::metadata(&chart_path)
         .and_then(|m| m.modified())
         .ok()
@@ -212,6 +242,23 @@ fn entry(dir: &Path) -> Option<ReadingEntry> {
         excerpts: listing.excerpts.len(),
         modified_ms,
     })
+}
+
+/// The same row, plus the notes themselves — the expensive half of [`entry`],
+/// kept apart from it so the cheap read stays cheap.
+fn noted_entry(dir: &Path) -> Option<(ReadingEntry, Vec<astro::contract::Note>)> {
+    /// The listing fields, with the notes actually built this time.
+    #[derive(serde::Deserialize)]
+    struct Noted {
+        #[serde(default)]
+        excerpts: Vec<astro::contract::Note>,
+    }
+    let raw = std::fs::read_to_string(dir.join(CHART)).ok()?;
+    // Two passes over one string rather than two reads of one file: the row and
+    // the notes are different views of the same JSON.
+    let row = row(dir, &raw)?;
+    let noted: Noted = serde_json::from_str(&raw).ok()?;
+    Some((row, noted.excerpts))
 }
 
 #[cfg(test)]
