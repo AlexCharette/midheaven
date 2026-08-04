@@ -7,6 +7,7 @@
   import { notify } from "$lib/toasts.svelte";
   import type { ReadingEntry } from "$lib/types";
   import { reason } from "$lib/failure";
+  import { chooseReadingsDir } from "$lib/readings";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -47,6 +48,13 @@
     } catch (e) {
       err = reason(e);
     }
+  }
+
+  // An explicit click is not a decline, so this always asks — `chooseReadingsDir`
+  // rather than the rule-gated `ensureReadingsDir`. Refreshing afterwards is
+  // what turns this empty plate into the list.
+  async function choose() {
+    if (await chooseReadingsDir()) refresh();
   }
 
   async function openFile() {
@@ -102,7 +110,8 @@
     <div class="empty-plate">
       <span class="mark" aria-hidden="true">✶</span>
       <p class="caption">No readings folder is set.</p>
-      <p class="sub">Choose one in preferences to keep a library of saved readings.</p>
+      <p class="sub">Choose one to keep a library of saved readings.</p>
+      <button class="frame-btn" onclick={choose}>choose a folder…</button>
     </div>
   {:else if entries.length === 0}
     <div class="empty-plate">

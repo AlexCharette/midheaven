@@ -18,6 +18,7 @@
   import { onMount } from "svelte";
   import { basename } from "$lib/files";
   import { reason } from "$lib/failure";
+  import { ensureReadingsDir } from "$lib/readings";
 
   type Initial = Partial<{
     date: string;
@@ -105,6 +106,12 @@
       return;
     }
     const place = picked;
+    // Building a reading is deciding to keep one, so this is the moment a
+    // readings folder is earned. Asked before the build rather than after, so
+    // the answer is in place when `build` looks for somewhere to save — and
+    // declining is fine: the reading is then held in the session and exported
+    // by hand, exactly as it was before this asked at all.
+    await ensureReadingsDir();
     try {
       const chart = await during("compute", () =>
         build({
