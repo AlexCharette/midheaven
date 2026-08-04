@@ -13,6 +13,7 @@
 use astro::ArchivedTranscript;
 use astro::contract::ChartData;
 use serde::Serialize;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -133,11 +134,16 @@ impl Library {
     ///
     /// The transcript matters as much as the chart — a passage is verbatim by
     /// definition, so without the words its span points at nothing.
+    /// Saving is also where a reading gets its identity: an id is minted here
+    /// and nowhere else, because *saved* is exactly when a reading becomes
+    /// something another file can point at. A chart that is only previewed
+    /// never acquires one it does not need.
     pub fn create(
         &self,
         stem: &str,
-        chart: &ChartData,
+        chart: &mut ChartData,
         transcript: Option<&ArchivedTranscript>,
+        now_ms: u64,
     ) -> Result<PathBuf, String> {
         let dir = self.root.join(stem);
         std::fs::create_dir_all(&dir)
@@ -146,8 +152,86 @@ impl Library {
             std::fs::write(dir.join(&t.filename), &t.contents)
                 .map_err(|e| format!("cannot write {}: {e}", t.filename))?;
         }
+        if chart.meta.id.is_none() {
+            let taken = self.taken_ids();
+            chart.meta.id = Some(crate::ids::mint(now_ms, |id| taken.contains(id)));
+        }
         save_chart(&dir, chart)?;
         Ok(dir)
+    }
+
+    /// Every reading id already in the library.
+    ///
+    /// Read rather than assumed: an id is minted from a millisecond, and two
+    /// readings saved inside one are unlikely rather than impossible. Asking
+    /// costs one pass at the moment a reading is created, which is a thing a
+    /// person does by hand.
+    pub fn taken_ids(&self) -> BTreeSet<String> {
+        #[derive(serde::Deserialize)]
+        struct Identified {
+            meta: IdOnly,
+        }
+        #[derive(serde::Deserialize)]
+        struct IdOnly {
+            #[serde(default)]
+            id: Option<String>,
+        }
+        std::fs::read_dir(&self.root)
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| e.path())
+                    .filter(|p| p.is_dir())
+                    .filter_map(|p| std::fs::read_to_string(p.join(CHART)).ok())
+                    .filter_map(|raw| serde_json::from_str::<Identified>(&raw).ok())
+                    .filter_map(|c| c.meta.id)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Give every saved reading that lacks one an id, so notes can point at it.
+    ///
+    /// Readings saved before ids existed have none, and they are exactly the
+    /// ones an existing user has. Returns how many were stamped.
+    ///
+    /// Idempotent by construction — a chart that already has an id is not
+    /// touched, so running this twice is running it once. Interrupt-safe for
+    /// the same reason: each reading is a separate file and a separate write,
+    /// and a run that stops halfway leaves the ones it reached finished.
+    ///
+    /// A chart that will not parse, will not validate, or will not be written
+    /// is skipped rather than reported. A locked or read-only library should
+    /// cost a person nothing at startup, and a file this does not fully
+    /// understand is not one to rewrite.
+    pub fn stamp_ids(&self, now_ms: u64) -> usize {
+        let mut taken = self.taken_ids();
+        let mut stamped = 0;
+        let Ok(entries) = std::fs::read_dir(&self.root) else {
+            return 0;
+        };
+        for dir in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+            let Ok(raw) = std::fs::read_to_string(dir.join(CHART)) else { continue };
+            let Ok(mut chart) = serde_json::from_str::<ChartData>(&raw) else { continue };
+            if chart.meta.id.is_some() {
+                continue;
+            }
+            // Derived fields before writing: a chart saved before they existed
+            // deserializes with them empty, and writing that back would put an
+            // empty `houseSweeps` where the file had none at all — a worse
+            // state than the one we found. Filling also gives `validate`
+            // something real to check.
+            astro::derive::fill(&mut chart);
+            if chart.validate().is_err() {
+                continue;
+            }
+            let id = crate::ids::mint(now_ms + stamped as u64, |c| taken.contains(c));
+            chart.meta.id = Some(id.clone());
+            if save_chart(&dir, &chart).is_ok() {
+                taken.insert(id);
+                stamped += 1;
+            }
+        }
+        stamped
     }
 
     /// Every saved reading, newest first. A folder that holds no chart, or one
@@ -293,6 +377,10 @@ mod tests {
         astro::chart::compute_chart(&astro::fixtures::named(name)).unwrap()
     }
 
+    /// A fixed clock. Every test below wants a saved reading; none of them
+    /// cares what millisecond it was saved in.
+    const CLOCK: u64 = 1_785_825_000_000;
+
     fn on(date: &str) -> chrono::NaiveDate {
         date.parse().unwrap()
     }
@@ -334,7 +422,7 @@ mod tests {
             filename: "transcript.jsonl".into(),
             contents: "{\"start\":0.0,\"text\":\"The sun.\"}".into(),
         };
-        let dir = t.lib.create("mira_2026-08-01", &chart("Mira"), Some(&transcript)).unwrap();
+        let dir = t.lib.create("mira_2026-08-01", &mut chart("Mira"), Some(&transcript), CLOCK).unwrap();
 
         assert!(dir.join("chart.json").is_file());
         assert_eq!(
@@ -347,7 +435,7 @@ mod tests {
     #[test]
     fn a_reading_with_no_transcript_writes_only_its_chart() {
         let t = TempLibrary::new("no-transcript");
-        let dir = t.lib.create("mira_2026-08-01", &chart("Mira"), None).unwrap();
+        let dir = t.lib.create("mira_2026-08-01", &mut chart("Mira"), None, CLOCK).unwrap();
         assert!(dir.join("chart.json").is_file());
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
     }
@@ -372,7 +460,7 @@ mod tests {
                 tags: vec![],
             },
         ];
-        t.lib.create("mira_2026-08-01", &c, None).unwrap();
+        t.lib.create("mira_2026-08-01", &mut c, None, CLOCK).unwrap();
 
         let entries = t.lib.entries();
         assert_eq!(entries.len(), 1);
@@ -386,7 +474,7 @@ mod tests {
     #[test]
     fn the_listing_skips_folders_that_are_not_readings() {
         let t = TempLibrary::new("skips");
-        t.lib.create("real_2026-08-01", &chart("Real"), None).unwrap();
+        t.lib.create("real_2026-08-01", &mut chart("Real"), None, CLOCK).unwrap();
         std::fs::create_dir_all(t.root.join("someone-elses-folder")).unwrap();
         std::fs::write(t.root.join("someone-elses-folder/notes.txt"), "hello").unwrap();
         std::fs::write(t.root.join("loose-file.txt"), "hello").unwrap();
@@ -408,7 +496,7 @@ mod tests {
     fn readings_list_newest_first() {
         let t = TempLibrary::new("order");
         for stem in ["a_2026-08-01", "b_2026-08-01", "c_2026-08-01"] {
-            t.lib.create(stem, &chart(stem), None).unwrap();
+            t.lib.create(stem, &mut chart(stem), None, CLOCK).unwrap();
             // mtime resolution is coarse on some filesystems; force an order.
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
@@ -420,7 +508,7 @@ mod tests {
     #[test]
     fn removing_a_reading_takes_its_whole_folder() {
         let t = TempLibrary::new("remove");
-        let dir = t.lib.create("mira_2026-08-01", &chart("Mira"), None).unwrap();
+        let dir = t.lib.create("mira_2026-08-01", &mut chart("Mira"), None, CLOCK).unwrap();
         std::fs::write(dir.join("take-1.jsonl"), "{}").unwrap();
 
         t.lib.remove(dir.to_str().unwrap()).unwrap();
@@ -433,7 +521,7 @@ mod tests {
     #[test]
     fn nothing_outside_the_library_can_be_removed() {
         let t = TempLibrary::new("guard");
-        let inside = t.lib.create("mira_2026-08-01", &chart("Mira"), None).unwrap();
+        let inside = t.lib.create("mira_2026-08-01", &mut chart("Mira"), None, CLOCK).unwrap();
 
         // A sibling of the root, reached by traversal from inside it.
         let outside = t.root.parent().unwrap().join("midheaven-library-guard-victim");
@@ -473,7 +561,7 @@ mod tests {
     #[test]
     fn take_ordinals_continue_past_the_files_already_there() {
         let t = TempLibrary::new("takes");
-        let dir = t.lib.create("mira_2026-08-01", &chart("Mira"), None).unwrap();
+        let dir = t.lib.create("mira_2026-08-01", &mut chart("Mira"), None, CLOCK).unwrap();
         assert_eq!(max_take_ordinal(&dir), 0);
 
         std::fs::write(dir.join("take-1.jsonl"), "{}").unwrap();
@@ -493,6 +581,134 @@ mod tests {
         assert_eq!(max_take_ordinal(Path::new("/no/such/place")), 0);
     }
 
+    /// A reading becomes something another file can point at at exactly the
+    /// moment it is saved — which is why `create` is where the id is minted.
+    #[test]
+    fn saving_a_reading_gives_it_an_identity() {
+        let t = TempLibrary::new("mint");
+        let mut c = chart("Mira");
+        assert_eq!(c.meta.id, None, "a computed chart has none");
+
+        t.lib.create("mira_2026-08-01", &mut c, None, CLOCK).unwrap();
+        let id = c.meta.id.clone().expect("saving minted one");
+        assert!(crate::ids::is_safe(&id), "{id}");
+        assert_eq!(t.lib.taken_ids(), BTreeSet::from([id.clone()]), "and it reached the file");
+
+        // The caller's copy is stamped too, not only the one on disk — the
+        // session and the webview hold that copy, and a note points at its id.
+        let reloaded: ChartData =
+            serde_json::from_str(&std::fs::read_to_string(t.root.join("mira_2026-08-01/chart.json")).unwrap())
+                .unwrap();
+        assert_eq!(reloaded.meta.id.as_deref(), Some(id.as_str()));
+    }
+
+    #[test]
+    fn a_reading_that_already_has_an_identity_keeps_it() {
+        let t = TempLibrary::new("keep-id");
+        let mut c = chart("Mira");
+        c.meta.id = Some("already-mine".into());
+        t.lib.create("mira_2026-08-01", &mut c, None, CLOCK).unwrap();
+        assert_eq!(c.meta.id.as_deref(), Some("already-mine"));
+    }
+
+    /// Two readings saved inside one millisecond is unlikely, not impossible,
+    /// and an id two notes could both mean is worse than an ugly one.
+    #[test]
+    fn two_readings_saved_in_the_same_millisecond_get_different_ids() {
+        let t = TempLibrary::new("collide");
+        let (mut a, mut b) = (chart("A"), chart("B"));
+        t.lib.create("a_2026-08-01", &mut a, None, CLOCK).unwrap();
+        t.lib.create("b_2026-08-01", &mut b, None, CLOCK).unwrap();
+        assert_ne!(a.meta.id, b.meta.id);
+        assert_eq!(t.lib.taken_ids().len(), 2);
+    }
+
+    /// Readings saved before ids existed are the ones an existing user has, so
+    /// the migration is the whole point rather than a tidy-up.
+    #[test]
+    fn the_sweep_gives_older_readings_an_identity() {
+        let t = TempLibrary::new("sweep");
+        for stem in ["a_2026-08-01", "b_2026-08-01", "c_2026-08-01"] {
+            let mut c = chart(stem);
+            t.lib.create(stem, &mut c, None, CLOCK).unwrap();
+            // Put them back the way a build from before ids would have left them.
+            c.meta.id = None;
+            save_chart(&t.root.join(stem), &c).unwrap();
+        }
+        assert!(t.lib.taken_ids().is_empty(), "the fixture really is id-less");
+
+        assert_eq!(t.lib.stamp_ids(CLOCK), 3);
+        let ids = t.lib.taken_ids();
+        assert_eq!(ids.len(), 3, "and each got a distinct one: {ids:?}");
+        assert!(ids.iter().all(|id| crate::ids::is_safe(id)));
+    }
+
+    /// Running it twice is running it once — which is what makes an interrupted
+    /// run safe to simply repeat.
+    #[test]
+    fn the_sweep_is_idempotent() {
+        let t = TempLibrary::new("sweep-twice");
+        let mut c = chart("Mira");
+        t.lib.create("mira_2026-08-01", &mut c, None, CLOCK).unwrap();
+        c.meta.id = None;
+        save_chart(&t.root.join("mira_2026-08-01"), &c).unwrap();
+
+        assert_eq!(t.lib.stamp_ids(CLOCK), 1);
+        let first = t.lib.taken_ids();
+        assert_eq!(t.lib.stamp_ids(CLOCK), 0, "nothing left to do");
+        assert_eq!(t.lib.taken_ids(), first, "and nothing was re-minted");
+    }
+
+    /// The sweep rewrites files a person owns. Anything it does not fully
+    /// understand it leaves exactly as it found it.
+    #[test]
+    fn the_sweep_does_not_touch_what_it_cannot_read() {
+        let t = TempLibrary::new("sweep-skips");
+        let mut good = chart("Good");
+        t.lib.create("good_2026-08-01", &mut good, None, CLOCK).unwrap();
+        good.meta.id = None;
+        save_chart(&t.root.join("good_2026-08-01"), &good).unwrap();
+
+        std::fs::create_dir_all(t.root.join("corrupt")).unwrap();
+        std::fs::write(t.root.join("corrupt/chart.json"), "{ not json").unwrap();
+        std::fs::create_dir_all(t.root.join("not-a-reading")).unwrap();
+        std::fs::write(t.root.join("not-a-reading/notes.txt"), "hello").unwrap();
+        // Parses as a chart but could never have been produced by one — the
+        // sweep must not launder it into the library by rewriting it.
+        let mut broken = chart("Broken");
+        broken.signs.pop();
+        broken.meta.id = None;
+        std::fs::create_dir_all(t.root.join("broken")).unwrap();
+        save_chart(&t.root.join("broken"), &broken).unwrap();
+
+        assert_eq!(t.lib.stamp_ids(CLOCK), 1, "only the one it understood");
+        assert_eq!(std::fs::read_to_string(t.root.join("corrupt/chart.json")).unwrap(), "{ not json");
+        let after: ChartData =
+            serde_json::from_str(&std::fs::read_to_string(t.root.join("broken/chart.json")).unwrap())
+                .unwrap();
+        assert_eq!(after.meta.id, None, "the invalid chart was left alone");
+    }
+
+    /// A chart saved before `houseSweeps` existed deserializes with it empty.
+    /// Writing that back would leave `"houseSweeps": []` where the file had no
+    /// such key — a worse state than the one the sweep found.
+    #[test]
+    fn the_sweep_writes_a_coherent_chart_not_a_hollowed_one() {
+        let t = TempLibrary::new("sweep-derive");
+        let mut c = chart("Mira");
+        t.lib.create("mira_2026-08-01", &mut c, None, CLOCK).unwrap();
+        c.meta.id = None;
+        c.house_sweeps = Vec::new();
+        save_chart(&t.root.join("mira_2026-08-01"), &c).unwrap();
+
+        assert_eq!(t.lib.stamp_ids(CLOCK), 1);
+        let after: ChartData =
+            serde_json::from_str(&std::fs::read_to_string(t.root.join("mira_2026-08-01/chart.json")).unwrap())
+                .unwrap();
+        assert_eq!(after.house_sweeps.len(), 12, "derived fields were filled, not blanked");
+        assert!(after.validate().is_ok());
+    }
+
     #[test]
     fn a_saved_chart_reloads_as_the_same_reading() {
         let t = TempLibrary::new("roundtrip");
@@ -504,7 +720,7 @@ mod tests {
             text: "The sun.".into(),
             tags: vec!["planet:sun".into()],
         }];
-        let dir = t.lib.create("mira_2026-08-01", &c, None).unwrap();
+        let dir = t.lib.create("mira_2026-08-01", &mut c, None, CLOCK).unwrap();
 
         let raw = std::fs::read_to_string(dir.join("chart.json")).unwrap();
         let back: ChartData = serde_json::from_str(&raw).unwrap();

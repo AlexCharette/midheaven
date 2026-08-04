@@ -105,16 +105,11 @@ pub struct JournalNote {
     pub note: Note,
 }
 
-/// Ids are minted here and handed to the webview, which hands them back to edit
-/// and delete. That round trip is why the shape is checked on the way in rather
-/// than trusted: an id becomes a filename, and `../../something` is a filename
-/// too. Restricting it to `[a-z0-9-]` forecloses traversal, separators, and
-/// Windows' reserved characters in one rule.
+/// A note's id, checked rather than trusted — the webview hands back ids it was
+/// given, and here an id becomes a filename. The rule itself is [`crate::ids`]'s,
+/// shared with the reading ids a note points at.
 fn safe_id(id: &str) -> Result<&str, String> {
-    let ok = !id.is_empty()
-        && id.len() <= 64
-        && id.chars().all(|c| matches!(c, 'a'..='z' | '0'..='9' | '-'));
-    if ok { Ok(id) } else { Err(format!("malformed note id {id:?}")) }
+    if crate::ids::is_safe(id) { Ok(id) } else { Err(format!("malformed note id {id:?}")) }
 }
 
 /// A folder of journal notes.
@@ -135,19 +130,10 @@ impl Journal {
         Some(Journal { dir: PathBuf::from(root).join(DIR) })
     }
 
-    /// A free id for a note written at `now_ms`.
-    ///
-    /// Time-ordered, so a directory listing reads in the order the notes were
-    /// written even before anything parses `writtenAt`. Base 36 keeps it short.
-    /// A second note inside the same millisecond takes the next free suffix
-    /// rather than overwriting the first — the loop terminates because each
-    /// probe names a different file.
+    /// A free id for a note written at `now_ms`. What counts as taken is a file
+    /// already being there, so two notes inside one millisecond cannot collide.
     pub fn mint_id(&self, now_ms: u64) -> String {
-        let stem = to_base36(now_ms);
-        if !self.path(&stem).exists() {
-            return stem;
-        }
-        (1..).map(|n| format!("{stem}-{n}")).find(|id| !self.path(id).exists()).expect("a free id")
+        crate::ids::mint(now_ms, |id| self.path(id).exists())
     }
 
     fn path(&self, id: &str) -> PathBuf {
@@ -216,20 +202,6 @@ fn written_at_ms(e: &JournalNote) -> i64 {
     chrono::DateTime::parse_from_rfc3339(&e.written_at)
         .map(|d| d.timestamp_millis())
         .unwrap_or(0)
-}
-
-fn to_base36(mut n: u64) -> String {
-    const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
-    if n == 0 {
-        return "0".to_string();
-    }
-    let mut out = Vec::new();
-    while n > 0 {
-        out.push(DIGITS[(n % 36) as usize]);
-        n /= 36;
-    }
-    out.reverse();
-    String::from_utf8(out).expect("base36 digits are ascii")
 }
 
 #[cfg(test)]
@@ -437,14 +409,6 @@ mod tests {
         assert!(t.journal.mint_id(1_785_825_000_001) > first);
     }
 
-    #[test]
-    fn base36_is_what_it_claims() {
-        assert_eq!(to_base36(0), "0");
-        assert_eq!(to_base36(35), "z");
-        assert_eq!(to_base36(36), "10");
-        assert_eq!(to_base36(1_785_825_000_000), "msea3gw0");
-    }
-
     /// The journal sits inside the readings library, so the library must not
     /// mistake it for a reading — neither listing it nor letting it be deleted
     /// as one. Both hold because `notes/` has no `chart.json`; this is what
@@ -453,8 +417,8 @@ mod tests {
     fn the_library_does_not_mistake_the_journal_for_a_reading() {
         let t = TempJournal::new("coexist");
         let library = crate::library::Library::configured(t.root.to_str()).unwrap();
-        let chart = astro::chart::compute_chart(&astro::fixtures::named("Mira")).unwrap();
-        library.create("mira_2026-08-01", &chart, None).unwrap();
+        let mut chart = astro::chart::compute_chart(&astro::fixtures::named("Mira")).unwrap();
+        library.create("mira_2026-08-01", &mut chart, None, 1_785_825_000_000).unwrap();
         t.journal.write(&entry("a", "2026-08-01T10:00:00Z", "a note")).unwrap();
 
         let entries = library.entries();

@@ -37,7 +37,27 @@ pub struct Preferences {
     /// Gazetteer id of the calculator's last-used place — written when a place
     /// is picked (`set_last_place`), not by the preferences pane.
     pub last_place_id: Option<u32>,
+    /// How far this install's saved data has been brought forward. Absent means
+    /// "before any migration existed", which is what every existing install
+    /// says and what a fresh one says until it saves.
+    ///
+    /// Not a preference — nothing in the preferences pane sets it, and a person
+    /// never sees it. It lives here because this is the one file the app
+    /// already owns per install, and a second one for a single integer would be
+    /// a second thing to find, back up and lose.
+    ///
+    /// Absent from the JSON and from the webview's type when unset: the
+    /// preferences pane builds a `Preferences` by hand and should not have to
+    /// carry a field it neither shows nor may change. `set_preferences` reads
+    /// this one from disk for the same reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub schema_version: Option<u32>,
 }
+
+/// The migrations that have been written. Bumped when one is added; an install
+/// below it runs everything above whatever it says.
+pub const SCHEMA_VERSION: u32 = 1;
 
 fn path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app
@@ -82,6 +102,36 @@ pub fn logo_data_uri(path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every existing `preferences.json` predates `schema_version`, and `load`
+    /// falls back to `Default` on any parse failure — so a field that refused
+    /// to be missing would not fail loudly, it would silently erase someone's
+    /// readings folder, their branding and their model path.
+    #[test]
+    fn a_preferences_file_from_before_a_field_existed_still_reads() {
+        let old = r#"{"readings_dir":"/Users/x/Readings","astrologer":"Mira","page_size":"letter"}"#;
+        let p: Preferences = serde_json::from_str(old).expect("an older file still parses");
+        assert_eq!(p.readings_dir.as_deref(), Some("/Users/x/Readings"));
+        assert_eq!(p.astrologer.as_deref(), Some("Mira"));
+        assert_eq!(p.schema_version, None, "which is what 'never migrated' means");
+
+        // And an empty file is still exactly no preferences at all.
+        assert!(serde_json::from_str::<Preferences>("{}").is_ok());
+    }
+
+    /// Unset means absent, not `null` — the webview builds a `Preferences` by
+    /// hand and must not have to carry the migration's bookkeeping.
+    #[test]
+    fn an_unmigrated_install_writes_no_schema_version() {
+        let json = serde_json::to_string(&Preferences::default()).unwrap();
+        assert!(!json.contains("schema_version"), "{json}");
+
+        let migrated = Preferences { schema_version: Some(SCHEMA_VERSION), ..Default::default() };
+        let json = serde_json::to_string(&migrated).unwrap();
+        assert!(json.contains(&format!("\"schema_version\":{SCHEMA_VERSION}")), "{json}");
+        let back: Preferences = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.schema_version, Some(SCHEMA_VERSION));
+    }
 
     #[test]
     fn logo_uri_carries_the_mime_and_survives_missing_files() {

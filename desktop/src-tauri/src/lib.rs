@@ -2,6 +2,7 @@
 //! renders; every capability (ephemeris, gazetteer, whisper, routing,
 //! emission) runs natively here, exactly as in the CLI/TUI.
 
+mod ids;
 mod journal;
 mod library;
 mod prefs;
@@ -21,6 +22,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
+
+/// Milliseconds since the epoch. Ids are minted from it; every caller that
+/// needs one goes through here rather than restating the `UNIX_EPOCH` dance.
+fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
+}
 
 /// The backend's one piece of mutable state: the reading session. Every
 /// command that needs a reading reaches it through [`Session`]'s guard, so the
@@ -277,7 +284,10 @@ async fn build(
     // held in the session and exported by hand.
     let stem = library::stem(&chart.meta.name, chrono::Local::now().date_naive());
     let session_dir = match Library::configured(p.readings_dir.as_deref()) {
-        Some(lib) => Some(lib.create(&stem, &chart, report.transcript.as_ref())?),
+        // `create` stamps the chart's identity as it saves it, so the copy that
+        // goes into the session and back to the webview carries the same id the
+        // file does — a reading a note could point at from the moment it exists.
+        Some(lib) => Some(lib.create(&stem, &mut chart, report.transcript.as_ref(), now_ms())?),
         None => None,
     };
 
@@ -916,6 +926,10 @@ fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), Stri
         // Not a pane field — carried through so saving preferences never
         // erases the calculator's remembered place.
         last_place_id: prefs.last_place_id,
+        // Read from disk rather than from the webview: this is the migration's
+        // own bookkeeping, and a client that simply did not send it would
+        // otherwise reset it, making every launch re-read the whole library.
+        schema_version: prefs::load(&app).schema_version,
     };
     if let Some(size) = &prefs.page_size {
         astro::pdf::PageSize::parse(size)?;
@@ -1123,15 +1137,55 @@ macro_rules! names {
     ($($name:ident),* $(,)?) => { [$(stringify!($name)),*] };
 }
 
+/// Bring this install's saved data forward, once.
+///
+/// Version 1 gives every saved reading an id, so a note can be about a person
+/// rather than about a folder path that moves. Readings saved before ids
+/// existed are exactly the ones an existing user has, which is why this exists
+/// at all rather than only stamping new ones.
+///
+/// The version is only recorded **when a library was actually swept**. Someone
+/// with no readings folder configured has nothing to migrate today and may
+/// configure one tomorrow; recording success now would mean their existing
+/// readings were never reached. Nothing else here writes preferences, so the
+/// only thing that can be lost by failing is the chance to try again — which is
+/// the safe direction.
+fn migrate(app: &AppHandle) {
+    let mut p = prefs::load(app);
+    let library = Library::configured(p.readings_dir.as_deref());
+    if !needs_migrating(p.schema_version, library.is_some()) {
+        return;
+    }
+    library.expect("checked just above").stamp_ids(now_ms());
+    p.schema_version = Some(prefs::SCHEMA_VERSION);
+    // A failed write costs a repeat run, which is why `stamp_ids` is idempotent.
+    prefs::save(app, &p).ok();
+}
+
+/// Whether there is a migration to run — and, because the two are the same
+/// question, whether finishing one is worth recording.
+///
+/// `has_library` is the half that is easy to get wrong. Someone with no
+/// readings folder has nothing to migrate *today* and may configure one
+/// tomorrow; calling that a completed migration would mean the readings they
+/// already have are never reached.
+fn needs_migrating(recorded: Option<u32>, has_library: bool) -> bool {
+    has_library && recorded.unwrap_or(0) < prefs::SCHEMA_VERSION
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
-        .setup(|_app| {
+        .setup(|app| {
             // one-time gazetteer parse off the critical path
             tauri::async_runtime::spawn_blocking(geo::warm);
+            let handle = app.handle().clone();
+            // Likewise off the critical path: it reads and may rewrite every
+            // chart in the library, and nothing on the first frame needs it.
+            tauri::async_runtime::spawn_blocking(move || migrate(&handle));
             Ok(())
         });
 
@@ -1455,6 +1509,29 @@ mod tests {
         let mut nonsense = anchor();
         nonsense.house_system = "not-a-system".into();
         assert!(chart_of(&nonsense).is_err(), "an unknown code is refused, not defaulted");
+    }
+
+    /// The migration runs once — but "once" has to mean once *per install that
+    /// had something to migrate*, not once per launch.
+    #[test]
+    fn a_migration_waits_for_a_library_to_migrate() {
+        // An existing install, readings folder set: the case the sweep exists for.
+        assert!(needs_migrating(None, true));
+        assert!(needs_migrating(Some(0), true));
+        // Already brought forward.
+        assert!(!needs_migrating(Some(prefs::SCHEMA_VERSION), true));
+        // Ahead of us — a newer build wrote this preferences file. Leave it be
+        // rather than sweeping on its behalf.
+        assert!(!needs_migrating(Some(prefs::SCHEMA_VERSION + 1), true));
+
+        // No readings folder: nothing to migrate, and crucially not recorded as
+        // done — one may be configured tomorrow, and the readings already in it
+        // would otherwise never be reached.
+        assert!(!needs_migrating(None, false));
+        assert!(
+            needs_migrating(None, true),
+            "the same install, once it has a folder, still has a migration to run"
+        );
     }
 
     #[test]
