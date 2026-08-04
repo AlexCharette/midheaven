@@ -192,14 +192,17 @@
   {/if}
 
   <p class="section">about</p>
-  <label>
-    <span>acknowledgements</span>
-    <span class="ack">
+  <!-- Not a <label>: nothing here is a field. It used to be one, and since a
+       <button> is a labelable element the label bound itself to the licenses
+       button — clicking anywhere in this sentence opened the licenses file. -->
+  <div class="row">
+    <span>credits</span>
+    <p class="ack">
       Ephemeris and house calculations by the
       <button type="button" class="linklike" onclick={showLicenses}>xalen</button>
       crates (Apache-2.0).
-    </span>
-  </label>
+    </p>
+  </div>
 
   {#if error}<p class="error">✗ {error}</p>{/if}
 
@@ -228,17 +231,24 @@
   .section:not(:first-of-type) {
     margin-top: 1.8rem;
   }
-  label {
+  label,
+  .row {
     display: grid;
     grid-template-columns: 7.5rem 1fr auto;
     gap: 0 1rem;
     align-items: baseline;
     margin-bottom: 1.1rem;
   }
-  label span:first-child {
+  label span:first-child,
+  .row span:first-child {
     font-style: italic;
     color: var(--ink-3);
     text-align: right;
+    /* The gutter is a fixed track, so a label longer than it overflows rather
+       than widening it — and a right-aligned overflow runs *backwards*, out of
+       the panel and under the value beside it. Two-word labels wrap on their
+       space; this catches a one-word label that can't. */
+    overflow-wrap: break-word;
   }
   select:disabled {
     color: var(--ink-3);
@@ -253,9 +263,11 @@
     color: var(--ink);
   }
   .ack {
+    margin: 0;
     font-size: 0.85rem;
     color: var(--ink-3);
     line-height: 1.5;
+    text-wrap: pretty;
   }
   .linklike {
     color: var(--ink);

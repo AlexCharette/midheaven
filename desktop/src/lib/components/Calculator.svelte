@@ -30,15 +30,15 @@
   import MomentField from "./MomentField.svelte";
   import Overlay from "./Overlay.svelte";
   import PlacePicker from "./PlacePicker.svelte";
-  import Preferences from "./Preferences.svelte";
   import TimeRings from "./TimeRings.svelte";
   import Wheel from "./Wheel.svelte";
 
   // Fly-outs this view owns; nobody else's business, so local rather than
   // shared state. `birthOpen` used to sit in the preview pipeline's object,
-  // beside its in-flight and error fields.
+  // beside its in-flight and error fields. Preferences was here too, which is
+  // why it was unreachable from a reading — it belongs to the app, and the
+  // layout now owns it and its corner control.
   let libraryOpen = $state(false);
-  let prefsOpen = $state(false);
   let birthOpen = $state(false);
 
   onMount(async () => {
@@ -174,11 +174,7 @@
 </div>
 
 <footer>
-  <span class="quiet-acts">
-    <button type="button" class="ghost" onclick={() => (libraryOpen = true)}>open a saved reading</button>
-    <span class="sep" aria-hidden="true">·</span>
-    <button type="button" class="ghost" onclick={() => (prefsOpen = true)}>preferences</button>
-  </span>
+  <button type="button" class="ghost" onclick={() => (libraryOpen = true)}>open a saved reading</button>
   <button type="button" class="frame-btn cast" onclick={() => (birthOpen = true)}>
     cast a natal chart
   </button>
@@ -201,10 +197,6 @@
 {:else if libraryOpen}
   <Overlay label="saved readings" onclose={() => (libraryOpen = false)}>
     <Library onclose={() => (libraryOpen = false)} />
-  </Overlay>
-{:else if prefsOpen}
-  <Overlay label="preferences" onclose={() => (prefsOpen = false)}>
-    <Preferences onclose={() => (prefsOpen = false)} />
   </Overlay>
 {/if}
 
@@ -356,10 +348,6 @@
     background: var(--bg-deep);
     border-top: 1px solid var(--hairline);
     font-size: 0.88rem;
-  }
-  footer .quiet-acts .sep {
-    color: var(--ink-3);
-    margin: 0 0.4rem;
   }
   footer .cast {
     margin-left: auto;

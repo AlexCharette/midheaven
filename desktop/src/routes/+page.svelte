@@ -298,8 +298,12 @@
     background: var(--ink);
     color: var(--bg-deep);
   }
+  /* the count is the only thing that reaches this column's right edge, and at
+     wide widths that edge is where the layout's fixed preferences gear sits —
+     so the toolbar keeps a corner's worth of room clear */
   .count {
     margin-left: auto;
+    margin-right: 2.4rem;
     font-variant-numeric: tabular-nums;
   }
   footer {
