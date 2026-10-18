@@ -1,10 +1,10 @@
 //! What you can ask of the notes, and how to save the asking.
 //!
-//! A closed set of questions rather than a search string with a syntax. Five
-//! dimensions — tags, whose chart, which chart, when it was written, and the
-//! words — because those are the five things that are true of every note, and
-//! a question outside them would be a question the store cannot answer
-//! without reading something it does not hold.
+//! A closed set of questions rather than a search string with a syntax. Six
+//! dimensions — tags, who it is about, which chart, what kind of thing it is
+//! anchored to, when it was written, and the words — because those are what
+//! is true of every note, and a question outside them would be one the store
+//! cannot answer without reading something it does not hold.
 //!
 //! Closed is the point. Each field narrows, they combine with AND, and an
 //! empty [`Query`] matches everything; so a view is always a refinement of
@@ -20,7 +20,7 @@
 //! and rebuilt from the files — never one that can be the only place a fact
 //! lives, because then a corrupt index is data loss rather than a rebuild.
 
-use crate::store::{Chart, Person, StoredNote, Store};
+use crate::store::{Anchor, AnchorKind, Chart, Person, Store, StoredNote};
 use serde::{Deserialize, Serialize};
 
 /// How a multi-tag selection narrows: `any` = the note touches one of the
@@ -42,10 +42,23 @@ pub struct Query {
     /// Vocabulary tags the note must carry.
     pub tags: Vec<String>,
     pub mode: Mode,
-    /// Whose chart it is about.
+    /// Who it is about — **both** senses, deliberately.
+    ///
+    /// A note reaches a person two ways now: by being anchored to one
+    /// outright, or by being said in a reading of one of their charts.
+    /// "Everything about Mira" is the question people actually ask, and
+    /// splitting it would make the common case take two queries.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub person: Option<String>,
+    /// What *kind* of thing it is anchored to, without saying which one.
+    ///
+    /// This is how "my standing notes on Leo" is asked, and it cannot be
+    /// inferred from the fields above: leaving `person` and `chart` unset
+    /// already means "do not filter by those", not "has neither".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub anchor: Option<AnchorKind>,
     /// Which chart exactly — one sky rather than one person's several.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -98,8 +111,14 @@ impl Charts {
         Charts(store.all::<Chart>().into_iter().map(|c| (c.id.clone(), c)).collect())
     }
 
-    fn person_of(&self, note: &StoredNote) -> Option<&str> {
-        self.0.get(&note.chart)?.person.as_deref()
+    /// Who a note is about, either way round: the person it names outright,
+    /// or the person whose chart it was said in.
+    fn person_of<'a>(&'a self, note: &'a StoredNote) -> Option<&'a str> {
+        match &note.anchor {
+            Anchor::Person { id } => Some(id),
+            Anchor::Chart { id } => self.0.get(id)?.person.as_deref(),
+            Anchor::Standing => None,
+        }
     }
 }
 
@@ -108,7 +127,8 @@ impl Query {
     pub fn matches(&self, note: &StoredNote, charts: &Charts) -> bool {
         self.tags_match(note)
             && self.person.as_ref().is_none_or(|p| charts.person_of(note) == Some(p.as_str()))
-            && self.chart.as_ref().is_none_or(|c| &note.chart == c)
+            && self.chart.as_ref().is_none_or(|c| note.anchor.chart() == Some(c.as_str()))
+            && self.anchor.is_none_or(|k| note.anchor.kind() == k)
             && self.since.as_ref().is_none_or(|d| note.written_at.as_str() >= d.as_str())
             // `until` is inclusive of the whole day, and an RFC 3339 stamp
             // from that day begins with it — so the comparison is against the
@@ -194,7 +214,7 @@ mod tests {
         StoredNote {
             id: id.into(),
             written_at: written_at.into(),
-            chart: chart.into(),
+            anchor: Anchor::Chart { id: chart.into() },
             at: None,
             text: text.into(),
             tags: tags.iter().map(|s| s.to_string()).collect(),
@@ -253,6 +273,77 @@ mod tests {
 
         let all = Query { mode: Mode::All, ..any };
         assert_eq!(ids(run(&t.store, &all)), ["n3"]);
+    }
+
+    fn standing(id: &str, written_at: &str, text: &str, tags: &[&str]) -> StoredNote {
+        StoredNote {
+            id: id.into(),
+            written_at: written_at.into(),
+            anchor: Anchor::Standing,
+            at: None,
+            text: text.into(),
+            tags: tags.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn about(id: &str, person: &str, written_at: &str, text: &str, tags: &[&str]) -> StoredNote {
+        StoredNote { anchor: Anchor::Person { id: person.into() }, ..standing(id, written_at, text, tags) }
+    }
+
+    /// "About Mira" is one question, not two. A note reaches her by naming
+    /// her outright or by having been said in a reading of one of her
+    /// charts, and the filter means both.
+    #[test]
+    fn a_person_gathers_both_senses() {
+        let t = seeded("both-senses");
+        t.store
+            .put(&about("n6", "p1", "2026-08-20T09:00:00Z", "She deflects.", &["planet:sun"]))
+            .unwrap();
+
+        let q = Query { person: Some("p1".into()), ..Default::default() };
+        assert_eq!(ids(run(&t.store, &q)), ["n6", "n3", "n2", "n1"]);
+    }
+
+    /// Craft knowledge belongs to nobody, so it must not fall into anyone's
+    /// results — including through the chart side of the question.
+    #[test]
+    fn a_standing_note_belongs_to_no_person() {
+        let t = seeded("standing-person");
+        t.store
+            .put(&standing("n6", "2026-08-20T09:00:00Z", "Saturn is slow.", &["planet:saturn"]))
+            .unwrap();
+        for p in ["p1", "p2"] {
+            let q = Query { person: Some(p.into()), ..Default::default() };
+            assert!(!ids(run(&t.store, &q)).contains(&"n6".to_string()));
+        }
+    }
+
+    /// The dimension the whole design turns on: "my standing notes on Leo".
+    /// It cannot be inferred from the other fields — leaving `person` and
+    /// `chart` unset means "do not filter by those", not "has neither".
+    #[test]
+    fn the_anchor_kind_separates_craft_from_everything_else() {
+        let t = seeded("kinds");
+        t.store
+            .put(&standing("n6", "2026-08-20T09:00:00Z", "Craft.", &["planet:sun"]))
+            .unwrap();
+        t.store
+            .put(&about("n7", "p1", "2026-08-21T09:00:00Z", "Observation.", &["planet:sun"]))
+            .unwrap();
+
+        let only = |k| Query { anchor: Some(k), ..Default::default() };
+        assert_eq!(ids(run(&t.store, &only(AnchorKind::Standing))), ["n6"]);
+        assert_eq!(ids(run(&t.store, &only(AnchorKind::Person))), ["n7"]);
+        assert_eq!(ids(run(&t.store, &only(AnchorKind::Chart))).len(), 5, "the seeded reading notes");
+
+        // And it composes with the tags, which is the actual question:
+        // everything I have written about the sun, as craft.
+        let q = Query {
+            tags: vec!["planet:sun".into()],
+            anchor: Some(AnchorKind::Standing),
+            ..Default::default()
+        };
+        assert_eq!(ids(run(&t.store, &q)), ["n6"]);
     }
 
     /// A person's notes are the notes under every chart of theirs, which is

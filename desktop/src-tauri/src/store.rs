@@ -119,13 +119,79 @@ impl Record for Chart {
     }
 }
 
+/// What a note is about — the closed choice of three.
+///
+/// A note used to name a chart, always, and that made every note a note
+/// about a sky. Two kinds of writing had nowhere to go: what an astrologer
+/// knows about Saturn, which is about no particular sky at all, and what they
+/// have noticed about a client, which is about a person rather than a moment.
+///
+/// `Standing` is the craft one, and its *absence of an anchor is what marks
+/// it*. The tags already said what a note is about — the vocabulary went
+/// global, so `sign:leo` needs no chart — but a tag cannot tell a considered
+/// essay on Leo apart from a transcript sentence where someone happened to
+/// say the word. Having no anchor can: nothing routed into a standing note.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Anchor {
+    /// Said in a reading, about that sky.
+    Chart { id: String },
+    /// About someone, not about a moment.
+    Person { id: String },
+    /// Craft knowledge: about the elements, and about nothing else.
+    Standing,
+}
+
+impl Anchor {
+    /// The chart this note is filed under, if it is filed under one.
+    pub fn chart(&self) -> Option<&str> {
+        match self {
+            Anchor::Chart { id } => Some(id),
+            _ => None,
+        }
+    }
+
+    /// The person this note names *directly* — not the one reachable through
+    /// its chart. `query::Charts` answers the wider question.
+    pub fn person(&self) -> Option<&str> {
+        match self {
+            Anchor::Person { id } => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn is_standing(&self) -> bool {
+        matches!(self, Anchor::Standing)
+    }
+}
+
+/// What kind of thing a note is about, without saying which one — the shape
+/// a query filters on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+pub enum AnchorKind {
+    Chart,
+    Person,
+    Standing,
+}
+
+impl Anchor {
+    pub fn kind(&self) -> AnchorKind {
+        match self {
+            Anchor::Chart { .. } => AnchorKind::Chart,
+            Anchor::Person { .. } => AnchorKind::Person,
+            Anchor::Standing => AnchorKind::Standing,
+        }
+    }
+}
+
 /// A note, and what it was written about.
 ///
 /// Flat: the note's own fields are the record's fields rather than a nested
 /// `note` object, because there is no longer anything else a note could be
-/// wrapped in. `journal::JournalNote` was `{ writtenAt, anchor, note }` with
-/// the anchor inline; the anchor is a `chart` id now, and the nesting went
-/// with it.
+/// wrapped in.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 #[serde(rename_all = "camelCase")]
@@ -139,8 +205,8 @@ pub struct StoredNote {
     /// a millisecond count says nothing. Sorting parses it; a value that will
     /// not parse sinks rather than throwing the note away.
     pub written_at: String,
-    /// The sky it was written over.
-    pub chart: String,
+    /// What it is about: a sky, a person, or neither.
+    pub anchor: Anchor,
     /// "HH:MM:SS" into the recording it was spoken in, if it was spoken.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -336,7 +402,7 @@ mod tests {
         StoredNote {
             id: id.into(),
             written_at: written_at.into(),
-            chart: chart.into(),
+            anchor: Anchor::Chart { id: chart.into() },
             at: None,
             text: text.into(),
             tags: vec!["planet:sun".into()],
@@ -361,6 +427,38 @@ mod tests {
 
     /// The four folders are four namespaces: a chart and a note may share an
     /// id without either shadowing the other.
+    /// All three anchors survive the trip to disk and back, including the
+    /// one that carries no id — a unit variant is the case a tagged enum is
+    /// easiest to get wrong.
+    #[test]
+    fn every_anchor_round_trips() {
+        let t = TempStore::new("anchors");
+        for (id, anchor) in [
+            ("n1", Anchor::Chart { id: "c1".into() }),
+            ("n2", Anchor::Person { id: "p1".into() }),
+            ("n3", Anchor::Standing),
+        ] {
+            let n = StoredNote {
+                anchor: anchor.clone(),
+                ..note(id, "2026-08-01T09:00:00Z", "c1", "words")
+            };
+            t.store.put(&n).unwrap();
+            assert_eq!(t.store.get::<StoredNote>(id).unwrap().unwrap().anchor, anchor);
+        }
+    }
+
+    /// The file says what it is in words, because it is meant to still make
+    /// sense to someone opening it in a decade.
+    #[test]
+    fn an_anchor_reads_as_prose_on_disk() {
+        let t = TempStore::new("anchor-wire");
+        t.store
+            .put(&StoredNote { anchor: Anchor::Standing, ..note("n1", "2026-08-01T09:00:00Z", "c1", "w") })
+            .unwrap();
+        let raw = std::fs::read_to_string(t.root.join("notes/n1.json")).unwrap();
+        assert!(raw.contains("\"kind\": \"standing\""), "{raw}");
+    }
+
     #[test]
     fn the_record_type_picks_the_folder() {
         let t = TempStore::new("folders");
@@ -417,7 +515,7 @@ mod tests {
         let charts = t.store.all::<Chart>();
         assert_eq!(charts.len(), 2, "the correction minted a chart, it did not edit one");
         let under_c1: Vec<_> =
-            t.store.all::<StoredNote>().into_iter().filter(|n| n.chart == "c1").collect();
+            t.store.all::<StoredNote>().into_iter().filter(|n| n.anchor.chart() == Some("c1")).collect();
         assert_eq!(under_c1.len(), 1, "notes stay with the sky they were written about");
     }
 

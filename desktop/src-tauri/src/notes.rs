@@ -17,7 +17,7 @@
 //! One path, and it retags: a note the writer did not file should be filed by
 //! the words, wherever it was written.
 
-use crate::store::{Store, StoredNote};
+use crate::store::{Anchor, Store, StoredNote};
 use astro::i18n::Locale;
 use astro::route::retag;
 
@@ -26,7 +26,10 @@ pub struct Written<'a> {
     /// `None` mints a new note; `Some` amends the one with that id, keeping
     /// its `writtenAt` and its place in the reading.
     pub id: Option<String>,
-    pub chart: &'a str,
+    /// What it is about. An amendment ignores this and keeps what the note
+    /// already had: moving a note between a sky, a person and nobody is a
+    /// different act from correcting its words, and nothing offers it.
+    pub anchor: Anchor,
     pub text: &'a str,
     /// Tags the writer picked. Empty means "file it from the words".
     pub tags: Vec<String>,
@@ -57,8 +60,8 @@ pub fn write(store: &Store, w: Written<'_>) -> Result<StoredNote, String> {
         .fixed_offset();
 
     // An amendment keeps the note it is amending: its id, when it was first
-    // written, and the moment in the recording it points at. Only the words
-    // and what they file under are the writer's to change.
+    // written, what it is about, and the moment in the recording it points
+    // at. Only the words and what they file under are the writer's to change.
     let existing = match &w.id {
         Some(id) => store.get::<StoredNote>(id)?,
         None => None,
@@ -72,7 +75,7 @@ pub fn write(store: &Store, w: Written<'_>) -> Result<StoredNote, String> {
             .as_ref()
             .map(|e| e.written_at.clone())
             .unwrap_or_else(|| now.to_rfc3339()),
-        chart: existing.as_ref().map(|e| e.chart.clone()).unwrap_or_else(|| w.chart.to_string()),
+        anchor: existing.as_ref().map(|e| e.anchor.clone()).unwrap_or(w.anchor),
         at: existing.as_ref().and_then(|e| e.at.clone()),
         text: text.to_string(),
         tags,
@@ -101,7 +104,7 @@ pub fn file_take(
         let stored = StoredNote {
             id: store.mint_id::<StoredNote>(now_ms.max(0) as u64),
             written_at: written_at.clone(),
-            chart: chart.to_string(),
+            anchor: Anchor::Chart { id: chart.to_string() },
             at: note.at,
             text: note.text,
             tags: note.tags,
@@ -113,9 +116,17 @@ pub fn file_take(
 }
 
 /// Every note filed under one chart, in reading order.
+///
+/// Chart-anchored only, deliberately. Standing notes about this chart's
+/// elements are shown beside the reading rather than in it — and this is the
+/// function the artifact and the PDF export through, so it is also the line
+/// that keeps a practitioner's own notes out of a client's keepsake.
 pub fn under(store: &Store, chart: &str) -> Vec<StoredNote> {
-    let mut out: Vec<StoredNote> =
-        store.all::<StoredNote>().into_iter().filter(|n| n.chart == chart).collect();
+    let mut out: Vec<StoredNote> = store
+        .all::<StoredNote>()
+        .into_iter()
+        .filter(|n| n.anchor.chart() == Some(chart))
+        .collect();
     out.sort_by(|a, b| order_key(a).cmp(&order_key(b)));
     out
 }
@@ -204,7 +215,14 @@ mod tests {
     }
 
     fn written<'a>(text: &'a str, tags: Vec<String>) -> Written<'a> {
-        Written { id: None, chart: "c1", text, tags, locale: Locale::En, now_ms: T0 }
+        Written {
+            id: None,
+            anchor: Anchor::Chart { id: "c1".into() },
+            text,
+            tags,
+            locale: Locale::En,
+            now_ms: T0,
+        }
     }
 
     /// The divergence this module exists to end: a note written with no tags
@@ -239,7 +257,7 @@ mod tests {
 
     /// An amendment is the same call, and keeps what was not amended.
     #[test]
-    fn amending_keeps_the_id_the_chart_and_when_it_was_written() {
+    fn amending_keeps_the_id_the_anchor_and_when_it_was_written() {
         let t = TempStore::new("amend");
         let first = write(&t.store, written("The sun.", vec![])).unwrap();
 
@@ -255,7 +273,7 @@ mod tests {
 
         assert_eq!(amended.id, first.id);
         assert_eq!(amended.written_at, first.written_at, "when it was first written");
-        assert_eq!(amended.chart, "c1");
+        assert_eq!(amended.anchor, Anchor::Chart { id: "c1".into() });
         assert_eq!(amended.text, "The moon, actually.");
         assert!(amended.tags.contains(&"planet:moon".to_string()), "retagged from the new words");
         assert_eq!(t.store.all::<StoredNote>().len(), 1, "amended, not duplicated");
@@ -315,7 +333,11 @@ mod tests {
         write(&t.store, written("mine", vec!["planet:sun".into()])).unwrap();
         write(
             &t.store,
-            Written { chart: "c2", now_ms: T0 + 1, ..written("theirs", vec!["planet:sun".into()]) },
+            Written {
+                anchor: Anchor::Chart { id: "c2".into() },
+                now_ms: T0 + 1,
+                ..written("theirs", vec!["planet:sun".into()])
+            },
         )
         .unwrap();
 
@@ -356,6 +378,96 @@ mod tests {
         assert_eq!(left[0].text, "The sun is loud. So is the moon.");
         assert_eq!(left[0].tags, vec!["planet:moon", "planet:sun"]);
         assert_eq!(left[0].at.as_deref(), Some("00:01:00"), "the earlier anchor is kept");
+    }
+
+    /// The export boundary, as a test.
+    ///
+    /// `under` is what the artifact and the PDF render through, so anything
+    /// it returns leaves the building. A practitioner's standing notes and
+    /// their observations about a client must not — the first are private
+    /// craft, the second may be things you would never hand the person they
+    /// are about.
+    #[test]
+    fn a_readings_notes_are_its_own_and_nothing_else() {
+        let t = TempStore::new("boundary");
+        write(&t.store, written("said in the reading", vec!["planet:sun".into()])).unwrap();
+        write(
+            &t.store,
+            Written {
+                anchor: Anchor::Standing,
+                now_ms: T0 + 1,
+                ..written("what Saturn means to me", vec!["planet:sun".into()])
+            },
+        )
+        .unwrap();
+        write(
+            &t.store,
+            Written {
+                anchor: Anchor::Person { id: "p1".into() },
+                now_ms: T0 + 2,
+                ..written("she keeps deflecting", vec!["planet:sun".into()])
+            },
+        )
+        .unwrap();
+
+        // All three carry the same tag, so tags cannot be what separates them.
+        assert_eq!(t.store.all::<StoredNote>().len(), 3);
+        let exported: Vec<String> =
+            under(&t.store, "c1").into_iter().map(|n| n.text).collect();
+        assert_eq!(exported, vec!["said in the reading"]);
+    }
+
+    /// The premise of the whole design: having no anchor is what tells a
+    /// considered note about Leo apart from a transcript sentence that
+    /// happened to say the word.
+    #[test]
+    fn a_standing_note_is_findable_among_notes_sharing_its_tags() {
+        let t = TempStore::new("standing");
+        write(&t.store, written("someone said leo out loud", vec!["sign:leo".into()])).unwrap();
+        write(
+            &t.store,
+            Written {
+                anchor: Anchor::Standing,
+                now_ms: T0 + 1,
+                ..written("Leo wants to be seen doing the thing", vec!["sign:leo".into()])
+            },
+        )
+        .unwrap();
+
+        let standing: Vec<String> = t
+            .store
+            .all::<StoredNote>()
+            .into_iter()
+            .filter(|n| n.anchor.is_standing())
+            .map(|n| n.text)
+            .collect();
+        assert_eq!(standing, vec!["Leo wants to be seen doing the thing"]);
+    }
+
+    /// Correcting the words of a note does not move it between a sky, a
+    /// person and nobody. That is a different act, and nothing offers it.
+    #[test]
+    fn amending_cannot_change_what_a_note_is_about() {
+        let t = TempStore::new("reanchor");
+        let first = write(
+            &t.store,
+            Written { anchor: Anchor::Standing, ..written("about Leo", vec!["sign:leo".into()]) },
+        )
+        .unwrap();
+
+        let amended = write(
+            &t.store,
+            Written {
+                id: Some(first.id.clone()),
+                anchor: Anchor::Chart { id: "c1".into() },
+                now_ms: T0 + 60_000,
+                ..written("about Leo, corrected", vec!["sign:leo".into()])
+            },
+        )
+        .unwrap();
+
+        assert_eq!(amended.anchor, Anchor::Standing, "the anchor it had, not the one asked for");
+        assert_eq!(amended.text, "about Leo, corrected");
     }
 
     #[test]

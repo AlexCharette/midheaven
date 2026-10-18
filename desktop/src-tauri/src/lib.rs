@@ -15,7 +15,7 @@ mod store;
 use astro::chart::parse_time;
 use astro::contract::{ChartData, Note};
 use astro::chart::systems;
-use crate::store::{Chart, Person, Store, StoredNote};
+use crate::store::{Anchor, Chart, Person, Store, StoredNote};
 use astro::{TranscriptSource, geo};
 use serde::{Deserialize, Serialize};
 use session::{Reading, Session};
@@ -578,7 +578,14 @@ fn write_note(
     let store = store_of(&app)?;
     notes::write(
         &store,
-        notes::Written { id, chart: &chart_id, text: &text, tags, locale, now_ms: now_ms() as i64 },
+        notes::Written {
+            id,
+            anchor: Anchor::Chart { id: chart_id.clone() },
+            text: &text,
+            tags,
+            locale,
+            now_ms: now_ms() as i64,
+        },
     )?;
     Ok(notes::under(&store, &chart_id).iter().map(StoredNote::note).collect())
 }
@@ -618,7 +625,50 @@ fn write_moment_note(
     };
     notes::write(
         &store,
-        notes::Written { id, chart: &chart_id, text: &text, tags, locale, now_ms: now_ms() as i64 },
+        notes::Written {
+            id,
+            anchor: Anchor::Chart { id: chart_id },
+            text: &text,
+            tags,
+            locale,
+            now_ms: now_ms() as i64,
+        },
+    )
+}
+
+/// Write a note that is about no sky: craft knowledge about the elements, or
+/// an observation about a person.
+///
+/// Which of the two it is falls out of whether a person was named, rather
+/// than being a third thing the caller has to say. The journal's one compose
+/// surface therefore writes both — text, the elements it is filed under, and
+/// optionally who it is about.
+#[tauri::command]
+fn write_standing_note(
+    app: AppHandle,
+    id: Option<String>,
+    text: String,
+    tags: Vec<String>,
+    person: Option<String>,
+) -> Result<StoredNote, String> {
+    let store = store_of(&app)?;
+    let anchor = match person {
+        Some(id) => {
+            if store.get::<Person>(&id)?.is_none() {
+                return Err("no such person".to_string());
+            }
+            Anchor::Person { id }
+        }
+        None => Anchor::Standing,
+    };
+    // A standing note belongs to the practitioner, not to a reading, so its
+    // words are matched in the app's own language rather than a chart's.
+    let locale = astro::i18n::Locale::parse(
+        prefs::load(&app).default_locale.as_deref().unwrap_or("en"),
+    );
+    notes::write(
+        &store,
+        notes::Written { id, anchor, text: &text, tags, locale, now_ms: now_ms() as i64 },
     )
 }
 
@@ -718,8 +768,13 @@ struct JournalRow {
     /// chart's, not the app's: a note written under a Russian reading reads
     /// and searches in Russian wherever it is shown.
     tag_labels: Vec<String>,
-    /// The sky it was written over — enough to restore it.
-    chart: Chart,
+    /// What it is about — a sky, a person, or neither. The row's mark and
+    /// what clicking it does both follow from this.
+    anchor: Anchor,
+    /// The sky it was written over, when there is one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    chart: Option<Chart>,
     /// Whose sky it is, when it is anyone's.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -731,7 +786,7 @@ struct JournalRow {
 #[tauri::command]
 fn query_notes(app: AppHandle, query: query::Query) -> Vec<JournalRow> {
     let Ok(store) = store_of(&app) else { return Vec::new() };
-    rows_for(&store, query::run(&store, &query))
+    rows_for(&store, app_locale(&app), query::run(&store, &query))
 }
 
 /// Save a question by name — new when `id` is absent, an amendment when it is
@@ -768,10 +823,44 @@ fn delete_view(app: AppHandle, id: String) -> Result<(), String> {
     store_of(&app)?.remove::<query::View>(&id)
 }
 
+/// Remove a person — refused while anything still refers to them.
+///
+/// Deleting a chart takes that chart's notes, which is one level and a
+/// confirmation the person can read. A person is three: their charts, every
+/// note said in those readings, and every observation written about them. A
+/// cascade that deep on one click is a different magnitude of mistake, so
+/// this refuses and says what is in the way; emptying it is the caller's
+/// deliberate work.
+#[tauri::command]
+fn delete_person(app: AppHandle, id: String) -> Result<(), String> {
+    let store = store_of(&app)?;
+    let charts = store.all::<Chart>().into_iter().filter(|c| c.person.as_deref() == Some(&id));
+    let n_charts = charts.count();
+    let n_notes = store
+        .all::<StoredNote>()
+        .into_iter()
+        .filter(|n| n.anchor.person() == Some(id.as_str()))
+        .count();
+    if n_charts > 0 || n_notes > 0 {
+        let chart_word = if n_charts == 1 { "chart" } else { "charts" };
+        let note_word = if n_notes == 1 { "note" } else { "notes" };
+        return Err(format!(
+            "{n_charts} {chart_word} and {n_notes} {note_word} still refer to them — \
+             remove those first"
+        ));
+    }
+    store.remove::<Person>(&id)
+}
+
 /// Everyone the store knows about — the people filter's options.
 #[tauri::command]
 fn list_people(app: AppHandle) -> Vec<Person> {
     store_of(&app).map(|s| query::people(&s)).unwrap_or_default()
+}
+
+/// The language the app itself speaks, for rows that carry no chart to ask.
+fn app_locale(app: &AppHandle) -> astro::i18n::Locale {
+    astro::i18n::Locale::parse(prefs::load(app).default_locale.as_deref().unwrap_or("en"))
 }
 
 /// A tag id as the words a reader would search for.
@@ -813,7 +902,7 @@ fn tag_label(tag: &str, loc: astro::i18n::Locale) -> String {
 #[tauri::command]
 fn list_journal(app: AppHandle) -> Vec<JournalRow> {
     let Ok(store) = store_of(&app) else { return Vec::new() };
-    rows_for(&store, store.notes_newest_first())
+    rows_for(&store, app_locale(&app), store.notes_newest_first())
 }
 
 /// Notes as rows: each one with the sky it was written over and whose it is.
@@ -821,7 +910,7 @@ fn list_journal(app: AppHandle) -> Vec<JournalRow> {
 /// Shared by the plain listing and by `query_notes`, so a searched row and a
 /// listed row are the same thing — the search narrows what is shown, it does
 /// not produce a different kind of result.
-fn rows_for(store: &Store, notes: Vec<StoredNote>) -> Vec<JournalRow> {
+fn rows_for(store: &Store, app_locale: astro::i18n::Locale, notes: Vec<StoredNote>) -> Vec<JournalRow> {
     let charts: std::collections::HashMap<String, Chart> =
         store.all::<Chart>().into_iter().map(|c| (c.id.clone(), c)).collect();
     let people: std::collections::HashMap<String, Person> =
@@ -832,15 +921,34 @@ fn rows_for(store: &Store, notes: Vec<StoredNote>) -> Vec<JournalRow> {
             // A note whose chart is gone has nothing to be read against, so it
             // is skipped rather than shown adrift — the same stance the store
             // takes on a file that will not parse.
-            let chart = charts.get(&n.chart)?.clone();
-            let loc = astro::i18n::Locale::parse(&chart.locale);
+            // A chart-anchored note whose chart is gone has nothing to be
+            // read against, so it is skipped rather than shown adrift — the
+            // same stance the store takes on a file that will not parse. A
+            // standing note has no chart to lose.
+            let chart = match n.anchor.chart() {
+                Some(id) => Some(charts.get(id)?.clone()),
+                None => None,
+            };
+            let person = match n.anchor.person() {
+                Some(id) => people.get(id).cloned(),
+                None => chart
+                    .as_ref()
+                    .and_then(|c| c.person.as_ref())
+                    .and_then(|id| people.get(id))
+                    .cloned(),
+            };
+            let loc = chart
+                .as_ref()
+                .map(|c| astro::i18n::Locale::parse(&c.locale))
+                .unwrap_or(app_locale);
             Some(JournalRow {
                 id: n.id,
                 written_at: n.written_at,
                 tag_labels: n.tags.iter().map(|t| tag_label(t, loc)).collect(),
                 text: n.text,
                 tags: n.tags,
-                person: chart.person.as_ref().and_then(|id| people.get(id)).cloned(),
+                anchor: n.anchor,
+                person,
                 chart,
             })
         })
@@ -1008,7 +1116,9 @@ fn list_charts(app: AppHandle) -> Vec<ChartRow> {
         store.all::<Person>().into_iter().map(|p| (p.id.clone(), p)).collect();
     let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for n in store.all::<StoredNote>() {
-        *counts.entry(n.chart).or_default() += 1;
+        if let Some(id) = n.anchor.chart() {
+            *counts.entry(id.to_string()).or_default() += 1;
+        }
     }
     let mut rows: Vec<ChartRow> = store
         .all::<Chart>()
@@ -1132,6 +1242,7 @@ macro_rules! commands {
             merge_up,
             write_note,
             write_moment_note,
+            write_standing_note,
             delete_note,
             list_notes,
             list_journal,
@@ -1140,6 +1251,7 @@ macro_rules! commands {
             list_views,
             delete_view,
             list_people,
+            delete_person,
             get_preferences,
             set_preferences,
             open_licenses,
