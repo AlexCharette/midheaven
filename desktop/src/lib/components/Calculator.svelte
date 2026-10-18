@@ -112,7 +112,11 @@
   }
 </script>
 
-<div class="calc-view">
+<!-- Two postures here too, and the second one was already half-built: while
+     a note is being written the wheel turns interactive, because clicking it
+     is how you say what the note is about. So composing is a working state,
+     and the title page gets out of its way. -->
+<div class="calc-view" data-posture={composing ? "composing" : "surveying"}>
   <figure class="plate">
     <div class="plate-frame">
       <div class="stack">
@@ -216,13 +220,32 @@
     min-height: 100vh;
     display: grid;
     grid-template-columns: auto minmax(16rem, 21rem);
-    align-items: center;
+    /* The legend hangs from the plate's top rule, not from its midpoint.
+       Centred, it floated with equal dead space above and below and aligned
+       to nothing; an atlas sets its key at the head of the margin and lets
+       the rest of the margin be margin. */
+    align-items: start;
     justify-content: center;
     gap: clamp(1.4rem, 4vw, 3.2rem);
     padding: clamp(0.5rem, 1.5vh, 1.1rem) 1.4rem 3.4rem;
   }
+  /* the plate's frame insets it 6px, so the masthead drops to meet the rule
+     rather than the figure's bounding box */
+  .panel {
+    padding-top: calc(6px + 0.55rem);
+  }
   .masthead {
     margin-bottom: clamp(1rem, 3.5vh, 2.2rem);
+  }
+  /* A title page is for arriving, not for working. Once the plate is being
+     used as an index it is the one thing on screen with nothing to say. */
+  .calc-view[data-posture="composing"] .masthead {
+    opacity: 0.32;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .masthead {
+      transition: opacity var(--dur-slow) var(--ease-out-expo);
+    }
   }
   h1 {
     font-weight: 400;
@@ -329,6 +352,27 @@
   .note.err {
     color: var(--oxblood);
   }
+  /* Four acts do not fit one narrow line, and letting them wrap turned the
+     stamp into three stacked words sitting on top of the calculation line.
+     Below this width the rail is two rows — the quiet acts, then the stamp —
+     and the page reserves the height for it. */
+  @media (max-width: 560px) {
+    footer {
+      flex-wrap: wrap;
+      gap: 0.5rem 1.1rem;
+      padding-bottom: 0.6rem;
+    }
+    footer .cast {
+      margin-left: 0;
+      flex-basis: 100%;
+      text-align: center;
+      padding: 0.35rem 0;
+      white-space: nowrap;
+    }
+    .calc-view {
+      padding-bottom: 6.4rem;
+    }
+  }
   /* narrow windows: the legend returns beneath the plate */
   @media (max-width: 940px) {
     .calc-view {
@@ -344,6 +388,8 @@
     }
   }
   /* --- footer: quiet library/prefs acts left, the one brass act right --- */
+  /* the same console rail the reading view carries: one hairline, the
+     page's width, the acts set on it as marks with a single stamp */
   footer {
     position: fixed;
     left: 0;
@@ -352,10 +398,10 @@
     z-index: var(--z-footer);
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.45rem 1.4rem;
+    gap: 1.1rem;
+    padding: 0.5rem clamp(1.2rem, 3vw, 2.6rem);
     background: var(--bg-deep);
-    border-top: 1px solid var(--hairline);
+    border-top: 1px solid var(--line);
     font-size: 0.88rem;
   }
   footer .cast {
@@ -364,13 +410,13 @@
     letter-spacing: 0.18em;
     border-color: var(--brass);
     color: var(--ink);
-    transition:
-      background var(--dur-base) var(--ease-out-quint),
-      box-shadow var(--dur-base) var(--ease-out-quint);
+    transition: background var(--dur-base) var(--ease-out-quint);
   }
+  /* The hover was a zero-offset brass ring — a halo, which is decoration
+     rather than depth, and this world engraves instead of glowing. The wash
+     alone says it. */
   footer .cast:hover {
     background: var(--brass-wash);
-    box-shadow: 0 0 0 1px var(--brass-halo);
   }
   /* the title settles in over the plate's self-draw */
   @media (prefers-reduced-motion: no-preference) {

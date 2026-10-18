@@ -112,19 +112,25 @@
     padding-top: 0.7rem;
     border-top: 1px solid var(--line);
   }
+  /* Written on a ruled line, not into a box — the same treatment every
+     other field on this screen gets. */
   textarea {
     width: 100%;
     resize: vertical;
-    padding: 0.5rem 0.6rem;
+    padding: 0.3rem 0 0.4rem;
     background: transparent;
     color: var(--ink);
-    border: 1px solid var(--hairline);
+    border: none;
+    border-bottom: 1px solid var(--line);
     font: inherit;
     line-height: 1.5;
   }
+  textarea:focus {
+    border-bottom-color: var(--hairline);
+  }
   textarea:focus-visible {
-    outline: 1px solid var(--brass);
-    outline-offset: 1px;
+    outline: none;
+    border-bottom-color: var(--brass);
   }
   .tags {
     display: flex;
@@ -132,11 +138,13 @@
     gap: 0.35rem;
     min-height: 1.3rem;
   }
+  /* A tag reads as a struck mark rather than a pill: underlined in its
+     category's ink, which is also how the wheel shows the same selection. */
   .chip {
-    border: 1px solid var(--hairline);
-    padding: 0.05rem 0.45rem;
+    padding: 0.05rem 0.1rem;
     font-size: 0.8rem;
     color: var(--ink-2);
+    border-bottom: 1px solid var(--hairline);
   }
   .hint,
   .err {
