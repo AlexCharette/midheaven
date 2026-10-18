@@ -7,9 +7,13 @@ import type { Note } from "./Note";
  * it was written over.
  *
  * `note` is the *same* [`Note`] a chart carries — not a parallel type that
- * would have to be converted at every boundary. A journal note is always
- * written, so its `span` is `None` and its `time` is empty; [`Journal::write`]
- * refuses anything else rather than storing a claim it cannot support.
+ * would have to be converted at every boundary. A journal note is written by
+ * hand, so it has no recording to point into and its `at` is `None`.
+ *
+ * `write` used to refuse a note that carried a transcript span, because a
+ * hand-written note claiming provenance it did not have would read back from
+ * disk as the wrong kind of thing. Notes do not carry spans any more, so
+ * there is no longer a claim to refuse.
  *
  * Its `id` is the journal's, not a chart's `x{n}`: uniqueness is the contract
  * invariant and `x{n}` is only convention, so a note has one id and the file it

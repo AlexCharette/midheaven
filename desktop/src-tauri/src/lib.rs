@@ -627,8 +627,7 @@ fn add_in(chart: &mut ChartData, text: &str, tags: Vec<String>) -> Result<(), St
     };
     chart.notes.push(Note {
         id: format!("x{}", next_ordinal(&chart.notes)),
-        time: String::new(),
-        span: None, // written, not anchored to a transcript
+        at: None, // written by hand, not spoken in a recording
         text: text.to_string(),
         tags,
     });
@@ -744,7 +743,7 @@ fn write_journal_note(
     let entry = journal::JournalNote {
         written_at: now.to_rfc3339(),
         anchor,
-        note: Note { id, time: String::new(), span: None, text: text.to_string(), tags },
+        note: Note { id, at: None, text: text.to_string(), tags },
     };
     journal.write(&entry)?;
     Ok(entry)
@@ -801,9 +800,6 @@ struct JournalRow {
     /// chart's, not the app's: a note written under a Russian reading reads and
     /// searches in Russian wherever it is shown.
     tag_labels: Vec<String>,
-    /// Whether a transcript stands behind it. The view does not distinguish the
-    /// two, but the journal shows both and something has to carry the fact.
-    spoken: bool,
     source: RowSource,
 }
 
@@ -873,7 +869,6 @@ fn list_journal(app: AppHandle) -> Vec<JournalRow> {
                     text: e.note.text,
                     tags: e.note.tags,
                     tag_labels,
-                    spoken: e.note.span.is_some(),
                     source: RowSource::Journal { id: e.note.id, anchor: e.anchor },
                 },
             ));
@@ -892,13 +887,12 @@ fn list_journal(app: AppHandle) -> Vec<JournalRow> {
                 // were spoken. Approximate as an absolute instant, which is why
                 // it never leaves this function.
                 rows.push((
-                    saved_ms + offset_ms(&note.time),
+                    saved_ms + offset_ms(note.at.as_deref().unwrap_or_default()),
                     JournalRow {
                         written_at: saved_at.clone(),
                         tag_labels: note.tags.iter().map(|t| tag_label(t, loc)).collect(),
                         text: note.text,
                         tags: note.tags,
-                        spoken: note.span.is_some(),
                         source: RowSource::Reading {
                             note_id: note.id,
                             chart_path: entry.chart_path.clone(),
@@ -1292,8 +1286,7 @@ mod tests {
     fn ex(id: &str, text: &str, tags: &[&str]) -> Note {
         Note {
             id: id.into(),
-            time: String::new(),
-            span: Some([0, text.len()]),
+            at: None,
             text: text.into(),
             tags: tags.iter().map(|s| s.to_string()).collect(),
         }
@@ -1314,7 +1307,6 @@ mod tests {
         assert_eq!(back.notes.len(), 1);
         assert_eq!(back.notes[0].text, "The sun in cancer.");
         assert_eq!(back.notes[0].tags, vec!["planet:sun", "sign:cancer"]);
-        assert_eq!(back.notes[0].span, Some([0, "The sun in cancer.".len()]));
         // `Aspect::kind` is #[serde(skip)] — it defaults to "" on load.
         assert!(back.aspects.iter().all(|a| a.kind.is_empty()));
     }
@@ -1483,7 +1475,7 @@ mod tests {
         add_in(&mut chart, "The sun rules this whole chart.", vec![]).unwrap();
         let added = chart.notes.last().unwrap();
         assert!(added.tags.contains(&"planet:sun".to_string()), "tags: {:?}", added.tags);
-        assert_eq!(added.span, None, "written by hand, so no provenance");
+        assert_eq!(added.at, None, "typed by hand, so it points into no recording");
     }
 
     #[test]

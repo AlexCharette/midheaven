@@ -81,13 +81,19 @@ pub fn route_into_with(
     file(chart, transcript, router, filing)
 }
 
+/// The persistence boundary: this is where a routed note stops carrying the
+/// span it was proved against. Everything above here works in note-plus-span
+/// pairs because the merge needs them; nothing below here has ever read one
+/// back.
 fn file(
     chart: &mut ChartData,
     transcript: &Transcript,
     router: &dyn Router,
     filing: Filing,
 ) -> RouteReport {
-    let (mut notes, report) = gated(transcript, router);
+    let (gated_notes, report) = gated(transcript, router);
+    let mut notes: Vec<crate::contract::Note> =
+        gated_notes.into_iter().map(|(note, _span)| note).collect();
     // Ids are assigned here and nowhere else: coalescing changes how many
     // notes there are, and appending changes where their numbering starts,
     // so neither the gate nor the merge can know the answer. They used to guess
@@ -108,7 +114,7 @@ fn file(
 fn gated(
     transcript: &Transcript,
     router: &dyn Router,
-) -> (Vec<crate::contract::Note>, RouteReport) {
+) -> (Vec<(crate::contract::Note, [usize; 2])>, RouteReport) {
     let raw = router.route(transcript);
     let n_routed = raw.len();
     let (accepted, warnings) = verify_gate(transcript, raw);
@@ -132,7 +138,7 @@ pub fn retag(chart: &ChartData, text: &str) -> Vec<String> {
     let router = lexicon_for(chart);
     let transcript = Transcript::load(text);
     let (notes, _report) = gated(&transcript, &router);
-    let mut tags: Vec<String> = notes.into_iter().flat_map(|n| n.tags).collect();
+    let mut tags: Vec<String> = notes.into_iter().flat_map(|(n, _)| n.tags).collect();
     tags.sort();
     tags.dedup();
     tags

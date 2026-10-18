@@ -30,12 +30,12 @@ fn transcript_to_artifact() {
     assert!(first.tags.contains(&"planet:sun".to_string()));
     assert!(first.tags.contains(&"sign:cancer".to_string()));
     assert!(first.tags.contains(&"house:10".to_string()));
-    assert_eq!(first.time, "00:00:42");
-    // Provenance invariant holds end to end.
+    assert_eq!(first.at.as_deref(), Some("00:00:42"));
+    // Provenance is enforced at the gate rather than carried on the note, so
+    // what is checkable here is the result of it: every stored text is still a
+    // slice of the transcript it came from, and every tag is in vocabulary.
     for note in &chart.notes {
-        // Every note here is spoken, so every span is real.
-        let [s, e] = note.span.expect("a routed note carries its provenance");
-        assert_eq!(note.text, &transcript.text[s..e]);
+        assert!(transcript.text.contains(&note.text), "{:?} is not verbatim", note.id);
         assert!(note.tags.iter().all(|t| astro::vocab::contains(t)));
     }
 
@@ -59,13 +59,11 @@ fn transcript_to_artifact() {
     let archived = report.transcript.expect("a file build archives its transcript");
     assert_eq!(archived.filename, "transcript.jsonl");
     assert_eq!(archived.contents, raw, "archived verbatim");
+    let reparsed = Transcript::load(&archived.contents);
     for note in &via_lib.notes {
-        let reparsed = Transcript::load(&archived.contents);
-        let [s, e] = note.span.expect("a routed note carries its provenance");
-        assert_eq!(
-            note.text,
-            &reparsed.text[s..e],
-            "spans must still resolve against the archived transcript"
+        assert!(
+            reparsed.text.contains(&note.text),
+            "every note's words must still be findable in the archived transcript"
         );
     }
 }
@@ -175,7 +173,7 @@ fn routing_the_example_transcript_is_unchanged() {
     assert_eq!(chart.notes.len(), expected.len(), "note count");
     for (note, (id, time, tags, text)) in chart.notes.iter().zip(expected) {
         assert_eq!(note.id, id);
-        assert_eq!(note.time, time, "time anchor on {id}");
+        assert_eq!(note.at.as_deref(), Some(time), "time anchor on {id}");
         assert_eq!(note.tags, tags, "tags on {id}");
         assert_eq!(note.text, text, "text on {id}");
     }
@@ -212,7 +210,7 @@ fn a_text_transcript_keeps_its_extension() {
     assert_eq!(archived.contents, words);
     assert!(!chart.notes.is_empty(), "the words name chart elements");
     // Plain text carries no time anchors, so notes have no time.
-    assert!(chart.notes.iter().all(|n| n.time.is_empty()));
+    assert!(chart.notes.iter().all(|n| n.at.is_none()));
 
     std::fs::remove_dir_all(&dir).ok();
 }

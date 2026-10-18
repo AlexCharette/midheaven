@@ -177,14 +177,14 @@ fn note_block<'c>(
         positions.push((right, text, face, color));
         right -= 10.0;
     }
-    let time: &'c str = &note.time;
+    let at: Option<&'c str> = note.at.as_deref();
     out.push(FlowLine {
         h: 16.0,
         keep: true,
         draw: Box::new(move |s, fonts, y| {
             let baseline = y + 11.0;
-            if !time.is_empty() {
-                draw_str(s, fonts, Face::Italic, 9.0, INK3, margin, baseline, time);
+            if let Some(at) = at {
+                draw_str(s, fonts, Face::Italic, 9.0, INK3, margin, baseline, at);
             }
             for (x, text, face, color) in &positions {
                 draw_str(s, fonts, *face, chip_size, *color, *x, baseline, text);

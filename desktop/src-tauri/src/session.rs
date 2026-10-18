@@ -430,8 +430,7 @@ mod tests {
         let mut s = open();
         s.reading_mut().unwrap().chart.notes.push(Note {
             id: "x1".into(),
-            time: String::new(),
-            span: None,
+            at: None,
             text: "Curated by hand.".into(),
             tags: vec![],
         });

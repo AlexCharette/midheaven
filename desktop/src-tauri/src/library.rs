@@ -460,15 +460,13 @@ mod tests {
         c.notes = vec![
             astro::contract::Note {
                 id: "x1".into(),
-                time: String::new(),
-                span: None,
+                at: None,
                 text: "one".into(),
                 tags: vec![],
             },
             astro::contract::Note {
                 id: "x2".into(),
-                time: String::new(),
-                span: None,
+                at: None,
                 text: "two".into(),
                 tags: vec![],
             },
@@ -728,8 +726,7 @@ mod tests {
         let mut c = chart("Mira Holt");
         c.notes = vec![astro::contract::Note {
             id: "x1".into(),
-            time: "00:00:12".into(),
-            span: Some([0, 8]),
+            at: Some("00:00:12".into()),
             text: "The sun.".into(),
             tags: vec!["planet:sun".into()],
         }];

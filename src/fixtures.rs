@@ -112,24 +112,18 @@ pub fn minimal_chart() -> ChartData {
     chart
 }
 
-/// A spoken note, tagged. `span` is `[0, text.len()]` — the whole of a
-/// one-note transcript, so the fixture upholds the provenance invariant a
-/// routed note carries.
+/// A note, tagged, with no time anchor.
 ///
-/// For a *written* note (no transcript, no span) use [`written_note`].
+/// There were two of these — `note` for a spoken one and `written_note` for a
+/// hand-authored one — differing only in whether a span was set. Nothing tells
+/// the two apart any more, so nothing needs two fixtures to build them.
 pub fn note(id: &str, text: &str, tags: &[&str]) -> Note {
     Note {
         id: id.into(),
-        time: String::new(),
-        span: Some([0, text.len()]),
+        at: None,
         text: text.into(),
         tags: tags.iter().map(|t| t.to_string()).collect(),
     }
-}
-
-/// A note authored by hand: no transcript behind it, so no span.
-pub fn written_note(id: &str, text: &str, tags: &[&str]) -> Note {
-    Note { span: None, ..note(id, text, tags) }
 }
 
 #[cfg(test)]
@@ -163,16 +157,10 @@ mod tests {
     }
 
     #[test]
-    fn a_spoken_note_spans_its_own_text() {
+    fn a_fixture_note_is_tagged_and_unanchored() {
         let n = note("x1", "The sun.", &["planet:sun"]);
-        assert_eq!(n.span, Some([0, "The sun.".len()]));
+        assert_eq!(n.text, "The sun.");
         assert_eq!(n.tags, vec!["planet:sun"]);
-    }
-
-    #[test]
-    fn a_written_note_carries_no_span() {
-        let n = written_note("x1", "The sun.", &["planet:sun"]);
-        assert_eq!(n.span, None);
-        assert_eq!(n.text, "The sun.", "and is otherwise the same note");
+        assert_eq!(n.at, None, "a fixture note was not spoken in a recording");
     }
 }

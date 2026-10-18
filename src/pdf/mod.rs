@@ -379,8 +379,7 @@ mod tests {
         let mut chart = crate::fixtures::berlin_chart();
         chart.notes.push(Note {
             id: "x1".into(),
-            time: "00:00:12".into(),
-            span: Some([0, 24]),
+            at: Some("00:00:12".into()),
             text: "The sun rules this chart and it keeps returning to the tenth house, \
                    again and again, whenever the year turns."
                 .into(),
@@ -439,8 +438,7 @@ mod tests {
         let mut chart = crate::chart::compute_chart(&input).unwrap();
         chart.notes.push(Note {
             id: "x1".into(),
-            time: "00:00:12".into(),
-            span: Some([0, 10]),
+            at: Some("00:00:12".into()),
             text: "Ваше солнце в раке освещает десятый дом.".into(),
             tags: vec!["planet:sun".into(), "house:10".into()],
         });

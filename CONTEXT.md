@@ -23,51 +23,58 @@ One piece of writing filed under the chart elements it refers to. The type is
 two words for one thing: the type was `Excerpt`, the UI and the PDF said
 "passage", and the doc that told you which to use where was this entry.
 
-A note is **spoken** or **written**, and its `span` is what tells them apart.
+Some notes were spoken into a recording and some were typed by hand. The app
+does not distinguish them: both file under the same vocabulary, filter through
+the same rules, and render alike in the app, the PDF and the artifact. A note
+may carry no tags at all, in which case it shows whenever no filter is active.
 
-A **spoken** note came from the transcript. It carries byte offsets into it, and
-its text must equal the transcript slice those offsets point at. That is
-provenance, not a formatting preference, and the **Verify gate** exists to
-establish it.
+A note spoken in a recording carries `at`, the "HH:MM:SS" it was said at.
+Nothing else marks where a note came from.
 
-A **written** note was authored by hand — from the reading view, or from the
-home page over a chart the astrologer was only looking at. There is no
-transcript behind it, so it carries no span.
+The type used to carry a `span` as well — byte offsets into the transcript,
+proving the text was a verbatim slice of it. Provenance is still established,
+by the **Verify gate**, at the moment of routing; it is simply no longer
+carried by every note for the rest of its life, because nothing ever read one
+back. Removing it took a sentinel with it: an absent span had been spelled
+`[0, 0]` on the wire, which meant an empty span had to be an error, which put
+a rule about an impossible case into two separate validators.
 
-The distinction is *provenance only*. Both kinds file under the same vocabulary,
-filter through the same rules, and render alike in the app, the PDF and the
-artifact. A reader is not told which is which; a note may carry no tags at all,
-in which case it shows whenever no filter is active.
-
-The wire is unchanged and deliberately out of step: the list is still spelled
-`excerpts` on `ChartData`, in every `chart.json` and in the `const DATA` of every
-artifact ever exported, and a written note's absent span is still written
-`[0, 0]`. That is compatibility, not vocabulary — `contract::span` maps between
-the two so nothing already on disk, or already in someone's hands, has to change.
+The wire is still out of step in one place: the list is spelled `excerpts` on
+`ChartData`.
 
 ## Tag id
 
 An element identifier in the closed form `{category}:{slug}` — `planet:sun`,
-`sign:leo`, `house:5`, `aspect:sun-moon`. Language-neutral, so a reading's
-language never changes its tags. The four categories are fixed.
+`sign:leo`, `house:5`, `aspect:sun-moon`, `kind:trine`. Language-neutral, so a
+reading's language never changes its tags. The five categories are fixed.
+
+`aspect:` names a *pair of bodies* — "this note is about the Sun and the Moon".
+`kind:` names the relation — "this note is about a trine". They are separate
+because only the second can be said without naming anyone, and the first has to
+mean something even in a sky where those two bodies are nowhere near each other.
 
 ## Vocabulary
 
-The set of tag ids a particular chart admits, derived from the chart itself
-(`ChartData::vocab`). Closed: a router may only emit tags from it, and the Verify
-gate rejects anything outside it.
+Every tag id that exists, in `vocab::ALL`: eleven planets, twelve signs, twelve
+houses, all forty-five pairs of the ten bodies, and the five aspect kinds.
+Global and closed — a router may only emit tags from it, and the Verify gate
+rejects anything outside it.
+
+It used to be derived per chart, from the elements that chart contained
+(`ChartData::vocab`). That made a note untaggable without a chart to tag it
+against, which is the thing that kept this app from being a journal.
 
 ## Verify gate
 
-The provenance check between a router's output and a chart's notes: the span
-must be a real slice of the transcript and non-empty, and every tag must be in
-the chart's vocabulary. Rejections surface as warnings rather than failing the
+The provenance check between a router's output and the notes it becomes: the
+span must be a real, non-empty slice of the transcript, and every tag must be
+in the vocabulary. Rejections surface as warnings rather than failing the
 build.
 
-The gate only ever sees *spoken* notes — it is what makes them spoken. A written
-note never passes through it, which is why an empty span is refused here: that is
-how a written note is spelled on the wire, and a routed note carrying one would
-come back from disk as the wrong kind.
+This is the only place provenance is enforced, and the only place a span
+exists. The gate hands each accepted note back *beside* its span rather than
+carrying one: `coalesce` needs the spans to take a verbatim slice across a
+merge, and `route::file` drops them on the way to storage.
 
 ## Artifact
 

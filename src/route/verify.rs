@@ -6,22 +6,26 @@ use crate::contract::Note;
 use crate::vocab;
 
 /// Reject any note whose text is not a verbatim slice of the transcript or
-/// whose tags fall outside the vocabulary. Returns the accepted notes
-/// (time anchors assigned, ids left empty for the filing step) with a warning
-/// per rejected span
-/// — the provenance chain surfaced to the caller rather than stderr, so every
-/// frontend can decide how to show it.
+/// whose tags fall outside the vocabulary. Returns the accepted notes with the
+/// span each one came from, and a warning per rejected span — the provenance
+/// chain surfaced to the caller rather than stderr, so every frontend can
+/// decide how to show it.
 ///
-/// Every note out of here is spoken, so every span is `Some` and non-empty:
-/// an empty span is the wire sentinel for a *written* note, and a routed note
-/// that claimed one would come back from disk as the wrong kind.
-pub fn verify_gate(transcript: &Transcript, raw: Vec<RawNote>) -> (Vec<Note>, Vec<String>) {
+/// **The span is returned beside the note, not on it.** It is routing-time
+/// scaffolding: `coalesce` needs it to take a verbatim slice across a merge,
+/// and `route::file` drops it on the way to storage. This is the only place
+/// provenance is enforced, and after this point it is a property the words
+/// have rather than a field they carry.
+pub fn verify_gate(
+    transcript: &Transcript,
+    raw: Vec<RawNote>,
+) -> (Vec<(Note, [usize; 2])>, Vec<String>) {
     let mut out = Vec::new();
     let mut rejected = Vec::new();
     for r in raw {
         let (s, e) = r.span;
         if s >= e {
-            rejected.push(format!("rejected span {s}..{e} (empty — that is a written note)"));
+            rejected.push(format!("rejected span {s}..{e} (empty — nothing was said there)"));
             continue;
         }
         let Some(text) = transcript.text.get(s..e) else {
@@ -36,13 +40,16 @@ pub fn verify_gate(transcript: &Transcript, raw: Vec<RawNote>) -> (Vec<Note>, Ve
         if r.tags.is_empty() {
             continue;
         }
-        out.push(Note {
-            id: String::new(), // numbered once the notes have settled
-            time: transcript.time_at(s),
-            span: Some([s, e]),
-            text: text.to_string(),
-            tags: r.tags,
-        });
+        let at = transcript.time_at(s);
+        out.push((
+            Note {
+                id: String::new(), // numbered once the notes have settled
+                at: (!at.is_empty()).then_some(at),
+                text: text.to_string(),
+                tags: r.tags,
+            },
+            [s, e],
+        ));
     }
     (out, rejected)
 }
@@ -78,14 +85,15 @@ mod tests {
         let (ok, rejected) = verify_gate(&t, raw);
         assert_eq!(ok.len(), 1);
         assert!(rejected.is_empty());
-        let [s, e] = ok[0].span.expect("a routed note is spoken, so it has a span");
-        assert_eq!(ok[0].text, &t.text[s..e]);
-        assert_eq!(ok[0].text, "The moon in cancer.");
+        let (note, [s, e]) = &ok[0];
+        assert_eq!(note.text, &t.text[*s..*e]);
+        assert_eq!(note.text, "The moon in cancer.");
     }
 
-    /// An empty span is how a *written* note is spelled on the wire. A routed
-    /// note that carried one would be read back from disk as authored by hand,
-    /// silently losing the provenance the gate exists to establish.
+    /// An empty span selects no words, so there is nothing to have been said
+    /// there and nothing to check against the transcript. It used to be
+    /// rejected because `[0, 0]` was the written-note sentinel; it is rejected
+    /// now because a note with no words is not a note.
     #[test]
     fn gate_rejects_an_empty_span() {
         let t = Transcript::load("The moon in cancer.");
@@ -93,6 +101,6 @@ mod tests {
         let (ok, rejected) = verify_gate(&t, raw);
         assert!(ok.is_empty());
         assert_eq!(rejected.len(), 1);
-        assert!(rejected[0].contains("written note"), "{rejected:?}");
+        assert!(rejected[0].contains("nothing was said"), "{rejected:?}");
     }
 }

@@ -14,30 +14,34 @@ use crate::contract::Note;
 /// Ids are left alone — merging changes how many notes there are, so only the
 /// filing step downstream knows what to number them from.
 ///
-/// Every note here is spoken: this runs over a router's output, which the
-/// Verify gate has already established came from the transcript.
-pub fn coalesce(notes: Vec<Note>, transcript: &Transcript) -> Vec<Note> {
-    let mut out: Vec<Note> = Vec::new();
+/// Takes and returns notes paired with the spans they came from, because the
+/// span is what makes the merge verbatim: the result is one continuous slice
+/// of the transcript, *not* the merged notes' texts joined together. Those two
+/// differ exactly by the untagged sentences in between, which is to say they
+/// differ by whether the merged note still reads as something a person said.
+pub fn coalesce(
+    notes: Vec<(Note, [usize; 2])>,
+    transcript: &Transcript,
+) -> Vec<(Note, [usize; 2])> {
+    let mut out: Vec<(Note, [usize; 2])> = Vec::new();
     let mut prev_tags: Vec<String> = Vec::new();
-    for note in notes {
+    for (note, span) in notes {
         let shares_with_prev =
             !out.is_empty() && note.tags.iter().any(|t| prev_tags.contains(t));
         prev_tags = note.tags.clone();
         if shares_with_prev {
-            out.last_mut().unwrap().absorb(note);
+            let (kept, kept_span) = out.last_mut().unwrap();
+            kept.absorb(note);
+            kept_span[1] = span[1];
         } else {
-            out.push(note);
+            out.push((note, span));
         }
     }
-    // Text is derived from the (possibly extended) span in one pass — the
-    // gate guaranteed every input text was a verbatim slice, so this is a
-    // no-op for unmerged notes. A written note has no span to derive from and
-    // keeps the words it was given; the gate cannot produce one, so this is a
-    // guard against a future caller rather than a case that arises today.
-    for note in &mut out {
-        if let Some([s, e]) = note.span {
-            note.text = transcript.text[s..e].to_string();
-        }
+    // Text is re-derived from the (possibly extended) span in one pass. The
+    // gate guaranteed every input text was already a verbatim slice, so this
+    // is a no-op for anything that did not merge.
+    for (note, [s, e]) in &mut out {
+        note.text = transcript.text[*s..*e].to_string();
     }
     out
 }
@@ -46,14 +50,16 @@ pub fn coalesce(notes: Vec<Note>, transcript: &Transcript) -> Vec<Note> {
 mod tests {
     use super::*;
 
-    fn ex(id: usize, span: [usize; 2], tags: &[&str]) -> Note {
-        Note {
-            id: format!("x{id}"),
-            time: String::new(),
-            span: Some(span),
-            text: String::new(), // set from the transcript by callers/coalesce
-            tags: tags.iter().map(|s| s.to_string()).collect(),
-        }
+    fn ex(id: usize, span: [usize; 2], tags: &[&str]) -> (Note, [usize; 2]) {
+        (
+            Note {
+                id: format!("x{id}"),
+                at: None,
+                text: String::new(), // set from the transcript by coalesce
+                tags: tags.iter().map(|s| s.to_string()).collect(),
+            },
+            span,
+        )
     }
 
     #[test]
@@ -64,9 +70,9 @@ mod tests {
             &t,
         );
         assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].text, "The sun is bright. It was noon. The sun set slowly.");
-        assert_eq!(merged[0].span, Some([0, 51]));
-        assert_eq!(merged[0].tags, vec!["planet:sun"]);
+        assert_eq!(merged[0].0.text, "The sun is bright. It was noon. The sun set slowly.");
+        assert_eq!(merged[0].1, [0, 51]);
+        assert_eq!(merged[0].0.tags, vec!["planet:sun"]);
     }
 
     #[test]
@@ -83,12 +89,12 @@ mod tests {
             &t,
         );
         assert_eq!(merged.len(), 2);
-        assert_eq!(merged[0].tags, vec!["planet:sun", "sign:cancer"]);
-        assert_eq!(merged[1].tags, vec!["sign:cancer"]);
+        assert_eq!(merged[0].0.tags, vec!["planet:sun", "sign:cancer"]);
+        assert_eq!(merged[1].0.tags, vec!["sign:cancer"]);
         // Ids are not this stage's business — merging is why nothing upstream
         // can know how many notes there will be, so the filing step numbers
         // them. Whatever came in is left alone here.
-        assert_eq!(merged[1].id, "x3");
+        assert_eq!(merged[1].0.id, "x3");
     }
 
     #[test]

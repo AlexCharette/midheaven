@@ -67,7 +67,6 @@ const row = (over: Partial<JournalRow> = {}): JournalRow =>
     text: "Mars is loud today.",
     tags: ["planet:mars"],
     tagLabels: ["Mars"],
-    spoken: false,
     source: {
       kind: "journal",
       id: "abc",
@@ -86,7 +85,6 @@ const aboutMira = row({
   text: "She kept returning to the tenth house.",
   tags: ["house:10"],
   tagLabels: ["Tenth House"],
-  spoken: true,
   source: {
     kind: "reading",
     noteId: "x1",

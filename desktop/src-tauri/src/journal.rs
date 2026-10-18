@@ -82,9 +82,13 @@ pub struct Anchor {
 /// it was written over.
 ///
 /// `note` is the *same* [`Note`] a chart carries — not a parallel type that
-/// would have to be converted at every boundary. A journal note is always
-/// written, so its `span` is `None` and its `time` is empty; [`Journal::write`]
-/// refuses anything else rather than storing a claim it cannot support.
+/// would have to be converted at every boundary. A journal note is written by
+/// hand, so it has no recording to point into and its `at` is `None`.
+///
+/// `write` used to refuse a note that carried a transcript span, because a
+/// hand-written note claiming provenance it did not have would read back from
+/// disk as the wrong kind of thing. Notes do not carry spans any more, so
+/// there is no longer a claim to refuse.
 ///
 /// Its `id` is the journal's, not a chart's `x{n}`: uniqueness is the contract
 /// invariant and `x{n}` is only convention, so a note has one id and the file it
@@ -147,12 +151,6 @@ impl Journal {
     /// why the store is shaped this way.
     pub fn write(&self, entry: &JournalNote) -> Result<(), String> {
         safe_id(&entry.note.id)?;
-        // A journal note is written, never spoken. Storing a span here would
-        // put provenance on a note that has no transcript behind it, and it
-        // would come back from disk claiming to be something it is not.
-        if entry.note.span.is_some() {
-            return Err("a journal note is written by hand and cannot carry a span".to_string());
-        }
         if entry.note.text.trim().is_empty() {
             return Err("a note needs words".to_string());
         }
@@ -250,8 +248,7 @@ mod tests {
             anchor: anchor(),
             note: Note {
                 id: id.into(),
-                time: String::new(),
-                span: None,
+                at: None,
                 text: text.into(),
                 tags: vec!["planet:sun".into()],
             },
@@ -285,7 +282,7 @@ mod tests {
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].note.text, "Mars is loud today.");
         assert_eq!(back[0].note.tags, vec!["planet:sun"]);
-        assert_eq!(back[0].note.span, None, "a journal note is written, never spoken");
+        assert_eq!(back[0].note.at, None, "a journal note points into no recording");
         assert_eq!(back[0].anchor.seed.date, "2026-08-04");
         assert_eq!(back[0].anchor.place, "Berlin, Germany");
     }
@@ -372,17 +369,13 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious");
     }
 
+    /// The span guard that used to live beside this one went when spans did.
+    /// This half is the half that was never about provenance.
     #[test]
-    fn a_journal_note_may_not_claim_provenance_it_does_not_have() {
-        let t = TempJournal::new("span");
-        let mut e = entry("a", "2026-08-01T10:00:00Z", "t");
-        e.note.span = Some([0, 1]);
-        let err = t.journal.write(&e).unwrap_err();
-        assert!(err.contains("cannot carry a span"), "{err}");
-
-        let mut e = entry("a", "2026-08-01T10:00:00Z", "   ");
-        e.note.span = None;
-        assert!(t.journal.write(&e).is_err(), "and a note still needs words");
+    fn a_note_of_pure_whitespace_is_not_a_note() {
+        let t = TempJournal::new("words");
+        let e = entry("a", "2026-08-01T10:00:00Z", "   ");
+        assert!(t.journal.write(&e).is_err(), "a note still needs words");
     }
 
     #[test]

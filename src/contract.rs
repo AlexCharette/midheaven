@@ -85,12 +85,6 @@ impl ChartData {
                     return Err(format!("note {:?} references unknown tag {tag:?}", note.id));
                 }
             }
-            // An empty span is the wire sentinel for a written note, so a
-            // spoken one may never carry it — otherwise the two kinds become
-            // indistinguishable on the next round-trip.
-            if note.span.is_some_and(|[s, e]| s >= e) {
-                return Err(format!("note {:?} has an empty span", note.id));
-            }
         }
         if self.meta.logo.as_deref().is_some_and(|l| !l.starts_with("data:")) {
             return Err("meta.logo must be an embedded data: URI".to_string());
@@ -137,19 +131,16 @@ pub struct Segment {
 // which is what made it safe to delete.
 
 impl Note {
-    /// Merge a later note into this one: the span extends to cover both,
-    /// tags become the sorted union, this note's time anchor is kept.
-    /// The merged `text` is the caller's decision (verbatim transcript slice
-    /// when one is at hand, joined parts otherwise).
+    /// Merge a later note into this one: tags become the sorted union, this
+    /// note's `at` anchor is kept, and the merged `text` is the caller's
+    /// decision.
     ///
-    /// A written note has no span to extend, and nothing can extend into one:
-    /// coalescing runs over a router's output, where every note is spoken. A
-    /// hand-merge that reaches a written note keeps whichever provenance was
-    /// already there rather than inventing one.
+    /// Merging used to extend a span as well, which is why the caller could
+    /// leave `text` alone and have it re-derived. Nothing stores a span now,
+    /// so a caller that is merging two notes owns the result's words: see
+    /// `route::coalesce`, which still has the transcript at hand and takes the
+    /// verbatim slice across both.
     pub fn absorb(&mut self, other: Note) {
-        if let (Some(mine), Some(theirs)) = (self.span.as_mut(), other.span) {
-            mine[1] = theirs[1];
-        }
         let mut tags: Vec<String> = self.tags.drain(..).chain(other.tags).collect();
         tags.sort();
         tags.dedup();
@@ -313,57 +304,43 @@ pub struct Aspect {
     pub kind: &'static str,
 }
 
-/// One note filed under the chart elements it refers to.
+/// One note, filed under the vocabulary tags it refers to.
 ///
-/// A note is **spoken** or **written**, and `span` is what tells them apart.
-/// A spoken note carries byte offsets into the transcript and its `text` is
-/// verbatim — that is provenance, not a formatting preference. A written note
-/// was authored by hand, has no transcript to point at, and carries no span.
+/// Notes used to come in two kinds. A **spoken** one carried byte offsets into
+/// its transcript and a `text` that had to equal that slice exactly; a
+/// **written** one was authored by hand and carried no offsets. The distinction
+/// was real at routing time and inert everywhere after it: both kinds filed
+/// under the same vocabulary, filtered through the same rules and rendered
+/// alike, and nothing in the codebase ever read a stored span back.
 ///
-/// Both kinds are the same thing to every consumer: they file under the same
-/// vocabulary, filter through the same rules, and render alike.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+/// What made it worth removing is what it cost to keep. The absent span had to
+/// be spelled `[0, 0]` on the wire, the sentinel had to be unambiguous, so an
+/// empty span had to be an error, so `validate` and the Verify gate both
+/// carried a rule about a case that could not arise. Provenance is still
+/// enforced — `route::verify_gate` is the thing that enforces it — it is just
+/// no longer carried around by every note for the rest of its life.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Note {
-    /// Unique among the chart's notes (the `x{n}` scheme is convention;
-    /// uniqueness is the invariant consumers rely on).
+    /// Unique among the notes it is filed beside. The `x{n}` scheme is
+    /// convention; uniqueness is the invariant consumers rely on.
     pub id: String,
-    /// "HH:MM:SS" anchor into the recording; empty for a written note, and
-    /// for a spoken one whose transcript carries no timestamps.
-    pub time: String,
-    /// Byte offsets into the transcript — provenance. `None` for a written
-    /// note. See the [`span`] module for why the wire shape is unchanged.
-    #[serde(with = "span")]
-    #[cfg_attr(feature = "ts", ts(type = "[number, number]"))]
-    pub span: Option<[usize; 2]>,
-    /// VERBATIM when `span` is `Some`; must equal `transcript[span.0..span.1]`.
+    /// "HH:MM:SS" into the recording this note was spoken in.
+    ///
+    /// `None` for a note written by hand, and for a spoken one whose
+    /// transcript carried no timestamps. It was a `String` whose emptiness
+    /// meant absence — the same sentinel shape as the span's `[0, 0]`, and
+    /// removed for the same reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub at: Option<String>,
+    /// The words. Verbatim from the transcript for a spoken note — the Verify
+    /// gate refuses anything else — and whatever was typed for a written one.
     pub text: String,
-    /// Tag-ids; each must exist in the chart vocabulary. May be empty — a note
-    /// nothing could be filed under is shown whenever no filter is active.
+    /// Tag-ids, each of which must be in [`crate::vocab`]. May be empty: a
+    /// note nothing could be filed under is shown whenever no filter is
+    /// active.
     pub tags: Vec<String>,
-}
-
-/// `Option<[usize; 2]>` in Rust, `[0, 0]` on the wire.
-///
-/// A written note has always been stored as `span: [0, 0]`, a sentinel upheld
-/// by a comment at its one writer and understood nowhere else. The type now
-/// says which kind a note is, and this module keeps every chart ever written —
-/// and every artifact already in someone's hands — byte-identical.
-///
-/// The mapping is total in both directions because a real span can never be
-/// `[0, 0]`: [`ChartData::validate`] and the Verify gate both reject an empty
-/// one, so the sentinel is unambiguous.
-mod span {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S: Serializer>(v: &Option<[usize; 2]>, s: S) -> Result<S::Ok, S::Error> {
-        v.unwrap_or([0, 0]).serialize(s)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<[usize; 2]>, D::Error> {
-        let raw = <[usize; 2]>::deserialize(d)?;
-        Ok(if raw[0] == raw[1] { None } else { Some(raw) })
-    }
 }
 
 #[cfg(test)]
@@ -406,12 +383,6 @@ mod tests {
         c.notes[0].tags = vec!["planet:vulcan".into()];
         assert!(c.validate().is_err());
 
-        // an empty span is the written-note sentinel; a spoken note claiming
-        // one would come back written on the next round-trip
-        let mut c = valid_chart();
-        c.notes[0].span = Some([7, 7]);
-        assert!(c.validate().is_err());
-
         // fewer than twelve signs → PDF/wheel index panic
         let mut c = valid_chart();
         c.signs.pop();
@@ -428,39 +399,29 @@ mod tests {
         assert!(c.validate().is_err());
     }
 
-    /// The wire is what every saved chart and every exported artifact already
-    /// holds. `Option<[usize; 2]>` is a statement about the Rust type only —
-    /// if it leaked into the JSON, charts written by older builds and artifacts
-    /// already in someone's hands would stop agreeing with this one.
+    /// An absent time anchor is absent from the JSON, not an empty string.
+    ///
+    /// This is the shape the span sentinel did not have. `span: [0, 0]` meant
+    /// "no span" and `time: ""` meant "no time", and in both cases the reader
+    /// had to know the convention to get the right answer back. One `Option`
+    /// says it in the type, and a note with nothing to say about when simply
+    /// does not mention it.
     #[test]
-    fn the_span_sentinel_keeps_the_wire_unchanged() {
+    fn an_absent_time_anchor_is_absent_from_the_wire() {
         let written = Note {
             id: "x1".into(),
-            time: String::new(),
-            span: None,
+            at: None,
             text: "authored".into(),
             tags: vec!["planet:sun".into()],
         };
         let json = serde_json::to_string(&written).unwrap();
-        assert!(json.contains("\"span\":[0,0]"), "a written note still writes the sentinel: {json}");
+        assert!(!json.contains("\"at\""), "no key at all when unset: {json}");
+        assert_eq!(serde_json::from_str::<Note>(&json).unwrap(), written);
 
-        let spoken = Note { span: Some([4, 12]), ..written.clone() };
+        let spoken = Note { at: Some("00:04:12".into()), ..written.clone() };
         let json = serde_json::to_string(&spoken).unwrap();
-        assert!(json.contains("\"span\":[4,12]"), "{json}");
-
-        // and both come back as the kind they went in as
-        let back: Note = serde_json::from_str(&serde_json::to_string(&written).unwrap()).unwrap();
-        assert_eq!(back.span, None, "[0,0] reads back as written, not as a span");
-        let back: Note = serde_json::from_str(&serde_json::to_string(&spoken).unwrap()).unwrap();
-        assert_eq!(back.span, Some([4, 12]));
-
-        // any degenerate span means written — a real one can never be empty,
-        // which is what `validate` enforces
-        let degenerate: Note = serde_json::from_str(
-            r#"{"id":"x1","time":"","span":[9,9],"text":"t","tags":[]}"#,
-        )
-        .unwrap();
-        assert_eq!(degenerate.span, None);
+        assert!(json.contains("\"at\":\"00:04:12\""), "{json}");
+        assert_eq!(serde_json::from_str::<Note>(&json).unwrap(), spoken);
     }
 
     /// The field renamed; the JSON key did not.

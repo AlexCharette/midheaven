@@ -696,7 +696,7 @@ const CHROME = /*__CHROME__*/null;
                `<span class="g">${esc(textGlyph(glyph))}</span><span class="nm">${esc(ref.name)}</span></button>`;
       }).filter(Boolean).join('<span class="sep"> · </span>');
       art.innerHTML =
-        `<div class="folio">${ex.time ? esc(ex.time) : ''}</div>` +
+        `<div class="folio">${ex.at ? esc(ex.at) : ''}</div>` +
         `<blockquote>${esc(ex.text)}</blockquote>` +
         `<div class="refs">vide ${refsHtml}</div>`;
       art.querySelectorAll('.ref').forEach(b =>

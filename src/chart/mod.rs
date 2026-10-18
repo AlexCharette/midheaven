@@ -421,11 +421,9 @@ mod tests {
             "house:5".to_string(),
             whole.aspects.first().map(|a| a.id.clone()).unwrap_or_else(|| whole.signs[1].id.clone()),
         ];
-        // written by hand, so no span — a reproject must carry it either way
         let carried = crate::contract::Note {
             id: "x1".into(),
-            time: String::new(),
-            span: None,
+            at: None,
             text: "t".into(),
             tags,
         };

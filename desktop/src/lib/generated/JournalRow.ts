@@ -23,9 +23,4 @@ writtenAt: string, text: string, tags: Array<string>,
  * chart's, not the app's: a note written under a Russian reading reads and
  * searches in Russian wherever it is shown.
  */
-tagLabels: Array<string>, 
-/**
- * Whether a transcript stands behind it. The view does not distinguish the
- * two, but the journal shows both and something has to carry the fact.
- */
-spoken: boolean, source: RowSource, };
+tagLabels: Array<string>, source: RowSource, };
