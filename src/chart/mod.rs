@@ -469,15 +469,11 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("DST fold")), "{warnings:?}");
     }
 
-    #[test]
-    fn vocab_contains_all_categories() {
-        let input = birth("1990-07-13", "14:30:00", 52.52, 13.405, "Europe/Berlin");
-        let chart = compute_chart(&input).unwrap();
-        let vocab = chart.vocab();
-        assert!(vocab.contains("planet:sun"));
-        assert!(vocab.contains("planet:ascendant"));
-        assert!(vocab.contains("sign:leo"));
-        assert!(vocab.contains("house:5"));
-        assert!(vocab.iter().any(|t| t.starts_with("aspect:")));
-    }
+    // `vocab_contains_all_categories` lived here, asserting that a computed
+    // chart's element ids covered every category. The vocabulary is no longer
+    // derived from a chart, so the question moved with it — `vocab::tests`
+    // states the categories, and
+    // `a_computed_charts_aspect_ids_are_all_in_the_vocabulary` keeps this
+    // module's end of the bargain: whatever `compute_chart` mints must be a
+    // tag the gate will accept.
 }

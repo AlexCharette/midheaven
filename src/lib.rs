@@ -33,6 +33,7 @@ pub mod pdf;
 pub mod plate;
 pub mod route;
 pub mod transcribe;
+pub mod vocab;
 
 /// Where a reading's transcript comes from. `Audio` encodes the
 /// "a recording needs a model" invariant in the type; [`TranscriptSource::classify`]

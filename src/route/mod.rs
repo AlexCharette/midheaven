@@ -21,7 +21,6 @@ pub use transcript::Transcript;
 pub use verify::verify_gate;
 
 use crate::contract::ChartData;
-use std::collections::BTreeSet;
 
 /// What a router emits: spans + tags, never text of its own.
 pub struct RawNote {
@@ -58,19 +57,17 @@ pub enum Filing {
 
 /// The chart's own router: it matches in the chart's language (`meta.locale`),
 /// so routing a reloaded `chart.json` re-tags in the language it was read in.
-fn lexicon_for(vocab: &BTreeSet<String>, chart: &ChartData) -> LexiconRouter {
-    LexiconRouter::new(vocab, &chart.aspects, crate::i18n::Locale::parse(&chart.meta.locale))
+/// The chart decides the words, not the vocabulary — that is global now.
+fn lexicon_for(chart: &ChartData) -> LexiconRouter {
+    LexiconRouter::new(crate::i18n::Locale::parse(&chart.meta.locale))
 }
 
 /// File a transcript's notes into a chart, using the chart's own router.
 ///
-/// The whole gated path: route → Verify gate → coalesce → number → file. The
-/// vocabulary is built once and shared by the router and the gate; it used to be
-/// built twice per call, once by each.
+/// The whole gated path: route → Verify gate → coalesce → number → file.
 pub fn route_into(chart: &mut ChartData, transcript: &Transcript, filing: Filing) -> RouteReport {
-    let vocab = chart.vocab();
-    let router = lexicon_for(&vocab, chart);
-    file(chart, &vocab, transcript, &router, filing)
+    let router = lexicon_for(chart);
+    file(chart, transcript, &router, filing)
 }
 
 /// The same, with a router of your own — the seam. Used by this module's tests
@@ -81,18 +78,16 @@ pub fn route_into_with(
     router: &dyn Router,
     filing: Filing,
 ) -> RouteReport {
-    let vocab = chart.vocab();
-    file(chart, &vocab, transcript, router, filing)
+    file(chart, transcript, router, filing)
 }
 
 fn file(
     chart: &mut ChartData,
-    vocab: &BTreeSet<String>,
     transcript: &Transcript,
     router: &dyn Router,
     filing: Filing,
 ) -> RouteReport {
-    let (mut notes, report) = gated(vocab, transcript, router);
+    let (mut notes, report) = gated(transcript, router);
     // Ids are assigned here and nowhere else: coalescing changes how many
     // notes there are, and appending changes where their numbering starts,
     // so neither the gate nor the merge can know the answer. They used to guess
@@ -111,13 +106,12 @@ fn file(
 
 /// Router output through the gate and the merge, unnumbered.
 fn gated(
-    vocab: &BTreeSet<String>,
     transcript: &Transcript,
     router: &dyn Router,
 ) -> (Vec<crate::contract::Note>, RouteReport) {
     let raw = router.route(transcript);
     let n_routed = raw.len();
-    let (accepted, warnings) = verify_gate(transcript, raw, vocab);
+    let (accepted, warnings) = verify_gate(transcript, raw);
     (coalesce(accepted, transcript), RouteReport { n_routed, warnings })
 }
 
@@ -135,10 +129,9 @@ pub fn next_ordinal(notes: &[crate::contract::Note]) -> usize {
 /// Tags the chart's router finds in free text — curation re-tagging goes
 /// through the same gated path as everything else.
 pub fn retag(chart: &ChartData, text: &str) -> Vec<String> {
-    let vocab = chart.vocab();
-    let router = lexicon_for(&vocab, chart);
+    let router = lexicon_for(chart);
     let transcript = Transcript::load(text);
-    let (notes, _report) = gated(&vocab, &transcript, &router);
+    let (notes, _report) = gated(&transcript, &router);
     let mut tags: Vec<String> = notes.into_iter().flat_map(|n| n.tags).collect();
     tags.sort();
     tags.dedup();
@@ -151,11 +144,6 @@ pub(crate) fn renumber(notes: &mut [crate::contract::Note], first: usize) {
     for (i, note) in notes.iter_mut().enumerate() {
         note.id = format!("x{}", first + i);
     }
-}
-
-#[cfg(test)]
-pub(crate) fn test_vocab(tags: &[&str]) -> std::collections::BTreeSet<String> {
-    tags.iter().map(|s| s.to_string()).collect()
 }
 
 #[cfg(test)]
@@ -213,7 +201,7 @@ mod tests {
         c.notes = vec![existing("x1"), existing("x2")];
         let t = Transcript::load(WORDS);
         // Two spans with no shared tag, so nothing merges.
-        let router = Fixed(vec![raw((0, 10), &["planet:sun"]), raw((11, 21), &["sign:s3"])]);
+        let router = Fixed(vec![raw((0, 10), &["planet:sun"]), raw((11, 21), &["sign:aries"])]);
 
         route_into_with(&mut c, &t, &router, Filing::Append);
 

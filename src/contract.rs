@@ -4,7 +4,6 @@
 //! the HTML artifact as `const DATA = {...}`. No stage owns it.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
@@ -31,19 +30,6 @@ pub struct ChartData {
 }
 
 impl ChartData {
-    /// The closed tag vocabulary derived from the computed chart:
-    /// `planet:*`, `sign:*`, `house:*`, `aspect:*`. This is the only set of
-    /// tags a router may emit and the Verify gate accepts.
-    pub fn vocab(&self) -> BTreeSet<String> {
-        self.planets
-            .iter()
-            .map(|p| p.id.clone())
-            .chain(self.signs.iter().map(|s| s.id.clone()))
-            .chain(self.houses.iter().map(|h| h.id.clone()))
-            .chain(self.aspects.iter().map(|a| a.id.clone()))
-            .collect()
-    }
-
     /// Look up a planet body (including the Ascendant point) by tag-id.
     pub fn planet(&self, id: &str) -> Option<&Body> {
         self.planets.iter().find(|p| p.id == id)
@@ -93,10 +79,9 @@ impl ChartData {
         for a in &self.aspects {
             check_id(&a.id, "aspect")?;
         }
-        let vocab = self.vocab();
         for note in &self.notes {
             for tag in &note.tags {
-                if !vocab.contains(tag) {
+                if !crate::vocab::contains(tag) {
                     return Err(format!("note {:?} references unknown tag {tag:?}", note.id));
                 }
             }
@@ -414,9 +399,11 @@ mod tests {
         c.aspects[0].id = "aspect:".into();
         assert!(c.validate().is_err());
 
-        // a tag outside the vocabulary
+        // a tag outside the vocabulary. `planet:pluto` would not do: the
+        // vocabulary is global now, so Pluto is a real tag whether or not this
+        // particular chart carries the body.
         let mut c = valid_chart();
-        c.notes[0].tags = vec!["planet:pluto".into()];
+        c.notes[0].tags = vec!["planet:vulcan".into()];
         assert!(c.validate().is_err());
 
         // an empty span is the written-note sentinel; a spoken note claiming

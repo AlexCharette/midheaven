@@ -20,8 +20,7 @@ fn transcript_to_artifact() {
     .expect("example transcript present");
     let transcript = Transcript::load(&raw);
 
-    let vocab = chart.vocab();
-    let router = LexiconRouter::new(&vocab, &chart.aspects, Locale::En);
+    let router = LexiconRouter::new(Locale::En);
     route_into_with(&mut chart, &transcript, &router, Filing::Fresh);
 
     // Nine routed sentences coalesce into five notes (consecutive
@@ -37,7 +36,7 @@ fn transcript_to_artifact() {
         // Every note here is spoken, so every span is real.
         let [s, e] = note.span.expect("a routed note carries its provenance");
         assert_eq!(note.text, &transcript.text[s..e]);
-        assert!(note.tags.iter().all(|t| vocab.contains(t)));
+        assert!(note.tags.iter().all(|t| astro::vocab::contains(t)));
     }
 
     let html = emit(&chart).expect("emit succeeds");
@@ -80,6 +79,11 @@ fn transcript_to_artifact() {
 /// — so that the routing behaviour has a witness that the removal cannot take
 /// with it. If this passes before and after, routing did not change.
 ///
+/// Updated once, at the stage that added `kind:`. That change is visible here
+/// as five new tags and nothing else — every text, every time, every pair and
+/// the note count came through untouched, which is the evidence that widening
+/// the vocabulary did not disturb the matching underneath it.
+///
 /// The exact note texts are the load-bearing part. Note 1 and notes 3–4 each
 /// span several sentences, including sentences that carry no tag of their own:
 /// merging pulls a continuous verbatim slice, it does not join the matched
@@ -95,15 +99,21 @@ fn routing_the_example_transcript_is_unchanged() {
     ))
     .expect("example transcript present");
     let transcript = Transcript::load(&raw);
-    let vocab = chart.vocab();
-    let router = LexiconRouter::new(&vocab, &chart.aspects, Locale::En);
+    let router = LexiconRouter::new(Locale::En);
     route_into_with(&mut chart, &transcript, &router, Filing::Fresh);
 
     let expected: [(&str, &str, &[&str], &str); 5] = [
         (
             "x1",
             "00:00:42",
-            &["aspect:sun-jupiter", "house:10", "planet:jupiter", "planet:sun", "sign:cancer"],
+            &[
+                "aspect:sun-jupiter",
+                "house:10",
+                "kind:conjunction",
+                "planet:jupiter",
+                "planet:sun",
+                "sign:cancer",
+            ],
             "The first thing that jumps out at me is your sun in cancer sitting right at the \
              top of the chart in the tenth house. That's a career story, a public-life story, \
              and it colors everything else we'll look at today. And your sun is conjunct \
@@ -121,6 +131,7 @@ fn routing_the_example_transcript_is_unchanged() {
             &[
                 "aspect:sun-saturn",
                 "house:4",
+                "kind:opposition",
                 "planet:neptune",
                 "planet:saturn",
                 "planet:sun",
@@ -139,6 +150,8 @@ fn routing_the_example_transcript_is_unchanged() {
                 "aspect:moon-venus",
                 "aspect:sun-moon",
                 "house:6",
+                "kind:square",
+                "kind:trine",
                 "planet:moon",
                 "planet:sun",
                 "planet:venus",

@@ -614,8 +614,7 @@ fn add_in(chart: &mut ChartData, text: &str, tags: Vec<String>) -> Result<(), St
     if text.is_empty() {
         return Err("a note needs words".to_string());
     }
-    let vocab = chart.vocab();
-    if let Some(bad) = tags.iter().find(|t| !vocab.contains(*t)) {
+    if let Some(bad) = tags.iter().find(|t| !astro::vocab::contains(t)) {
         return Err(format!("unknown tag {bad}"));
     }
     let tags = if tags.is_empty() {
@@ -723,7 +722,7 @@ fn write_journal_note(
         return Err("a note needs words".to_string());
     }
     let chart = chart_of(&anchor)?;
-    if let Some(bad) = tags.iter().find(|t| !chart.vocab().contains(*t)) {
+    if let Some(bad) = tags.iter().find(|t| !astro::vocab::contains(t)) {
         return Err(format!("unknown tag {bad}"));
     }
     // The place as the gazetteer says it, not as the webview typed it — the id
@@ -1514,13 +1513,14 @@ mod tests {
         }
     }
 
-    /// The webview sends a seed, never a chart. If the backend could not turn
-    /// one back into the other there would be nothing to check a note's tags
-    /// against, and `write_journal_note` would be taking the webview's word.
+    /// The webview sends a seed, never a chart. A note's tags no longer need
+    /// the recompute — the vocabulary is global — but the sky does: the place
+    /// label stored on the anchor is the gazetteer's, not the webview's, and
+    /// the wheel a note is read against has to come from somewhere.
     #[test]
     fn an_anchor_recomputes_the_chart_it_names() {
         let chart = chart_of(&anchor()).expect("a real place and a real date compute");
-        assert!(chart.vocab().contains("planet:sun"));
+        assert!(chart.planet("planet:sun").is_some());
         assert_eq!(chart.planets.len(), 11);
 
         let mut bad = anchor();

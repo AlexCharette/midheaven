@@ -45,10 +45,16 @@ pub fn berlin_chart() -> ChartData {
 /// A structurally valid chart with no astronomy behind it: twelve signs, houses
 /// and cusps, one body, one aspect, no notes.
 ///
-/// Deliberately the *fullest* minimal chart — `validate` requires twelve of each
-/// and a closed vocabulary, and a test that wants less can clear what it does
-/// not need. Element ids are placeholders (`sign:s0`), not real slugs, so a test
-/// asserting on real names is using the wrong fixture.
+/// Deliberately the *fullest* minimal chart — `validate` requires twelve of
+/// each, and a test that wants less can clear what it does not need.
+///
+/// The element ids are the real slugs. They used to be placeholders
+/// (`sign:s0`), which worked while the vocabulary was whatever a given chart
+/// contained; now that it is global and closed, an invented sign is simply not
+/// a sign, and a fixture built from invented ids would have its own notes
+/// rejected by the gate. Only the *astronomy* is fake here — the names,
+/// glyphs and elements are placeholders, so a test asserting on those is still
+/// using the wrong fixture.
 pub fn minimal_chart() -> ChartData {
     let mut chart = ChartData {
         meta: Meta {
@@ -76,9 +82,10 @@ pub fn minimal_chart() -> ChartData {
             house: 1,
             ..Default::default()
         }],
-        signs: (0..12)
-            .map(|i| Ref {
-                id: format!("sign:s{i}"),
+        signs: crate::chart::catalog::SIGNS_ALL
+            .iter()
+            .map(|&(slug, ..)| Ref {
+                id: format!("sign:{slug}"),
                 glyph: "x".into(),
                 name: "S".into(),
                 element: "fire".into(),
