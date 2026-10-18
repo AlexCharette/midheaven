@@ -6,6 +6,9 @@
   // the wheel renders the pose-tweened projection of the newest preview, so
   // the heavens glide — never jump — to the chosen moment.
   import { onMount } from "svelte";
+  import { slide } from "svelte/transition";
+  import { expoOut } from "svelte/easing";
+  import { swapDuration } from "$lib/motion";
   import { getPreferences, lastPlace, setLastPlace } from "$lib/api";
   import {
     displayed,
@@ -22,7 +25,9 @@
     minutes as draftMinutes,
     warnings,
   } from "$lib/preview.svelte";
-  import { fromMinutes, nowMoment, setYear, toMinutes } from "$lib/civil";
+  import { MONTH_NAMES, fromMinutes, nowMoment, parseDate, setYear, toMinutes } from "$lib/civil";
+  import { ayanamsas, houseSystems } from "$lib/options.svelte";
+  import { SIDEREAL } from "$lib/types";
   import type { PlaceDto } from "$lib/types";
   import BirthForm from "./BirthForm.svelte";
   import CalcOptions from "./CalcOptions.svelte";
@@ -82,9 +87,32 @@
     refresh("now");
   });
 
+  // The sky's controls fold away, because once the moment is where you want
+  // it they are apparatus and the plate is the point. What they fold *to*
+  // matters more than the fold: a collapsed summary still has to say which
+  // sky this is, or the wheel above it becomes a picture of nothing.
+  let momentOpen = $state(true);
+
   const moment = $derived(fromMinutes(draftMinutes()));
   const year = $derived(Number(moment.date.slice(0, 4)));
   const calcOptions = $derived(options());
+
+  /** The folded line: place, moment, calculation — everything the open
+   * controls say, in the order they say it. */
+  const summary = $derived.by(() => {
+    const d = parseDate(moment.date);
+    const when = d
+      ? `${d.d} ${MONTH_NAMES[d.m - 1].slice(0, 3)} ${d.y}, ${moment.time}`
+      : moment.time;
+    const house =
+      houseSystems.find((h) => h.code === calcOptions.houseSystem)?.label ??
+      calcOptions.houseSystem;
+    const zodiac =
+      calcOptions.zodiac === SIDEREAL
+        ? (ayanamsas.find((a) => a.code === calcOptions.ayanamsa)?.label ?? "Sidereal")
+        : "Tropical";
+    return { where: place()?.label ?? "", when, calc: `${house} · ${zodiac}` };
+  });
 
   // The chart to render — the target's identity with the pose's angles — is
   // `pose.project`, not this view's business.
@@ -139,12 +167,36 @@
       <p class="apparatus-text tagline">your offline astrology workbench</p>
     </header>
 
-    <div class="place-line">
-      <p class="over-lbl">the heavens over</p>
-      <PlacePicker value={place()} compact ariaLabel="place" onpick={onPlacePicked} />
-    </div>
+    <button
+      type="button"
+      class="sky-summary"
+      class:open={momentOpen}
+      aria-expanded={momentOpen}
+      aria-controls="sky-body"
+      onclick={() => (momentOpen = !momentOpen)}
+    >
+      <span class="over-lbl">the heavens over</span>
+      <span class="caret" aria-hidden="true">
+        <svg width="11" height="7" viewBox="0 0 11 7"
+          ><path
+            d="M1 1.2 L5.5 5.5 L10 1.2"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          /></svg
+        >
+      </span>
+    </button>
 
-    <div class="moment">
+    {#if momentOpen}
+      <div id="sky-body" transition:slide={{ duration: swapDuration(), easing: expoOut }}>
+        <div class="place-line">
+          <PlacePicker value={place()} compact ariaLabel="place" onpick={onPlacePicked} />
+        </div>
+
+        <div class="moment">
       <label class="lbl" for="calc-date">on</label>
       <MomentField id="calc-date" type="date" value={moment.date} width="10.5rem" oncommit={commitDate} />
       <label class="lbl" for="calc-time">at</label>
@@ -155,19 +207,32 @@
         <span class="year">{year}</span>
         <button type="button" class="ghost chev" onclick={() => stepYear(1)} aria-label="next year">›</button>
       </span>
-      <span class="lbl" aria-hidden="true"></span>
-      <button type="button" class="ghost now" onclick={setToNow}>set to now</button>
-    </div>
+          <span class="lbl" aria-hidden="true"></span>
+          <button type="button" class="ghost now" onclick={setToNow}>set to now</button>
+        </div>
 
-    <div class="calc-line">
-      <CalcOptions
-        variant="caption"
-        houseSystem={calcOptions.houseSystem}
-        zodiac={calcOptions.zodiac}
-        ayanamsa={calcOptions.ayanamsa}
-        onchange={setOptions}
-      />
-    </div>
+        <div class="calc-line">
+          <CalcOptions
+            variant="caption"
+            houseSystem={calcOptions.houseSystem}
+            zodiac={calcOptions.zodiac}
+            ayanamsa={calcOptions.ayanamsa}
+            onchange={setOptions}
+          />
+        </div>
+      </div>
+    {:else}
+      <!-- folded, the sky still has to name itself: the wheel above is a
+           picture of a moment, and this is the caption that says which -->
+      <dl class="folded" transition:slide={{ duration: swapDuration(), easing: expoOut }}>
+        <dt class="sr-only">place</dt>
+        <dd class="where">{summary.where}</dd>
+        <dt class="sr-only">moment</dt>
+        <dd class="when">{summary.when}</dd>
+        <dt class="sr-only">calculation</dt>
+        <dd class="calc">{summary.calc}</dd>
+      </dl>
+    {/if}
     <p class="note" class:err={error() !== null} aria-live="polite">
       {error() ?? warnings().join(" · ")}
     </p>
@@ -291,16 +356,77 @@
   .panel {
     min-width: 0;
   }
-  .place-line .over-lbl {
+  /* The fold's head, in the same grammar the element index uses: a small-caps
+     line and a caret that lies down when shut. */
+  .sky-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    padding: 0;
     margin: 0 0 0.35rem;
     font-size: 0.78rem;
     font-variant: small-caps;
     letter-spacing: 0.14em;
     color: var(--ink-3);
+    text-align: left;
+  }
+  .sky-summary:hover {
+    color: var(--ink-2);
+  }
+  .sky-summary .caret {
+    display: inline-flex;
+  }
+  .sky-summary:not(.open) .caret {
+    transform: rotate(-90deg);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .sky-summary .caret,
+    .sky-summary {
+      transition:
+        transform var(--dur-fast) var(--ease-out-quint),
+        color var(--dur-fast) var(--ease-out-quint);
+    }
   }
   .place-line {
     font-size: 0.92rem;
     margin-bottom: 1.1rem;
+  }
+  /* Folded: the caption the plate needs, set as a short ledger. The place
+     keeps the weight it has open; the moment and the calculation step down,
+     so the line reads in the order you set them. */
+  .folded {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .folded dd {
+    margin: 0;
+  }
+  .folded .where {
+    font-size: 0.92rem;
+    color: var(--ink);
+  }
+  .folded .when {
+    font-size: 0.86rem;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .folded .calc {
+    font-size: 0.78rem;
+    font-style: italic;
+    color: var(--ink-3);
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   /* the moment reads as ledger rows: italic labels in a slim gutter, one
      value per line — nothing shares a line it could be squeezed off of */
