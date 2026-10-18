@@ -9,6 +9,7 @@ mod prefs;
 #[cfg(desktop)]
 mod record;
 mod session;
+mod store;
 
 use astro::chart::parse_time;
 use astro::contract::{ChartData, Note};
