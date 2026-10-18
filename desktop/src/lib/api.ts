@@ -30,10 +30,13 @@ import type {
   Note,
   OptionDto,
   PlaceDto,
+  Person,
   Preferences,
   PreviewDto,
   PreviewInput,
+  Query,
   StoredNote,
+  View,
 } from "./types";
 
 /** A command the backend refused. `message` is the reason it gave, ready to
@@ -156,6 +159,26 @@ export const writeMomentNote = (
 /** Every note the app holds, whatever sky it was written over — newest
  * first. */
 export const listJournal = () => call<JournalRow[]>("list_journal");
+
+// ---- asking ----
+//
+// A closed set of questions rather than a search string with a syntax. The
+// rows a query returns are the same rows `listJournal` returns, narrowed —
+// searching does not produce a different kind of result.
+
+/** Ask a question of the notes. An empty query is every note. */
+export const queryNotes = (query: Query) => call<JournalRow[]>("query_notes", { query });
+
+/** Save a question by name — new with no `id`, an amendment with one. */
+export const writeView = (name: string, query: Query, id?: string) =>
+  call<View>("write_view", { id, name, query });
+
+export const listViews = () => call<View[]>("list_views");
+
+export const deleteView = (id: string) => call<void>("delete_view", { id });
+
+/** Everyone the store knows about — the people filter's options. */
+export const listPeople = () => call<Person[]>("list_people");
 
 export const getPreferences = () => call<Preferences>("get_preferences");
 

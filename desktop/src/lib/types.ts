@@ -29,6 +29,9 @@ export type { Person } from "./generated/Person";
 export type { StoredNote } from "./generated/StoredNote";
 export type { JournalRow } from "./generated/JournalRow";
 export type { ChartRow } from "./generated/ChartRow";
+export type { Query } from "./generated/Query";
+export type { Mode as QueryMode } from "./generated/Mode";
+export type { View } from "./generated/View";
 
 import type { Body } from "./generated/Body";
 import type { ChartData } from "./generated/ChartData";

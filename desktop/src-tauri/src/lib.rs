@@ -6,6 +6,7 @@ mod ids;
 mod naming;
 mod notes;
 mod prefs;
+mod query;
 #[cfg(desktop)]
 mod record;
 mod session;
@@ -728,6 +729,54 @@ struct JournalRow {
     person: Option<Person>,
 }
 
+/// Ask a question of the notes. The journal view's own listing is this with
+/// an empty query.
+#[tauri::command]
+fn query_notes(app: AppHandle, query: query::Query) -> Vec<JournalRow> {
+    let Ok(store) = store_of(&app) else { return Vec::new() };
+    rows_for(&store, query::run(&store, &query))
+}
+
+/// Save a question by name — new when `id` is absent, an amendment when it is
+/// present.
+#[tauri::command]
+fn write_view(
+    app: AppHandle,
+    id: Option<String>,
+    name: String,
+    query: query::Query,
+) -> Result<query::View, String> {
+    let store = store_of(&app)?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("a view needs a name".to_string());
+    }
+    let view = query::View {
+        id: id.unwrap_or_else(|| store.mint_id::<query::View>(now_ms())),
+        name: name.to_string(),
+        query,
+    };
+    store.put(&view)?;
+    Ok(view)
+}
+
+/// Every saved view, in the order they were made.
+#[tauri::command]
+fn list_views(app: AppHandle) -> Vec<query::View> {
+    store_of(&app).map(|s| s.all::<query::View>()).unwrap_or_default()
+}
+
+#[tauri::command]
+fn delete_view(app: AppHandle, id: String) -> Result<(), String> {
+    store_of(&app)?.remove::<query::View>(&id)
+}
+
+/// Everyone the store knows about — the people filter's options.
+#[tauri::command]
+fn list_people(app: AppHandle) -> Vec<Person> {
+    store_of(&app).map(|s| query::people(&s)).unwrap_or_default()
+}
+
 /// A tag id as the words a reader would search for.
 ///
 /// A journal row carries no computed chart — that is what makes listing a few
@@ -767,13 +816,20 @@ fn tag_label(tag: &str, loc: astro::i18n::Locale) -> String {
 #[tauri::command]
 fn list_journal(app: AppHandle) -> Vec<JournalRow> {
     let Ok(store) = store_of(&app) else { return Vec::new() };
+    rows_for(&store, store.notes_newest_first())
+}
+
+/// Notes as rows: each one with the sky it was written over and whose it is.
+///
+/// Shared by the plain listing and by `query_notes`, so a searched row and a
+/// listed row are the same thing — the search narrows what is shown, it does
+/// not produce a different kind of result.
+fn rows_for(store: &Store, notes: Vec<StoredNote>) -> Vec<JournalRow> {
     let charts: std::collections::HashMap<String, Chart> =
         store.all::<Chart>().into_iter().map(|c| (c.id.clone(), c)).collect();
     let people: std::collections::HashMap<String, Person> =
         store.all::<Person>().into_iter().map(|p| (p.id.clone(), p)).collect();
-
-    store
-        .notes_newest_first()
+    notes
         .into_iter()
         .filter_map(|n| {
             // A note whose chart is gone has nothing to be read against, so it
@@ -1082,6 +1138,11 @@ macro_rules! commands {
             delete_note,
             list_notes,
             list_journal,
+            query_notes,
+            write_view,
+            list_views,
+            delete_view,
+            list_people,
             get_preferences,
             set_preferences,
             open_licenses,

@@ -16,7 +16,15 @@
   // plate, same manicule sliding in on a row. They are the two ways back into
   // work already done.
   import { ask } from "@tauri-apps/plugin-dialog";
-  import { deleteNote, listJournal, openChart } from "$lib/api";
+  import {
+    deleteNote,
+    deleteView,
+    listPeople,
+    listViews,
+    openChart,
+    queryNotes,
+    writeView,
+  } from "$lib/api";
   import { during, isBusy } from "$lib/busy.svelte";
   import { openReading as installReading, whyCannotOpenAnother } from "$lib/session.svelte";
   import { rowSubject, search } from "$lib/journal";
@@ -25,7 +33,7 @@
   import { notify } from "$lib/toasts.svelte";
   import { chooseReadingsDir } from "$lib/readings";
   import { getPreferences } from "$lib/api";
-  import type { Chart, JournalRow } from "$lib/types";
+  import type { Chart, JournalRow, Person, Query, View } from "$lib/types";
   import { SIDEREAL, TROPICAL } from "$lib/types";
   import { refreshNotes } from "$lib/notes.svelte";
   import { reason } from "$lib/failure";
@@ -38,6 +46,17 @@
   let err = $state("");
   let readingsDir = $state<string | null>(null);
 
+  // The standing question. The `find` box below is deliberately *not* part of
+  // it: a view is something kept, and the box is a glance — it also searches
+  // the person and the element labels, which the store cannot be asked about
+  // without reading everything the row already carries.
+  let filter = $state<Query>({ tags: [], mode: "any" });
+  let people = $state<Person[]>([]);
+  let views = $state<View[]>([]);
+  let naming = $state(false);
+  let viewName = $state("");
+
+  const filtered = $derived(filter.person !== undefined);
   const shown = $derived(search(rows, query));
 
   // once on mount (no reactive reads in the body)
@@ -50,11 +69,55 @@
     err = "";
     try {
       readingsDir = (await getPreferences()).readings_dir;
-      rows = readingsDir ? await listJournal() : [];
+      if (!readingsDir) {
+        rows = [];
+        return;
+      }
+      [rows, people, views] = await Promise.all([
+        queryNotes(filter),
+        listPeople(),
+        listViews(),
+      ]);
     } catch (e) {
       err = reason(e);
     } finally {
       loading = false;
+    }
+  }
+
+  /** Narrow to one person, or to everyone. */
+  async function byPerson(id: string) {
+    filter = id ? { ...filter, person: id } : { ...filter, person: undefined };
+    await refresh();
+  }
+
+  /** Keep the current question under a name. */
+  async function keepView() {
+    const name = viewName.trim();
+    if (!name) return;
+    try {
+      await writeView(name, filter);
+      viewName = "";
+      naming = false;
+      views = await listViews();
+      notify(`kept “${name}”`);
+    } catch (e) {
+      err = reason(e);
+    }
+  }
+
+  async function applyView(v: View) {
+    filter = v.query;
+    await refresh();
+  }
+
+  async function dropView(ev: MouseEvent, v: View) {
+    ev.stopPropagation();
+    try {
+      await deleteView(v.id);
+      views = views.filter((x) => x.id !== v.id);
+    } catch (e) {
+      err = reason(e);
     }
   }
 
@@ -156,13 +219,66 @@
       <p class="sub">Choose one to keep notes across your charts.</p>
       <button class="frame-btn" onclick={choose}>choose a folder…</button>
     </div>
-  {:else if rows.length === 0}
+  {:else if rows.length === 0 && !filtered}
     <div class="empty-plate">
       <span class="mark" aria-hidden="true">✶</span>
       <p class="caption">Nothing written down yet.</p>
       <p class="sub">Notes you write, and the words of readings you transcribe, appear here.</p>
     </div>
   {:else}
+    <div class="asking">
+      <label class="who-filter">
+        <span class="apparatus-text">about</span>
+        <select
+          value={filter.person ?? ""}
+          onchange={(e) => byPerson(e.currentTarget.value)}
+          aria-label="narrow to one person"
+        >
+          <option value="">everyone</option>
+          {#each people as p (p.id)}
+            <option value={p.id}>{p.name}</option>
+          {/each}
+        </select>
+      </label>
+
+      {#if views.length > 0}
+        <span class="views">
+          {#each views as v (v.id)}
+            <span class="view-chip">
+              <button type="button" class="chip-open" onclick={() => applyView(v)} title="ask this again"
+                >{v.name}</button
+              >
+              <button
+                type="button"
+                class="chip-drop"
+                onclick={(ev) => dropView(ev, v)}
+                title="forget this view"
+                aria-label={`forget ${v.name}`}>✕</button
+              >
+            </span>
+          {/each}
+        </span>
+      {/if}
+
+      {#if naming}
+        <span class="naming">
+          <input
+            type="text"
+            bind:value={viewName}
+            placeholder="call it something"
+            aria-label="name for this view"
+            onkeydown={(e) => {
+              if (e.key === "Enter") keepView();
+              if (e.key === "Escape") { naming = false; viewName = ""; }
+            }}
+          />
+          <button type="button" class="ghost" onclick={keepView}>keep</button>
+        </span>
+      {:else if filtered}
+        <button type="button" class="ghost" onclick={() => (naming = true)}>keep this view…</button>
+      {/if}
+    </div>
+
     <label class="find">
       <span class="apparatus-text">find</span>
       <input
@@ -176,6 +292,8 @@
 
     {#if shown.length === 0}
       <p class="apparatus-text note">Nothing here matches “{query}”.</p>
+    {:else if shown.length === 0}
+      <p class="apparatus-text note">Nothing written about them yet.</p>
     {:else}
       <ul class="list">
         {#each shown as row (row.id)}
@@ -230,6 +348,71 @@
   .err-mark {
     color: var(--oxblood);
   }
+  /* The standing question: who it is about, and the views kept of it. Sits
+     above `find`, which narrows whatever this leaves. */
+  .asking {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.9rem;
+    padding: 0.4rem 0.2rem 0;
+  }
+  .who-filter {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+  }
+  .who-filter select {
+    padding: 0.15rem 0.3rem;
+    background: transparent;
+    color: var(--ink);
+    border: none;
+    border-bottom: 1px solid var(--hairline);
+    font: inherit;
+  }
+  .views {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .view-chip {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+  }
+  .chip-open,
+  .chip-drop {
+    background: none;
+    border: none;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: 0.82rem;
+    padding: 0.1rem 0.45rem;
+    cursor: pointer;
+  }
+  .chip-open:hover,
+  .chip-drop:hover {
+    color: var(--ink);
+  }
+  .chip-drop {
+    border-left: 1px solid var(--line);
+    color: var(--ink-3);
+  }
+  .naming {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+  }
+  .naming input {
+    padding: 0.15rem 0.3rem;
+    background: transparent;
+    color: var(--ink);
+    border: none;
+    border-bottom: 1px solid var(--hairline);
+    font: inherit;
+  }
+
   .find {
     display: flex;
     align-items: baseline;
