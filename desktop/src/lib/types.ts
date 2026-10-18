@@ -32,6 +32,9 @@ export type { ChartRow } from "./generated/ChartRow";
 export type { Query } from "./generated/Query";
 export type { Mode as QueryMode } from "./generated/Mode";
 export type { View } from "./generated/View";
+export type { Anchor } from "./generated/Anchor";
+export type { AnchorKind } from "./generated/AnchorKind";
+export type { ElementDto } from "./generated/ElementDto";
 
 import type { Body } from "./generated/Body";
 import type { ChartData } from "./generated/ChartData";

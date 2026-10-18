@@ -39,9 +39,29 @@ export function anchorFor(
 }
 
 /** Who a row is about, for display: the person when there is one, else the
- * place the sky was over. */
+ * place the sky was over.
+ *
+ * A standing note is about neither — it is about its elements, and the row
+ * already renders those as chips. Repeating them here would be saying the
+ * same thing twice, so it says nothing and the mark carries the distinction.
+ */
 export function rowSubject(row: JournalRow): string {
-  return row.person?.name ?? row.chart.place;
+  return row.person?.name ?? row.chart?.place ?? "";
+}
+
+/** The engraved mark that tells the three kinds apart at a glance.
+ *
+ * A mark rather than a colour: the palette is CVD-validated and PRODUCT.md
+ * is explicit that colour is never the only signal. */
+export function rowMark(row: JournalRow): { glyph: string; title: string } {
+  switch (row.anchor.kind) {
+    case "chart":
+      return { glyph: "☍", title: "said in a reading" };
+    case "person":
+      return { glyph: "☉", title: "about this person" };
+    case "standing":
+      return { glyph: "✶", title: "a standing note" };
+  }
 }
 
 /**

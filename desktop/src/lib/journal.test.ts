@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anchorFor, matches, rowSubject, search } from "./journal";
+import { anchorFor, matches, rowMark, rowSubject, search } from "./journal";
 import type { ChartData, JournalRow, PreviewInput } from "./types";
 
 const input: PreviewInput = {
@@ -67,6 +67,7 @@ const row = (over: Partial<JournalRow> = {}): JournalRow =>
     text: "Mars is loud today.",
     tags: ["planet:mars"],
     tagLabels: ["Mars"],
+    anchor: { kind: "chart", id: "c1" },
     chart: {
       id: "c1",
       kind: "moment",
@@ -80,10 +81,57 @@ const row = (over: Partial<JournalRow> = {}): JournalRow =>
 
 const aboutMira = row({
   id: "x1",
+  anchor: { kind: "chart", id: "c1" },
   text: "She kept returning to the tenth house.",
   tags: ["house:10"],
   tagLabels: ["Tenth House"],
   person: { id: "p1", name: "Mira Holt", born: "1990-07-13 14:30" },
+});
+
+const standing = row({
+  id: "s1",
+  anchor: { kind: "standing" },
+  chart: undefined,
+  text: "Leo wants to be seen doing the thing.",
+  tags: ["sign:leo"],
+  tagLabels: ["Leo"],
+});
+
+const aboutAPerson = row({
+  id: "p9",
+  anchor: { kind: "person", id: "p1" },
+  chart: undefined,
+  text: "She keeps deflecting about her father.",
+  person: { id: "p1", name: "Mira Holt", born: "1990-07-13 14:30" },
+});
+
+describe("what a row is about", () => {
+  /** A standing note is about its elements, and the chips already say so —
+   * repeating it in the subject slot would be saying it twice. */
+  it("says nothing for a standing note and lets the chips carry it", () => {
+    expect(rowSubject(standing)).toBe("");
+    expect(standing.tagLabels).toEqual(["Leo"]);
+  });
+
+  it("names the person for a note about one, with no sky to fall back on", () => {
+    expect(rowSubject(aboutAPerson)).toBe("Mira Holt");
+  });
+
+  /** A mark rather than a colour: the palette is CVD-validated and colour is
+   * never the only signal. */
+  it("marks the three kinds distinctly", () => {
+    const marks = [row(), aboutAPerson, standing].map((r) => rowMark(r).glyph);
+    expect(new Set(marks).size).toBe(3);
+    expect(marks.every((m) => m.length > 0)).toBe(true);
+  });
+
+  /** The search box reaches a standing note through its words and its
+   * elements — it has no person or place to be found by. */
+  it("finds a standing note by its words or its elements", () => {
+    expect(search([standing], "seen")).toHaveLength(1);
+    expect(search([standing], "leo")).toHaveLength(1);
+    expect(search([standing], "berlin")).toHaveLength(0);
+  });
 });
 
 describe("finding a note again", () => {

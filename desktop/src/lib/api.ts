@@ -25,6 +25,7 @@ import type {
   Chart,
   ChartData,
   ChartRow,
+  ElementDto,
   JournalRow,
   LocaleDto,
   Note,
@@ -179,6 +180,24 @@ export const deleteView = (id: string) => call<void>("delete_view", { id });
 
 /** Everyone the store knows about — the people filter's options. */
 export const listPeople = () => call<Person[]>("list_people");
+
+/** Remove a person. Refused while any chart or note still refers to them. */
+export const deletePerson = (id: string) => call<void>("delete_person", { id });
+
+// ---- standing notes ----
+
+/** The vocabulary as a plate you can click, with no chart behind it — the
+ * tag picker for a note that is about no sky. Excludes `aspect:` pairs. */
+export const listElements = () => call<ElementDto[]>("list_elements");
+
+/** Write a note about no sky: craft knowledge about the elements, or an
+ * observation about a person. Naming a person is what makes it the second. */
+export const writeStandingNote = (
+  text: string,
+  tags: string[],
+  person?: string,
+  id?: string,
+) => call<StoredNote>("write_standing_note", { id, text, tags, person });
 
 export const getPreferences = () => call<Preferences>("get_preferences");
 

@@ -823,6 +823,69 @@ fn delete_view(app: AppHandle, id: String) -> Result<(), String> {
     store_of(&app)?.remove::<query::View>(&id)
 }
 
+/// One element of the vocabulary, as something to click.
+#[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+struct ElementDto {
+    tag: String,
+    glyph: String,
+    name: String,
+    /// Which band it belongs in.
+    cat: String,
+}
+
+/// The vocabulary as a plate you can click, with no chart behind it.
+///
+/// The reading view names elements by clicking the wheel and the bands —
+/// `Composer` refuses to be a panel over the plate precisely so the app has
+/// one way of saying what a note is about. A standing note has no plate, so
+/// this is that plate without the sky: the bands are global anyway, and only
+/// the wheel needed a chart.
+///
+/// `aspect:` pairs are left out. They name two specific bodies, which is a
+/// thing about a chart rather than about the craft; `kind:trine` is the
+/// standing concept and it is here.
+#[tauri::command]
+fn list_elements(app: AppHandle) -> Vec<ElementDto> {
+    use astro::chart::catalog::{ASPECT_TYPES, HOUSE_NAMES, PLANETS, SIGNS_ALL};
+    let loc = app_locale(&app);
+    let mut out: Vec<ElementDto> = PLANETS
+        .iter()
+        .map(|&(_, slug, glyph, _)| ElementDto {
+            tag: format!("planet:{slug}"),
+            glyph: glyph.to_string(),
+            name: loc.planet_name(slug).to_string(),
+            cat: "planet".into(),
+        })
+        .collect();
+    out.push(ElementDto {
+        tag: "planet:ascendant".into(),
+        glyph: "AC".into(),
+        name: loc.planet_name("ascendant").to_string(),
+        cat: "planet".into(),
+    });
+    out.extend(SIGNS_ALL.iter().map(|&(slug, glyph, ..)| ElementDto {
+        tag: format!("sign:{slug}"),
+        glyph: glyph.to_string(),
+        name: loc.sign_name(slug).to_string(),
+        cat: "sign".into(),
+    }));
+    out.extend((1..=HOUSE_NAMES.len()).map(|n| ElementDto {
+        tag: format!("house:{n}"),
+        glyph: HOUSE_NAMES[n - 1].0.to_string(),
+        name: loc.house_name(n).to_string(),
+        cat: "house".into(),
+    }));
+    out.extend(ASPECT_TYPES.iter().map(|&(kind, glyph, ..)| ElementDto {
+        tag: format!("kind:{kind}"),
+        glyph: glyph.to_string(),
+        name: loc.aspect_word(kind).to_string(),
+        cat: "kind".into(),
+    }));
+    out
+}
+
 /// Remove a person — refused while anything still refers to them.
 ///
 /// Deleting a chart takes that chart's notes, which is one level and a
@@ -1252,6 +1315,7 @@ macro_rules! commands {
             delete_view,
             list_people,
             delete_person,
+            list_elements,
             get_preferences,
             set_preferences,
             open_licenses,
@@ -1534,6 +1598,33 @@ mod tests {
         assert!(chart_of(&nonsense).is_err(), "an unknown code is refused, not defaulted");
     }
 
+
+    /// The chartless plate covers every category a standing note can carry,
+    /// and deliberately not `aspect:` — a pair names two bodies, which is a
+    /// fact about a chart rather than about the craft.
+    #[test]
+    fn the_chartless_plate_is_the_vocabulary_a_standing_note_can_use() {
+        use astro::i18n::Locale::En;
+        // Built the same way the command builds it, without an AppHandle.
+        let count = |cat: &str, n: usize| {
+            let got = astro::vocab::ALL
+                .iter()
+                .filter(|t| t.starts_with(&format!("{cat}:")))
+                .count();
+            assert_eq!(got, n, "{cat}");
+        };
+        count("planet", 11);
+        count("sign", 12);
+        count("house", 12);
+        count("kind", 5);
+        // 40 clickable elements; the 45 pairs stay out.
+        assert_eq!(astro::vocab::ALL.len(), 85);
+        // And every one of the four categories names itself in the UI's
+        // language, which is what makes the plate readable.
+        for (tag, _) in [("planet:sun", ""), ("sign:leo", ""), ("house:5", ""), ("kind:trine", "")] {
+            assert!(!tag_label(tag, En).starts_with(tag), "{tag} did not name itself");
+        }
+    }
 
     /// A journal row carries no chart, so its elements have to name themselves
     /// from the id and the row's language alone — and nobody searches for

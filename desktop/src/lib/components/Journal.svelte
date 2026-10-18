@@ -16,6 +16,8 @@
   // plate, same manicule sliding in on a row. They are the two ways back into
   // work already done.
   import { ask } from "@tauri-apps/plugin-dialog";
+  import ElementPlate from "./ElementPlate.svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import {
     deleteNote,
     deleteView,
@@ -23,11 +25,12 @@
     listViews,
     openChart,
     queryNotes,
+    writeStandingNote,
     writeView,
   } from "$lib/api";
   import { during, isBusy } from "$lib/busy.svelte";
   import { openReading as installReading, whyCannotOpenAnother } from "$lib/session.svelte";
-  import { rowSubject, search } from "$lib/journal";
+  import { rowMark, rowSubject, search } from "$lib/journal";
   import { setMoment, setOptions, setPlace } from "$lib/preview.svelte";
   import { toMinutes } from "$lib/civil";
   import { notify } from "$lib/toasts.svelte";
@@ -55,6 +58,15 @@
   let views = $state<View[]>([]);
   let naming = $state(false);
   let viewName = $state("");
+
+  // Writing a standing note. Whether it is craft or an observation about
+  // someone falls out of the person selector rather than being a third thing
+  // to say: name nobody and it is about the elements alone.
+  let composing = $state(false);
+  let draft = $state("");
+  let draftTags = new SvelteSet<string>();
+  let draftPerson = $state("");
+  let saving = $state(false);
 
   const filtered = $derived(filter.person !== undefined);
   const shown = $derived(search(rows, query));
@@ -106,6 +118,35 @@
     }
   }
 
+  function beginCompose() {
+    composing = true;
+    draft = "";
+    draftTags.clear();
+    draftPerson = "";
+  }
+
+  async function keepNote() {
+    const words = draft.trim();
+    if (!words) {
+      err = "a note needs words";
+      return;
+    }
+    saving = true;
+    err = "";
+    try {
+      await writeStandingNote(words, [...draftTags], draftPerson || undefined);
+      composing = false;
+      draft = "";
+      draftTags.clear();
+      await refresh();
+      notify(draftPerson ? "note kept about them" : "standing note kept");
+    } catch (e) {
+      err = reason(e);
+    } finally {
+      saving = false;
+    }
+  }
+
   async function applyView(v: View) {
     filter = v.query;
     await refresh();
@@ -128,11 +169,11 @@
   /** Open the reading a note belongs to. Refused mid-take for the same
    * reason the library's is: it would re-seat the chart under a live
    * recorder. */
-  async function openIts(row: JournalRow) {
+  async function openIts(id: string) {
     if (isBusy() || whyCannotOpenAnother()) return;
     err = "";
     try {
-      const chart = await during("compute", () => openChart(row.chart.id));
+      const chart = await during("compute", () => openChart(id));
       if (installReading(chart)) {
         await refreshNotes();
         notify(`opened ${chart.meta.name}'s reading`);
@@ -162,13 +203,31 @@
     onclose();
   }
 
-  /** A row about someone opens their reading; a row about a moment nobody
-   * was consulting over puts the calculator back on that sky. */
-  const isReading = (row: JournalRow) => row.person !== undefined;
+  /** Only a note said in someone's reading reopens one. */
+  const isReading = (row: JournalRow) =>
+    row.anchor.kind === "chart" && row.person !== undefined;
 
-  function jump(row: JournalRow) {
-    if (isReading(row)) openIts(row);
-    else restoreIts(row.chart);
+  /** What clicking a row does, which is different for each of the three
+   * kinds — and in every case is "take me to the rest of this".
+   *
+   * A reading note reopens the reading. A note over a moment nobody was
+   * consulting puts the calculator back on that sky. A note about a person
+   * or about the elements has no sky to go to, so it narrows the journal to
+   * the rest of its kind — which is the only "more of this" there is. */
+  async function jump(row: JournalRow) {
+    switch (row.anchor.kind) {
+      case "chart":
+        if (row.chart === undefined) return;
+        if (isReading(row)) await openIts(row.chart.id);
+        else restoreIts(row.chart);
+        return;
+      case "person":
+        await byPerson(row.anchor.id);
+        return;
+      case "standing":
+        filter = { ...filter, tags: [...row.tags], mode: "any", person: undefined };
+        await refresh();
+    }
   }
 
   async function remove(ev: MouseEvent, row: JournalRow, id: string) {
@@ -226,6 +285,37 @@
       <p class="sub">Notes you write, and the words of readings you transcribe, appear here.</p>
     </div>
   {:else}
+    {#if composing}
+      <div class="composing">
+        <textarea
+          bind:value={draft}
+          rows="3"
+          placeholder="what you know — about Saturn, about Leo, about someone"
+          aria-label="the note"
+        ></textarea>
+        <ElementPlate
+          selected={draftTags}
+          ontoggle={(tag) => (draftTags.has(tag) ? draftTags.delete(tag) : draftTags.add(tag))}
+        />
+        <div class="compose-foot">
+          <label class="who-filter">
+            <span class="apparatus-text">about</span>
+            <select bind:value={draftPerson} aria-label="who this note is about">
+              <option value="">no one — the elements</option>
+              {#each people as p (p.id)}
+                <option value={p.id}>{p.name}</option>
+              {/each}
+            </select>
+          </label>
+          <span class="grow"></span>
+          <button type="button" class="ghost" onclick={() => (composing = false)}>cancel</button>
+          <button type="button" class="frame-btn" disabled={saving} onclick={keepNote}>
+            {saving ? "keeping…" : "keep"}
+          </button>
+        </div>
+      </div>
+    {/if}
+
     <div class="asking">
       <label class="who-filter">
         <span class="apparatus-text">about</span>
@@ -258,6 +348,10 @@
             </span>
           {/each}
         </span>
+      {/if}
+
+      {#if !composing}
+        <button type="button" class="ghost" onclick={beginCompose}>write a note…</button>
       {/if}
 
       {#if naming}
@@ -305,13 +399,18 @@
               disabled={isReading(row) && (isBusy() || whyCannotOpenAnother() !== null)}
               title={isReading(row)
                 ? (whyCannotOpenAnother() ?? "open this reading")
-                : "put the calculator back on this sky"}
+                : row.anchor.kind === "chart"
+                  ? "put the calculator back on this sky"
+                  : row.anchor.kind === "person"
+                    ? "everything about them"
+                    : "everything filed under these"}
             >
               <span class="body">
                 <span class="text">{row.text}</span>
                 <span class="apparatus-text sub">
+                  <span class="mark astro" title={rowMark(row).title}>{rowMark(row).glyph}</span>
                   {rowSubject(row)}
-                  {#each row.tagLabels as label}<span class="chip">{label}</span>{/each}
+                  {#each row.tags as tag, i}<span class="chip">{row.tagLabels[i]}</span>{/each}
                 </span>
               </span>
               <span class="meta apparatus-text">{dayLabel(row.writtenAt)}</span>
@@ -348,6 +447,45 @@
   .err-mark {
     color: var(--oxblood);
   }
+  /* Writing a note that is about no sky. The plate below the words is how
+     you say what it is about — the same grammar the reading view uses,
+     minus the wheel. */
+  .composing {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    border: 1px solid var(--line);
+    border-top: 2px solid var(--brass);
+    padding: 0.8rem;
+    margin: 0.4rem 0.2rem 0.2rem;
+  }
+  .composing textarea {
+    width: 100%;
+    background: transparent;
+    color: var(--ink);
+    border: none;
+    border-bottom: 1px solid var(--hairline);
+    font: inherit;
+    line-height: 1.6;
+    padding: 0.2rem;
+    resize: vertical;
+  }
+  .compose-foot {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+  }
+  .grow {
+    flex: 1;
+  }
+  /* The engraved mark that tells the three kinds apart. A mark, not a
+     colour — the palette is CVD-validated and colour is never the only
+     signal. */
+  .mark {
+    color: var(--ink-3);
+    margin-right: 0.35rem;
+  }
+
   /* The standing question: who it is about, and the views kept of it. Sits
      above `find`, which narrows whatever this leaves. */
   .asking {
