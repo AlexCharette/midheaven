@@ -389,7 +389,7 @@ pub struct Plural {
 pub struct AppChrome {
     pub index_of_elements: &'static str,
     /// Column heads of the index, in order: planets, signs, houses, aspects.
-    pub bands: [&'static str; 4],
+    pub bands: [&'static str; 5],
     pub commentary: &'static str,
     pub notes_touching: &'static str,
     pub any: &'static str,
@@ -430,7 +430,7 @@ pub struct ArtifactChrome {
     pub natal_reading: &'static str,
     pub index_of_elements: &'static str,
     /// Column heads of the index, in order: planets, signs, houses, aspects.
-    pub bands: [&'static str; 4],
+    pub bands: [&'static str; 5],
     pub notes_touching: &'static str,
     pub any: &'static str,
     pub all: &'static str,

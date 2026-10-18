@@ -177,7 +177,8 @@
   .entry[data-cat="planet"] .g { color: var(--brass); }
   .entry[data-cat="sign"]   .g { color: var(--verdigris); }
   .entry[data-cat="house"]  .g { color: var(--steel); font-size: .8em; letter-spacing: .06em; width: 2.6em; text-align: right; }
-  .entry[data-cat="aspect"] .g { color: var(--oxblood); }
+  .entry[data-cat="aspect"] .g,
+  .entry[data-cat="kind"]   .g { color: var(--oxblood); }
   .entry[data-cat="aspect"] { font-size: .88rem; }
   .entry[data-cat="aspect"] .nm { white-space: nowrap; }
   .entry .nm { border-bottom: 1px solid transparent; }
@@ -233,7 +234,8 @@
   .ref[data-cat="planet"] .g { color: var(--brass); }
   .ref[data-cat="sign"]   .g { color: var(--verdigris); }
   .ref[data-cat="house"]  .g { color: var(--steel); font-size: .85em; }
-  .ref[data-cat="aspect"] .g { color: var(--oxblood); }
+  .ref[data-cat="aspect"] .g,
+  .ref[data-cat="kind"]   .g { color: var(--oxblood); }
   .ref .nm { border-bottom: 1px dotted var(--line); }
   .ref:hover .nm { border-bottom: 1px solid var(--hairline); color: var(--ink); }
   .ref[aria-pressed="true"] .nm { border-bottom: 1px solid var(--ink-2); color: var(--ink); }
@@ -315,6 +317,7 @@
         <div><h3>signs</h3><div id="band-signs"></div></div>
         <div><h3>houses</h3><div id="band-houses"></div></div>
         <div><h3>aspects</h3><div id="band-aspects"></div></div>
+        <div><h3>kinds</h3><div id="band-kinds"></div></div>
         </div>
       </details>
 
@@ -602,8 +605,25 @@ const CHROME = /*__CHROME__*/null;
     entries.push(b);
   };
   const lookup = {};
-  [...DATA.planets, ...DATA.signs, ...DATA.houses, ...DATA.aspects].forEach(x => { lookup[x.id] = x; });
+  [...DATA.planets, ...DATA.signs, ...DATA.houses, ...DATA.aspects, ...DATA.kinds]
+    .forEach(x => { lookup[x.id] = x; });
   const shortName = id => (lookup[id] ? lookup[id].name : id);
+  // A tag resolves to something renderable, or to nothing at all — and a note
+  // carrying a tag that resolved to nothing used to lose the chip in silence.
+  //
+  // Pairs are why this needs more than the table. The vocabulary is global, so
+  // the router files "the sun squares pluto" under `aspect:sun-pluto` whether
+  // or not this chart has them square; `DATA.aspects` holds only the ones it
+  // detected, because that list draws the wheel's chords. A pair this sky did
+  // not make therefore has to be composed from its two bodies.
+  const resolve = tag => {
+    if (lookup[tag]) return lookup[tag];
+    const pair = /^aspect:([a-z]+)-([a-z]+)$/.exec(tag);
+    if (!pair) return null;
+    const a = lookup['planet:' + pair[1]], b = lookup['planet:' + pair[2]];
+    if (!a || !b) return null;
+    return { id: tag, glyph: a.glyph + ' \u2013 ' + b.glyph, name: a.name + ' \u2013 ' + b.name };
+  };
 
   const bandP = document.getElementById('band-planets');
   DATA.planets.forEach(p => {
@@ -617,6 +637,8 @@ const CHROME = /*__CHROME__*/null;
   const bandA = document.getElementById('band-aspects');
   DATA.aspects.forEach(a =>
     makeEntry(bandA, a.id, 'aspect', a.glyph, `${shortName(a.a)} – ${shortName(a.b)}`, '', a.name));
+  const bandK = document.getElementById('band-kinds');
+  DATA.kinds.forEach(k => makeEntry(bandK, k.id, 'kind', k.glyph, k.name, '', k.name));
 
   // Relevance rule (canonical home — the desktop IndexOfElements mirrors it):
   // a sign/house entry is visible when OCCUPIED (some body stands in it),
@@ -690,7 +712,7 @@ const CHROME = /*__CHROME__*/null;
       art.className = 'note';
       art.id = ex.id;
       const refsHtml = ex.tags.map(t => {
-        const ref = lookup[t]; if (!ref) return '';
+        const ref = resolve(t); if (!ref) return '';
         const glyph = glyphOf(ref);
         return `<button class="ref" data-cat="${esc(catOf(t))}" data-tag="${esc(t)}" aria-pressed="${selected.has(t)}">` +
                `<span class="g">${esc(textGlyph(glyph))}</span><span class="nm">${esc(ref.name)}</span></button>`;

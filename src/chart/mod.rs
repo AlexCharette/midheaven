@@ -92,6 +92,7 @@ pub fn compute_chart_reporting(input: &BirthInput) -> Result<(ChartData, Vec<Str
         signs: sign_refs(loc),
         houses: house_refs(loc),
         aspects,
+        kinds: kind_refs(loc),
     };
     // Derived fields last: they read the measured longitudes and cusps above,
     // and every renderer reads them instead of re-deriving.
@@ -224,6 +225,19 @@ fn detect_aspects(planets: &[Body], loc: Locale) -> Vec<Aspect> {
         }
     }
     aspects
+}
+
+/// The five aspect kinds as the `kind:` category's display table — the same
+/// shape `signs` and `houses` take, and global for the same reason they are.
+fn kind_refs(loc: Locale) -> Vec<crate::contract::KindRef> {
+    ASPECT_TYPES
+        .iter()
+        .map(|&(kind, glyph, ..)| crate::contract::KindRef {
+            id: format!("kind:{kind}"),
+            glyph: glyph.to_string(),
+            name: loc.aspect_word(kind).to_string(),
+        })
+        .collect()
 }
 
 /// The Ascendant rendered as a chart point, per the contract.

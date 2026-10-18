@@ -3,6 +3,7 @@ import type { Aspect } from "./Aspect";
 import type { Axes } from "./Axes";
 import type { Body } from "./Body";
 import type { HouseRef } from "./HouseRef";
+import type { KindRef } from "./KindRef";
 import type { Meta } from "./Meta";
 import type { Ref } from "./Ref";
 
@@ -12,4 +13,13 @@ export type ChartData = { meta: Meta, axes: Axes, houseCusps: Array<number>,
  * [`crate::derive::sweep`]. Parallel to `house_cusps`. Absent from charts
  * saved before the field existed; `derive::fill` restores it on load.
  */
-houseSweeps: Array<number>, planets: Array<Body>, signs: Array<Ref>, houses: Array<HouseRef>, aspects: Array<Aspect>, };
+houseSweeps: Array<number>, planets: Array<Body>, signs: Array<Ref>, houses: Array<HouseRef>, aspects: Array<Aspect>, 
+/**
+ * The five aspect kinds, as the `kind:` category renders them.
+ *
+ * Global, like the signs and the houses beside it — every chart has the
+ * same five — and here for the same reason those are: a viewer needs the
+ * glyph and the localized word to draw a tag, and nothing else in the
+ * artifact carries them.
+ */
+kinds: Array<KindRef>, };

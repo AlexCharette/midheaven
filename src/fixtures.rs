@@ -104,6 +104,14 @@ pub fn minimal_chart() -> ChartData {
             orb: 0.0,
             kind: "",
         }],
+        kinds: crate::chart::catalog::ASPECT_TYPES
+            .iter()
+            .map(|&(kind, glyph, ..)| crate::contract::KindRef {
+                id: format!("kind:{kind}"),
+                glyph: glyph.to_string(),
+                name: kind.to_string(),
+            })
+            .collect(),
     };
     // The same filling the compute stage does, so the fixture is a chart the
     // renderers could actually be handed.

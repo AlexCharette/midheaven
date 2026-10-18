@@ -142,9 +142,28 @@ fn tag_chip(chart: &ChartData, tag: &str) -> Option<(String, Face, (u8, u8, u8))
     if let Some(h) = chart.houses.iter().find(|x| x.id == tag) {
         return Some((h.label.clone(), Face::Regular, STEEL));
     }
-    if let Some(a) = chart.aspects.iter().find(|x| x.id == tag) {
-        let (pa, pb) = (chart.planet(&a.a)?, chart.planet(&a.b)?);
-        return Some((format!("{} {} {}", pa.glyph, a.glyph, pb.glyph), Face::Symbols, OXBLOOD));
+    // A pair resolves from its two bodies, not from a detected aspect.
+    //
+    // It used to need one: the tag only existed when this chart brought those
+    // two together, so finding it in `chart.aspects` was the same question as
+    // parsing it. The vocabulary is global now — the router files "the sun
+    // squares pluto" under the pair whether or not this sky has them square —
+    // so looking only at the detected list drops the chip without a word.
+    if let Some(slug) = tag.strip_prefix("aspect:") {
+        let (a, b) = slug.split_once('-')?;
+        let (pa, pb) = (chart.planet(&format!("planet:{a}"))?, chart.planet(&format!("planet:{b}"))?);
+        // The aspect's own glyph when this chart detected it, a plain tie when
+        // the note is about the pair rather than about a hit.
+        let between = chart
+            .aspects
+            .iter()
+            .find(|x| x.id == tag)
+            .map(|x| x.glyph.clone())
+            .unwrap_or_else(|| "\u{2013}".to_string());
+        return Some((format!("{} {} {}", pa.glyph, between, pb.glyph), Face::Symbols, OXBLOOD));
+    }
+    if let Some(k) = chart.kinds.iter().find(|x| x.id == tag) {
+        return Some((k.glyph.clone(), Face::Symbols, OXBLOOD));
     }
     None
 }
@@ -270,6 +289,23 @@ pub(crate) fn build_flow<'c>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Chips are collected through `filter_map`, so a tag that resolves
+    /// against nothing does not error — it disappears from the page. Every
+    /// category the vocabulary admits has to resolve.
+    #[test]
+    fn every_vocabulary_category_resolves_to_a_chip() {
+        let chart = crate::fixtures::berlin_chart();
+        for tag in ["planet:sun", "sign:aries", "house:1", "kind:trine", "aspect:sun-moon"] {
+            assert!(tag_chip(&chart, tag).is_some(), "{tag} would vanish from the PDF");
+        }
+        // Every pair in the vocabulary, aspecting here or not: the router
+        // files a pair from the words, and this sky need not agree.
+        for (a, b) in crate::vocab::PAIRS.iter() {
+            let tag = format!("aspect:{a}-{b}");
+            assert!(tag_chip(&chart, &tag).is_some(), "{tag} would vanish from the PDF");
+        }
+    }
 
     /// A line of height `h` that does not hold onto the next one.
     fn line(h: f32) -> Measure {

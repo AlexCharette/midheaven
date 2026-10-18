@@ -48,6 +48,7 @@ function chart(): ChartData {
         orb: 0,
       },
     ],
+    kinds: [{ id: "kind:trine", glyph: "△", name: "trine" }],
   } as unknown as ChartData;
 }
 

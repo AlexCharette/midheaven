@@ -171,6 +171,38 @@ mod tests {
         assert!(checked >= 25, "only {checked} plate reads checked — did the scan break?");
     }
 
+    /// Every tag category has somewhere to render.
+    ///
+    /// The viewers resolve a tag through one `lookup` table and drop anything
+    /// that misses it — `if (!ref) return ''`. A category the table does not
+    /// cover therefore does not error, it just silently stops appearing, which
+    /// is how `kind:` behaved for exactly as long as it took to write this.
+    #[test]
+    fn every_vocabulary_category_reaches_the_artifacts_lookup_table() {
+        let html = emit(&crate::fixtures::minimal_chart(), &[]).unwrap();
+        // The table the script builds, as source — the categories it spreads in.
+        let built = html
+            .split_once("const lookup = {};")
+            .expect("the artifact builds a lookup table")
+            .1;
+        let spread = &built[..built.find(".forEach").expect("the table is built from a spread")];
+        for cat in crate::vocab::CATEGORIES {
+            let field = match cat {
+                "planet" => "planets",
+                "sign" => "signs",
+                "house" => "houses",
+                "aspect" => "aspects",
+                "kind" => "kinds",
+                other => panic!("unmapped category {other}"),
+            };
+            assert!(
+                spread.contains(&format!("DATA.{field}")),
+                "{cat}: tags would resolve against nothing and vanish — \
+                 the lookup table is built from {spread:?}"
+            );
+        }
+    }
+
     /// The same check, one level up: every `DATA.x` the script reads has to be a
     /// key `ChartData` actually serializes.
     ///

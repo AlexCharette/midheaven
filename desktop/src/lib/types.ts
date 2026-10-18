@@ -13,6 +13,7 @@ export type { Body } from "./generated/Body";
 export type { Ref } from "./generated/Ref";
 export type { HouseRef } from "./generated/HouseRef";
 export type { Aspect } from "./generated/Aspect";
+export type { KindRef } from "./generated/KindRef";
 export type { Note } from "./generated/Note";
 export type { PlaceDto } from "./generated/PlaceDto";
 export type { Preferences } from "./generated/Preferences";
@@ -81,6 +82,7 @@ export function elementsOf(chart: ChartData): { tag: string; glyph: string; name
     ...chart.signs.map((x) => ({ tag: x.id, glyph: x.glyph, name: x.name })),
     ...chart.houses.map((x) => ({ tag: x.id, glyph: x.label, name: x.name })),
     ...chart.aspects.map((x) => ({ tag: x.id, glyph: x.glyph, name: x.name })),
+    ...chart.kinds.map((x) => ({ tag: x.id, glyph: x.glyph, name: x.name })),
   ];
 }
 

@@ -23,7 +23,7 @@ pub static TABLE: LocaleTable = LocaleTable {
     plate_title: PlateTitle::Inline("{name}'s birth chart"),
     app: AppChrome {
         index_of_elements: "Index of Elements",
-        bands: ["planets", "signs", "houses", "aspects"],
+        bands: ["planets", "signs", "houses", "aspects", "kinds"],
         commentary: "Commentary",
         notes_touching: "notes touching",
         any: "any",
@@ -54,7 +54,7 @@ pub static TABLE: LocaleTable = LocaleTable {
     artifact: ArtifactChrome {
         natal_reading: "Natal Reading",
         index_of_elements: "Index of Elements",
-        bands: ["planets", "signs", "houses", "aspects"],
+        bands: ["planets", "signs", "houses", "aspects", "kinds"],
         notes_touching: "notes touching",
         any: "any",
         all: "all",

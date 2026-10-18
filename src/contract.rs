@@ -26,6 +26,14 @@ pub struct ChartData {
     pub signs: Vec<Ref>,
     pub houses: Vec<HouseRef>,
     pub aspects: Vec<Aspect>,
+    /// The five aspect kinds, as the `kind:` category renders them.
+    ///
+    /// Global, like the signs and the houses beside it — every chart has the
+    /// same five — and here for the same reason those are: a viewer needs the
+    /// glyph and the localized word to draw a tag, and nothing else in the
+    /// artifact carries them.
+    #[serde(default)]
+    pub kinds: Vec<KindRef>,
 }
 
 impl ChartData {
@@ -77,6 +85,9 @@ impl ChartData {
         }
         for a in &self.aspects {
             check_id(&a.id, "aspect")?;
+        }
+        for k in &self.kinds {
+            check_id(&k.id, "kind")?;
         }
         if self.meta.logo.as_deref().is_some_and(|l| !l.starts_with("data:")) {
             return Err("meta.logo must be an embedded data: URI".to_string());
@@ -278,6 +289,15 @@ pub struct Ref {
     pub name: String,
     /// The sign's classical element (fire/earth/air/water).
     pub element: String,
+}
+
+/// One aspect kind — `kind:trine` and the glyph and word that render it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+pub struct KindRef {
+    pub id: String,
+    pub glyph: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

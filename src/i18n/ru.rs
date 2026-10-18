@@ -24,7 +24,7 @@ pub static TABLE: LocaleTable = LocaleTable {
     plate_title: PlateTitle::Above("Натальная карта"),
     app: AppChrome {
         index_of_elements: "Указатель элементов",
-        bands: ["планеты", "знаки", "дома", "аспекты"],
+        bands: ["планеты", "знаки", "дома", "аспекты", "виды"],
         commentary: "Комментарий",
         notes_touching: "заметки, затрагивающие",
         any: "любой",
@@ -55,7 +55,7 @@ pub static TABLE: LocaleTable = LocaleTable {
     artifact: ArtifactChrome {
         natal_reading: "Натальный разбор",
         index_of_elements: "Указатель элементов",
-        bands: ["планеты", "знаки", "дома", "аспекты"],
+        bands: ["планеты", "знаки", "дома", "аспекты", "виды"],
         notes_touching: "заметки, затрагивающие",
         any: "любой",
         all: "все",

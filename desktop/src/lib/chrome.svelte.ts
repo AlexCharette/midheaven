@@ -18,7 +18,7 @@ import type { AppChrome } from "./types";
  * what it said before this module existed. */
 const fallback: AppChrome = {
   indexOfElements: "Index of Elements",
-  bands: ["planets", "signs", "houses", "aspects"],
+  bands: ["planets", "signs", "houses", "aspects", "kinds"],
   commentary: "Commentary",
   notesTouching: "notes touching",
   any: "any",

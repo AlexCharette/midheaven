@@ -87,6 +87,16 @@
         detail: "",
       })),
     },
+    {
+      head: "kinds",
+      label: t().bands[4],
+      entries: chart.kinds.map((k) => ({
+        tag: k.id,
+        glyph: k.glyph,
+        name: k.name,
+        detail: "",
+      })),
+    },
   ]);
 </script>
 

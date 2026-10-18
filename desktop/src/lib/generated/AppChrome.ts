@@ -23,7 +23,7 @@ export type AppChrome = { indexOfElements: string,
 /**
  * Column heads of the index, in order: planets, signs, houses, aspects.
  */
-bands: [string, string, string, string], commentary: string, notesTouching: string, any: string, all: string, anyTitle: string, allTitle: string, ofSelection: string, clear: string, 
+bands: [string, string, string, string, string], commentary: string, notesTouching: string, any: string, all: string, anyTitle: string, allTitle: string, ofSelection: string, clear: string, 
 /**
  * `{shown}` of `{total}` notes.
  */
