@@ -71,6 +71,103 @@ fn transcript_to_artifact() {
     }
 }
 
+/// What routing the example transcript produces, stated in full, in the terms
+/// that survive the move to a flat note.
+///
+/// Every other routing assertion in the suite reads a `span`, and `span` is
+/// about to stop existing on a stored note. This one deliberately asserts on
+/// **text, tags and time only** — the three things a note still has afterwards
+/// — so that the routing behaviour has a witness that the removal cannot take
+/// with it. If this passes before and after, routing did not change.
+///
+/// The exact note texts are the load-bearing part. Note 1 and notes 3–4 each
+/// span several sentences, including sentences that carry no tag of their own:
+/// merging pulls a continuous verbatim slice, it does not join the matched
+/// sentences together. That is the behaviour a careless refactor silently
+/// replaces with concatenation, and reading these strings is how you catch it.
+#[test]
+fn routing_the_example_transcript_is_unchanged() {
+    let input = fixtures::named("Integration");
+    let mut chart = compute_chart(&input).expect("chart computes");
+    let raw = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/transcript.jsonl"
+    ))
+    .expect("example transcript present");
+    let transcript = Transcript::load(&raw);
+    let vocab = chart.vocab();
+    let router = LexiconRouter::new(&vocab, &chart.aspects, Locale::En);
+    route_into_with(&mut chart, &transcript, &router, Filing::Fresh);
+
+    let expected: [(&str, &str, &[&str], &str); 5] = [
+        (
+            "x1",
+            "00:00:42",
+            &["aspect:sun-jupiter", "house:10", "planet:jupiter", "planet:sun", "sign:cancer"],
+            "The first thing that jumps out at me is your sun in cancer sitting right at the \
+             top of the chart in the tenth house. That's a career story, a public-life story, \
+             and it colors everything else we'll look at today. And your sun is conjunct \
+             jupiter, which is honestly one of the luckier signatures I see.",
+        ),
+        (
+            "x2",
+            "00:02:21",
+            &["planet:ascendant", "sign:cancer", "sign:libra"],
+            "Now, you have libra rising, so the ascendant softens all of that cancer intensity.",
+        ),
+        (
+            "x3",
+            "00:03:30",
+            &[
+                "aspect:sun-saturn",
+                "house:4",
+                "planet:neptune",
+                "planet:saturn",
+                "planet:sun",
+                "planet:uranus",
+                "sign:capricorn",
+            ],
+            "But I have to be honest with you: the sun stands in opposition to saturn across \
+             the chart. Whatever you build publicly gets tested against the foundations, the \
+             family, the private life. Saturn is in capricorn in your fourth house, together \
+             with uranus and neptune.",
+        ),
+        (
+            "x4",
+            "00:05:44",
+            &[
+                "aspect:moon-venus",
+                "aspect:sun-moon",
+                "house:6",
+                "planet:moon",
+                "planet:sun",
+                "planet:venus",
+                "sign:pisces",
+            ],
+            "Let's move to your moon in pisces, down in the sixth house. Your daily routines \
+             have to leave room for the tides, for rest, or the body complains. The moon \
+             squares your venus, so there can be friction between what comforts you and what \
+             you actually desire. It's workable, but you have to name it. There's also a \
+             lovely trine from the sun to the moon itself, water to water, which smooths a \
+             lot of this out over time.",
+        ),
+        (
+            "x5",
+            "00:08:31",
+            &["house:2", "planet:pluto", "sign:scorpio"],
+            "One more thing before the break: pluto in scorpio in the second house.",
+        ),
+    ];
+
+    assert_eq!(chart.notes.len(), expected.len(), "note count");
+    for (note, (id, time, tags, text)) in chart.notes.iter().zip(expected) {
+        assert_eq!(note.id, id);
+        assert_eq!(note.time, time, "time anchor on {id}");
+        assert_eq!(note.tags, tags, "tags on {id}");
+        assert_eq!(note.text, text, "text on {id}");
+    }
+}
+
 /// A build with no transcript archives nothing — the chart is the whole
 /// reading, and the library has no transcript file to write.
 #[test]

@@ -149,4 +149,44 @@ mod tests {
         // loose fields: a scan that stopped finding them would pass by default.
         assert!(checked >= 25, "only {checked} plate reads checked — did the scan break?");
     }
+
+    /// The same check, one level up: every `DATA.x` the script reads has to be a
+    /// key `ChartData` actually serializes.
+    ///
+    /// The plate had this bug and the chart can have it too, with a worse blast
+    /// radius: `DATA.excerpts` coming back `undefined` throws inside `render`,
+    /// which kills every listener registered after it. The artifact opens
+    /// looking almost right and nothing filters.
+    ///
+    /// This is the test that makes the `excerpts` → `notes` wire rename safe.
+    /// Renaming the Rust field alone fails here; renaming it in the template
+    /// alone fails here; renaming both passes. That is the whole point — the
+    /// two names are one decision and nothing else in the suite says so.
+    #[test]
+    fn every_data_field_the_script_reads_is_one_the_chart_emits() {
+        let chart = serde_json::to_value(crate::fixtures::minimal_chart())
+            .expect("the chart serializes");
+        let keys = chart.as_object().expect("a chart object");
+        let mut checked = 0;
+        for (at, _) in TEMPLATE.match_indices("DATA.") {
+            // `__DATA__` and any `xDATA.` are not uses of `DATA.`
+            let before = TEMPLATE[..at].chars().next_back();
+            if before.is_some_and(|ch| ch.is_alphanumeric() || ch == '_') {
+                continue;
+            }
+            let rest = &TEMPLATE[at + "DATA.".len()..];
+            let end = rest.find(|ch: char| !ch.is_alphanumeric() && ch != '_').unwrap_or(0);
+            let field = &rest[..end];
+            assert!(
+                keys.contains_key(field),
+                "the script reads DATA.{field}, which the chart does not emit — \
+                 it has {:?}",
+                keys.keys().collect::<Vec<_>>()
+            );
+            checked += 1;
+        }
+        // meta, axes, houseCusps, houseSweeps, planets, signs, houses, aspects
+        // and the note list: nine distinct fields, read more than once each.
+        assert!(checked >= 9, "only {checked} DATA reads checked — did the scan break?");
+    }
 }
