@@ -438,7 +438,7 @@ mod tests {
             .store
             .all::<StoredNote>()
             .into_iter()
-            .filter(|n| n.anchor.is_standing())
+            .filter(|n| n.anchor.kind() == crate::store::AnchorKind::Standing)
             .map(|n| n.text)
             .collect();
         assert_eq!(standing, vec!["Leo wants to be seen doing the thing"]);

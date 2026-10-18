@@ -453,6 +453,50 @@ mod tests {
         assert_eq!(ids(run(&t.store, &q)).len(), 1);
     }
 
+    /// The whole of what this was for, end to end: write something about Leo
+    /// with no chart in front of you, and find it again among everything
+    /// else that mentions Leo.
+    #[test]
+    fn a_note_about_an_element_is_written_and_found_without_a_chart() {
+        let t = seeded("the-point");
+        // Three notes that all mention Leo. Two are noise: one said out loud
+        // in somebody's reading, one an observation about a client.
+        t.store
+            .put(&note("n6", "c1", "2026-08-20T09:00:00Z", "She said leo.", &["sign:leo"]))
+            .unwrap();
+        t.store
+            .put(&about("n7", "p1", "2026-08-21T09:00:00Z", "Very leo of her.", &["sign:leo"]))
+            .unwrap();
+        // And the one that is craft.
+        t.store
+            .put(&standing(
+                "n8",
+                "2026-08-22T09:00:00Z",
+                "Leo wants to be seen doing the thing.",
+                &["sign:leo"],
+            ))
+            .unwrap();
+
+        // Tags alone cannot separate them — all three answer to Leo.
+        let by_tag = Query { tags: vec!["sign:leo".into()], ..Default::default() };
+        assert_eq!(ids(run(&t.store, &by_tag)), ["n8", "n7", "n6"]);
+
+        // The anchor can, and that is the entire design.
+        let craft = Query { anchor: Some(AnchorKind::Standing), ..by_tag };
+        let found = run(&t.store, &craft);
+        assert_eq!(ids(found.clone()), ["n8"]);
+        assert_eq!(found[0].text, "Leo wants to be seen doing the thing.");
+
+        // It belongs to no chart and no person, so neither can claim it.
+        assert_eq!(found[0].anchor, Anchor::Standing);
+        for q in [
+            Query { person: Some("p1".into()), ..Default::default() },
+            Query { chart: Some("c1".into()), ..Default::default() },
+        ] {
+            assert!(!ids(run(&t.store, &q)).contains(&"n8".to_string()));
+        }
+    }
+
     #[test]
     fn people_come_back_in_a_readable_order() {
         let t = seeded("people");

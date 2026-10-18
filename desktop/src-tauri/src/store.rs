@@ -160,10 +160,6 @@ impl Anchor {
             _ => None,
         }
     }
-
-    pub fn is_standing(&self) -> bool {
-        matches!(self, Anchor::Standing)
-    }
 }
 
 /// What kind of thing a note is about, without saying which one — the shape
