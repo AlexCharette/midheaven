@@ -6,7 +6,7 @@
   // element index become an index — click Saturn, click the fifth house — and
   // the pins are the note's tags. A panel covering them would have needed a
   // second way to name elements in an app that has one.
-  import { writeJournalNote } from "$lib/api";
+  import { writeMomentNote } from "$lib/api";
   import { pinnedTags, resetFocus } from "$lib/focus.svelte";
   import { anchorFor } from "$lib/journal";
   import { settled, whenSettled } from "$lib/preview.svelte";
@@ -55,7 +55,7 @@
         error = "no chart to file this under yet";
         return;
       }
-      await writeJournalNote(words, tags, anchorFor(now.input, now.chart));
+      await writeMomentNote(words, tags, anchorFor(now.input, now.chart));
       notify(tags.length ? `note filed under ${tags.length} element${tags.length > 1 ? "s" : ""}` : "note kept");
       text = "";
       resetFocus();

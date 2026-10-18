@@ -20,7 +20,7 @@ pub use lexicon::LexiconRouter;
 pub use transcript::Transcript;
 pub use verify::verify_gate;
 
-use crate::contract::ChartData;
+use crate::contract::Note;
 
 /// What a router emits: spans + tags, never text of its own.
 pub struct RawNote {
@@ -41,73 +41,31 @@ pub struct RouteReport {
     pub warnings: Vec<String>,
 }
 
-/// Where a routed transcript's notes go.
+/// Route a transcript into notes, in `loc`'s language.
 ///
-/// The two used to be `index_transcript` and `append_transcript`, whose bodies
-/// differed by which of two lines they ran. The difference is not a pipeline,
-/// it is a choice, so it is a parameter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Filing {
-    /// Replace whatever the chart holds — a fresh build.
-    Fresh,
-    /// Append after what is there, numbering on past it. A live take files this
-    /// way so earlier curation (merges, corrections) survives.
-    Append,
-}
-
-/// The chart's own router: it matches in the chart's language (`meta.locale`),
-/// so routing a reloaded `chart.json` re-tags in the language it was read in.
-/// The chart decides the words, not the vocabulary — that is global now.
-fn lexicon_for(chart: &ChartData) -> LexiconRouter {
-    LexiconRouter::new(crate::i18n::Locale::parse(&chart.meta.locale))
-}
-
-/// File a transcript's notes into a chart, using the chart's own router.
+/// The whole gated path: route → Verify gate → coalesce. The notes come back
+/// unnumbered — `id` is empty on every one — because whoever stores them owns
+/// their ids.
 ///
-/// The whole gated path: route → Verify gate → coalesce → number → file.
-pub fn route_into(chart: &mut ChartData, transcript: &Transcript, filing: Filing) -> RouteReport {
-    let router = lexicon_for(chart);
-    file(chart, transcript, &router, filing)
+/// This used to be `route_into`, which took a chart and a [`Filing`] saying
+/// whether to replace its note list or append to it. Both of those were
+/// consequences of the chart owning the notes: appending existed so a second
+/// take would not wipe the first, and numbering happened here because the
+/// chart's list was the only thing that knew how many notes there already
+/// were. A store that mints its own ids needs neither.
+pub fn route(transcript: &Transcript, loc: crate::i18n::Locale) -> (Vec<Note>, RouteReport) {
+    route_with(transcript, &LexiconRouter::new(loc))
 }
 
 /// The same, with a router of your own — the seam. Used by this module's tests
 /// to check the composition without depending on the lexicon's matching.
-pub fn route_into_with(
-    chart: &mut ChartData,
-    transcript: &Transcript,
-    router: &dyn Router,
-    filing: Filing,
-) -> RouteReport {
-    file(chart, transcript, router, filing)
-}
-
-/// The persistence boundary: this is where a routed note stops carrying the
-/// span it was proved against. Everything above here works in note-plus-span
-/// pairs because the merge needs them; nothing below here has ever read one
-/// back.
-fn file(
-    chart: &mut ChartData,
-    transcript: &Transcript,
-    router: &dyn Router,
-    filing: Filing,
-) -> RouteReport {
+///
+/// This is also the persistence boundary: above it the pipeline works in
+/// note-plus-span pairs because the merge needs them, and nothing below it has
+/// ever read a span back.
+pub fn route_with(transcript: &Transcript, router: &dyn Router) -> (Vec<Note>, RouteReport) {
     let (gated_notes, report) = gated(transcript, router);
-    let mut notes: Vec<crate::contract::Note> =
-        gated_notes.into_iter().map(|(note, _span)| note).collect();
-    // Ids are assigned here and nowhere else: coalescing changes how many
-    // notes there are, and appending changes where their numbering starts,
-    // so neither the gate nor the merge can know the answer. They used to guess
-    // and be overwritten — three assignments for one set of ids.
-    let first = match filing {
-        Filing::Fresh => 1,
-        Filing::Append => next_ordinal(&chart.notes),
-    };
-    renumber(&mut notes, first);
-    match filing {
-        Filing::Fresh => chart.notes = notes,
-        Filing::Append => chart.notes.extend(notes),
-    }
-    report
+    (gated_notes.into_iter().map(|(note, _span)| note).collect(), report)
 }
 
 /// Router output through the gate and the merge, unnumbered.
@@ -121,41 +79,19 @@ fn gated(
     (coalesce(accepted, transcript), RouteReport { n_routed, warnings })
 }
 
-/// The next free `x{n}` ordinal — gap-aware (curation merges and deletions
-/// leave holes, so counting entries could mint a duplicate id).
-pub fn next_ordinal(notes: &[crate::contract::Note]) -> usize {
-    notes
-        .iter()
-        .filter_map(|e| e.id.strip_prefix('x').and_then(|n| n.parse::<usize>().ok()))
-        .max()
-        .unwrap_or(0)
-        + 1
-}
-
-/// Tags the chart's router finds in free text — curation re-tagging goes
-/// through the same gated path as everything else.
-pub fn retag(chart: &ChartData, text: &str) -> Vec<String> {
-    let router = lexicon_for(chart);
-    let transcript = Transcript::load(text);
-    let (notes, _report) = gated(&transcript, &router);
-    let mut tags: Vec<String> = notes.into_iter().flat_map(|(n, _)| n.tags).collect();
+/// Tags the router finds in free text — curation re-tagging goes through the
+/// same gated path as everything else.
+pub fn retag(text: &str, loc: crate::i18n::Locale) -> Vec<String> {
+    let (notes, _report) = route(&Transcript::load(text), loc);
+    let mut tags: Vec<String> = notes.into_iter().flat_map(|n| n.tags).collect();
     tags.sort();
     tags.dedup();
     tags
 }
 
-/// Assign the conventional `x{n}` ids counting up from `first`.
-/// Uniqueness is the contract invariant; density is convention.
-pub(crate) fn renumber(notes: &mut [crate::contract::Note], first: usize) {
-    for (i, note) in notes.iter_mut().enumerate() {
-        note.id = format!("x{}", first + i);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::Note;
 
     /// The seam's second adapter: emits exactly the spans it was given, so a
     /// test can check the composition — gate, merge, numbering, filing — without
@@ -174,72 +110,30 @@ mod tests {
         RawNote { span, tags: tags.iter().map(|s| s.to_string()).collect() }
     }
 
-    /// The shared minimal chart — routing needs its vocabulary, not its
-    /// astronomy.
-    fn chart() -> ChartData {
-        crate::fixtures::minimal_chart()
-    }
-
-    fn existing(id: &str) -> Note {
-        crate::fixtures::note(id, "already here", &["planet:sun"])
-    }
-
     const WORDS: &str = "Aaaa bbbb. Cccc dddd. Eeee ffff.";
 
+    /// Numbering used to live here, and three tests covered it: a fresh
+    /// filing numbered from one, an append numbered past what was there, and
+    /// `next_ordinal` skipped the gaps curation left. All three were about
+    /// the chart owning a note list. Routing hands back unnumbered notes now,
+    /// and whoever stores them gives them ids.
     #[test]
-    fn a_fresh_filing_replaces_whatever_the_chart_held() {
-        let mut c = chart();
-        c.notes = vec![existing("x1"), existing("x2")];
+    fn routed_notes_come_back_unnumbered() {
         let t = Transcript::load(WORDS);
         let router = Fixed(vec![raw((0, 10), &["planet:sun"])]);
 
-        let report = route_into_with(&mut c, &t, &router, Filing::Fresh);
+        let (notes, report) = route_with(&t, &router);
 
         assert_eq!(report.n_routed, 1);
-        assert_eq!(c.notes.len(), 1);
-        assert_eq!(c.notes[0].id, "x1", "a fresh filing numbers from one");
-        assert_eq!(c.notes[0].text, "Aaaa bbbb.");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].text, "Aaaa bbbb.");
+        assert!(notes[0].id.is_empty(), "the store names it, not the router");
     }
 
+    /// The report counts what the router emitted, which is not what came out:
+    /// three merged spans are one note.
     #[test]
-    fn an_append_keeps_what_was_there_and_numbers_past_it() {
-        let mut c = chart();
-        c.notes = vec![existing("x1"), existing("x2")];
-        let t = Transcript::load(WORDS);
-        // Two spans with no shared tag, so nothing merges.
-        let router = Fixed(vec![raw((0, 10), &["planet:sun"]), raw((11, 21), &["sign:aries"])]);
-
-        route_into_with(&mut c, &t, &router, Filing::Append);
-
-        let ids: Vec<&str> = c.notes.iter().map(|e| e.id.as_str()).collect();
-        assert_eq!(ids, vec!["x1", "x2", "x3", "x4"]);
-        assert_eq!(c.notes[0].text, "already here", "earlier curation survives");
-    }
-
-    /// Curation leaves holes; numbering from the count rather than the highest
-    /// id would mint a duplicate.
-    #[test]
-    fn an_append_numbers_past_a_gap_left_by_curation() {
-        let mut c = chart();
-        c.notes = vec![existing("x1"), existing("x7")];
-        let t = Transcript::load(WORDS);
-        let router = Fixed(vec![raw((0, 10), &["planet:sun"])]);
-
-        route_into_with(&mut c, &t, &router, Filing::Append);
-
-        assert_eq!(c.notes.last().unwrap().id, "x8");
-        let mut ids: Vec<&String> = c.notes.iter().map(|e| &e.id).collect();
-        let n = ids.len();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), n, "ids must stay unique");
-    }
-
-    /// Ids are assigned once, after coalescing — which is why nothing upstream
-    /// can know them: three merged spans are one note.
-    #[test]
-    fn ids_are_dense_after_merging_not_before() {
-        let mut c = chart();
+    fn merging_happens_before_the_count_the_caller_sees() {
         let t = Transcript::load(WORDS);
         // All three share a tag, so they coalesce into one note.
         let router = Fixed(vec![
@@ -248,93 +142,74 @@ mod tests {
             raw((22, 32), &["planet:sun"]),
         ]);
 
-        let report = route_into_with(&mut c, &t, &router, Filing::Fresh);
+        let (notes, report) = route_with(&t, &router);
 
         assert_eq!(report.n_routed, 3, "the report counts what the router emitted");
-        assert_eq!(c.notes.len(), 1, "which is not what was filed");
-        assert_eq!(c.notes[0].id, "x1");
-        assert_eq!(c.notes[0].text, WORDS, "one verbatim slice across all three");
+        assert_eq!(notes.len(), 1, "which is not what came back");
+        assert_eq!(notes[0].text, WORDS, "one verbatim slice across all three");
     }
 
     /// The gate is unskippable: it sits between the router and the notes, so
-    /// no router can put a tag outside the vocabulary onto a chart.
+    /// no router can produce a tag outside the vocabulary.
     #[test]
     fn the_gate_rejects_out_of_vocabulary_tags_and_says_so() {
-        let mut c = chart();
         let t = Transcript::load(WORDS);
         let router = Fixed(vec![
             raw((0, 10), &["planet:sun"]),
             raw((11, 21), &["planet:nibiru"]),
         ]);
 
-        let report = route_into_with(&mut c, &t, &router, Filing::Fresh);
+        let (notes, report) = route_with(&t, &router);
 
         assert_eq!(report.n_routed, 2, "the router emitted two");
-        assert_eq!(c.notes.len(), 1, "one of them did not pass");
+        assert_eq!(notes.len(), 1, "one of them did not pass");
         assert_eq!(report.warnings.len(), 1);
         assert!(report.warnings[0].contains("nibiru"), "{:?}", report.warnings);
-        assert!(c.validate().is_ok(), "a gated chart is always valid");
+        assert!(
+            notes.iter().flat_map(|n| &n.tags).all(|t| crate::vocab::contains(t)),
+            "everything that got through is in vocabulary"
+        );
     }
 
     #[test]
     fn the_gate_rejects_a_span_that_is_not_a_slice_of_the_transcript() {
-        let mut c = chart();
         let t = Transcript::load(WORDS);
         let router = Fixed(vec![raw((0, 9999), &["planet:sun"])]);
 
-        let report = route_into_with(&mut c, &t, &router, Filing::Fresh);
+        let (notes, report) = route_with(&t, &router);
 
-        assert!(c.notes.is_empty());
+        assert!(notes.is_empty());
         assert_eq!(report.warnings.len(), 1);
         assert!(report.warnings[0].contains("out of bounds"), "{:?}", report.warnings);
     }
 
     #[test]
-    fn a_router_that_emits_nothing_files_nothing_and_warns_about_nothing() {
-        let mut c = chart();
-        c.notes = vec![existing("x1")];
+    fn a_router_that_emits_nothing_routes_nothing_and_warns_about_nothing() {
         let t = Transcript::load(WORDS);
-
-        let report = route_into_with(&mut c, &t, &Fixed(vec![]), Filing::Append);
+        let (notes, report) = route_with(&t, &Fixed(vec![]));
 
         assert_eq!(report.n_routed, 0);
         assert!(report.warnings.is_empty());
-        assert_eq!(c.notes.len(), 1, "the append added nothing and removed nothing");
-    }
-
-    #[test]
-    fn next_ordinal_is_one_past_the_highest_not_the_count() {
-        assert_eq!(next_ordinal(&[]), 1);
-        assert_eq!(next_ordinal(&[existing("x1"), existing("x2")]), 3);
-        assert_eq!(next_ordinal(&[existing("x1"), existing("x7")]), 8, "gap-aware");
-        // Ids that are not `x{n}` at all are ignored rather than crashing.
-        assert_eq!(next_ordinal(&[existing("hand-written"), existing("x4")]), 5);
+        assert!(notes.is_empty());
     }
 
     /// `retag` runs the same gated path, so a hand-typed correction can only
-    /// pick up tags the chart admits.
+    /// pick up tags the vocabulary admits.
     #[test]
     fn retag_finds_vocabulary_tags_in_free_text_and_nothing_else() {
-        let c = chart();
-        let tags = retag(&c, "The sun is bright today.");
+        let tags = retag("The sun is bright today.", crate::i18n::Locale::En);
         assert_eq!(tags, vec!["planet:sun"]);
-        assert!(retag(&c, "Nothing here names an element.").is_empty());
+        assert!(retag("Nothing here names an element.", crate::i18n::Locale::En).is_empty());
     }
 
+    /// The vocabulary is global but the words are not, so the locale is what
+    /// decides whether a sentence routes at all.
     #[test]
-    fn routing_the_chart_s_own_language_uses_its_own_router() {
-        // `route_into` builds the router from `meta.locale`, so a Russian chart
-        // routes Russian words and an English one does not.
-        let mut ru = chart();
-        ru.meta.locale = "ru".into();
-        ru.planets[0].name = "Солнце".into();
+    fn the_locale_picks_the_words_the_router_scans_for() {
         let t = Transcript::load("Солнце сегодня яркое.");
-        route_into(&mut ru, &t, Filing::Fresh);
-        assert_eq!(ru.notes.len(), 1, "the Russian router matched");
-
-        let mut en = chart();
-        en.notes.clear();
-        route_into(&mut en, &t, Filing::Fresh);
-        assert!(en.notes.is_empty(), "the English router did not");
+        let (ru, _) = route(&t, crate::i18n::Locale::Ru);
+        assert_eq!(ru.len(), 1, "the Russian router matched");
+        let (en, _) = route(&t, crate::i18n::Locale::En);
+        assert!(en.is_empty(), "the English router did not");
     }
 }

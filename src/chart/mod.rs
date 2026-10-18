@@ -92,7 +92,6 @@ pub fn compute_chart_reporting(input: &BirthInput) -> Result<(ChartData, Vec<Str
         signs: sign_refs(loc),
         houses: house_refs(loc),
         aspects,
-        notes: Vec::new(),
     };
     // Derived fields last: they read the measured longitudes and cusps above,
     // and every renderer reads them instead of re-deriving.
@@ -421,15 +420,13 @@ mod tests {
             "house:5".to_string(),
             whole.aspects.first().map(|a| a.id.clone()).unwrap_or_else(|| whole.signs[1].id.clone()),
         ];
-        let carried = crate::contract::Note {
-            id: "x1".into(),
-            at: None,
-            text: "t".into(),
-            tags,
-        };
-        let mut reprojected = placidus;
-        reprojected.notes = vec![carried];
-        assert!(reprojected.validate().is_ok(), "a carried note must stay valid");
+        // Notes live off the chart, so what has to survive a reproject is not
+        // a carried list but the tags themselves: a note filed under the whole
+        // sign chart must still be filed under something the placidus one
+        // admits, or changing house system would silently unfile it.
+        let carried = crate::contract::Note { id: "x1".into(), at: None, text: "t".into(), tags };
+        assert!(carried.validate().is_ok(), "the tags stay in vocabulary");
+        assert!(placidus.validate().is_ok(), "and the reprojected chart stays valid");
     }
 
     #[test]

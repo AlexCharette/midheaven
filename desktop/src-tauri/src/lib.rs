@@ -3,8 +3,8 @@
 //! emission) runs natively here, exactly as in the CLI/TUI.
 
 mod ids;
-mod journal;
-mod library;
+mod naming;
+mod notes;
 mod prefs;
 #[cfg(desktop)]
 mod record;
@@ -14,10 +14,9 @@ mod store;
 use astro::chart::parse_time;
 use astro::contract::{ChartData, Note};
 use astro::chart::systems;
-use astro::route::{next_ordinal, retag};
+use crate::store::{Chart, Person, Store, StoredNote};
 use astro::{TranscriptSource, geo};
 use serde::{Deserialize, Serialize};
-use library::{Library, ReadingEntry};
 use session::{Reading, Session};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -254,7 +253,7 @@ async fn build(
     // readings library persists verbatim — the desktop used to fork this entire
     // match for want of that one value.
     let progress_app = app.clone();
-    let (mut chart, report) = tauri::async_runtime::spawn_blocking(move || {
+    let (mut chart, routed, report) = tauri::async_runtime::spawn_blocking(move || {
         astro::build_reading(&input, source, move |pct| {
             let _ = progress_app.emit("transcribe-progress", pct);
         })
@@ -281,21 +280,44 @@ async fn build(
         time: form.time.clone(),
     });
 
-    // Auto-save when a readings folder is configured; a reading without one is
-    // held in the session and exported by hand.
-    let stem = library::stem(&chart.meta.name, chrono::Local::now().date_naive());
-    let session_dir = match Library::configured(p.readings_dir.as_deref()) {
-        // `create` stamps the chart's identity as it saves it, so the copy that
-        // goes into the session and back to the webview carries the same id the
-        // file does — a reading a note could point at from the moment it exists.
-        Some(lib) => Some(lib.create(&stem, &mut chart, report.transcript.as_ref(), now_ms())?),
-        None => None,
+    // The person and the sky become records, and the take's notes are filed
+    // under the sky. Without a configured folder there is nowhere to put any
+    // of it, so the reading is held in the session and exported by hand.
+    let chart_id = match store_of(&app) {
+        Ok(store) => {
+            let now = now_ms();
+            let person = Person {
+                id: store.mint_id::<Person>(now),
+                name: chart.meta.name.clone(),
+                born: chart.meta.born.clone(),
+            };
+            store.put(&person)?;
+            let record = Chart {
+                id: store.mint_id::<Chart>(now),
+                kind: "natal".to_string(),
+                seed: chart.meta.birth.clone().expect("stamped just above"),
+                place: chart.meta.place.clone(),
+                house_system: chart.meta.house_system.clone(),
+                ayanamsa: chart.meta.ayanamsa.clone(),
+                locale: chart.meta.locale.clone(),
+                person: Some(person.id),
+            };
+            store.put(&record)?;
+            chart.meta.id = Some(record.id.clone());
+            notes::file_take(&store, &record.id, routed, now as i64)?;
+            record.id
+        }
+        Err(_) => String::new(),
     };
 
-    state
-        .session()
-        .open(Reading::new(chart.clone(), session_dir, library::artifact_name(&stem)))?;
+    state.session().open(Reading::new(chart.clone(), chart_id))?;
     Ok(chart)
+}
+
+/// The store, or the refusal that means "no folder has been chosen yet".
+fn store_of(app: &AppHandle) -> Result<Store, String> {
+    Store::configured(prefs::load(app).readings_dir.as_deref())
+        .ok_or_else(|| "choose a folder to keep your notes in first".to_string())
 }
 
 /// Begin capturing the session from the default microphone. The model path
@@ -324,7 +346,7 @@ fn start_recording(state: State<'_, AppState>, model: String) -> Result<(), Stri
 async fn stop_recording(
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<ChartData, String> {
+) -> Result<Vec<Note>, String> {
     // Stopping only ends the capture: the take is in flight until its words
     // land, and the session refuses to start another meanwhile.
     let pending = state.session().end_take()?;
@@ -351,57 +373,42 @@ async fn stop_recording(
 
     let mut guard = state.session();
     let landed = guard.land_take(pending, segments)?;
-    let reading = guard.reading()?;
-
-    // library auto-save: the take's transcription (session-offset anchors,
-    // matching the folio) and the refreshed chart
-    if let Some(dir) = &reading.dir {
-        let path = dir.join(&landed.filename);
-        std::fs::write(&path, &landed.jsonl)
-            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-        library::save_chart(dir, &reading.chart)?;
-    }
-    let chart = reading.chart.clone();
+    let chart_id = guard.reading()?.chart_id.clone();
     drop(guard);
+
+    // The take's notes are filed under the chart it was recorded into.
+    let store = store_of(&app)?;
+    notes::file_take(&store, &chart_id, landed.notes, now_ms() as i64)?;
 
     if !landed.warnings.is_empty() {
         let _ = app.emit("build-warnings", &landed.warnings);
     }
-    Ok(chart)
+    Ok(notes::under(&store, &chart_id).iter().map(StoredNote::note).collect())
 }
 
-/// The shared frame of every curation command: require a reading, mutate its
-/// chart, refresh the library's chart.json, return the updated clone for the
-/// webview. Deliberately available mid-take — curating while the recorder runs
-/// is not refused, and the take appends to whatever it finds.
-fn with_chart(
-    state: &State<'_, AppState>,
-    mutate: impl FnOnce(&mut ChartData) -> Result<(), String>,
-) -> Result<ChartData, String> {
-    let mut guard = state.session();
-    let reading = guard.reading_mut()?;
-    mutate(&mut reading.chart)?;
-    if let Some(dir) = &reading.dir {
-        library::save_chart(dir, &reading.chart)?;
-    }
-    Ok(reading.chart.clone())
+/// The chart a note command files against, or the one refusal.
+///
+/// Deliberately available mid-take: curating while the recorder runs is not
+/// refused, and a landing take only ever adds to what it finds.
+fn open_chart_id(state: &State<'_, AppState>) -> Result<String, String> {
+    Ok(state.session().reading()?.chart_id.clone())
 }
 
 /// Everything a reproject takes from the old chart. Only the geometry is
-/// recomputed, so the identity that produced it (name, language, birth seed),
-/// the routed passages, and the practitioner's branding all cross over
-/// untouched — and the seed crosses too, or the *next* recalculation would find
-/// nothing to recompute from.
+/// recomputed, so the identity that produced it (name, language, birth seed)
+/// and the practitioner's branding cross over untouched — and the seed
+/// crosses too, or the *next* recalculation would find nothing to recompute
+/// from.
 ///
-/// Split out from the command so this can be tested: passages surviving a
-/// house-system swap is the whole point of a reproject, and `State` cannot be
-/// constructed in a test.
+/// The notes used to cross over here as well, because the chart carried them.
+/// They no longer need to: they name the chart's id, and a reproject keeps
+/// the id. A note's tags describe words rather than placements, so they stay
+/// valid across the swap either way.
 #[derive(Debug)]
 struct Carried {
     name: String,
     locale: astro::i18n::Locale,
     seed: astro::contract::BirthSeed,
-    notes: Vec<Note>,
     astrologer: Option<String>,
     logo: Option<String>,
 }
@@ -416,14 +423,12 @@ impl Carried {
                 .birth
                 .clone()
                 .ok_or("this reading has no saved birth data to recalculate from")?,
-            notes: old.notes.clone(),
             astrologer: old.meta.astrologer.clone(),
             logo: old.meta.logo.clone(),
         })
     }
 
     fn onto(self, chart: &mut ChartData) {
-        chart.notes = self.notes;
         chart.meta.astrologer = self.astrologer;
         chart.meta.logo = self.logo;
         chart.meta.birth = Some(self.seed);
@@ -431,10 +436,8 @@ impl Carried {
 }
 
 /// Recompute the current chart's geometry under a new house system / zodiac,
-/// live from the reading view. Reconstructs the birth input from `meta.birth`
-/// (so it works for both freshly-built and library-reopened readings), then
-/// carries the notes and branding onto the new chart — a note's tags
-/// describe words, not placements, so they stay valid across the swap.
+/// live from the reading view. Reconstructs the birth input from `meta.birth`,
+/// then carries the branding onto the new chart.
 #[tauri::command]
 fn reproject(
     state: State<'_, AppState>,
@@ -462,12 +465,10 @@ fn reproject(
     let mut chart = astro::chart::compute_chart(&input)?;
     carried.onto(&mut chart);
 
-    let chart = guard.resettle(chart)?.clone();
-    let reading = guard.reading()?;
-    if let Some(dir) = &reading.dir {
-        library::save_chart(dir, &reading.chart)?;
-    }
-    Ok(chart)
+    let id = guard.reading()?.chart_id.clone();
+    let mut chart = chart;
+    chart.meta.id = (!id.is_empty()).then_some(id);
+    Ok(guard.resettle(chart)?.clone())
 }
 
 /// The calculation tier a person's stored preferences contribute.
@@ -556,130 +557,124 @@ fn set_last_place(app: AppHandle, id: u32) -> Result<(), String> {
     prefs::save(&app, &p)
 }
 
-/// Merge a note into its predecessor: verbatim parts joined, tags
-/// unioned, the earlier note's time anchor kept (contract semantics via
-/// [`Note::absorb`]; only the text-joining strategy is ours).
-fn merge_up_in(notes: &mut Vec<Note>, id: &str) -> Result<(), String> {
-    let i = notes.iter().position(|n| n.id == id).ok_or("no such note")?;
-    if i == 0 {
-        return Err("the first note has nothing above it to merge into".to_string());
-    }
-    let cur = notes.remove(i);
-    let joined = format!("{} {}", notes[i - 1].text, cur.text);
-    notes[i - 1].absorb(cur);
-    notes[i - 1].text = joined;
-    Ok(())
-}
+// ---- notes ----
+//
+// One path, over the store. There used to be two: these commands wrote into
+// the open chart's note list, and `write_journal_note` wrote into the journal
+// folder. They validated identically, in three copies of the same sentence,
+// and had drifted on whether an untagged note gets filed by the router. See
+// `notes` for which copy survived.
 
-/// Amend a passage's text and re-tag it from the corrected words; if the
-/// router finds nothing, the previous tags stay (a correction should never
-/// make a passage vanish from every section).
-fn correct_in(chart: &mut ChartData, id: &str, text: &str) -> Result<(), String> {
-    let text = text.trim();
-    if text.is_empty() {
-        return Err("a note cannot be amended to nothing".to_string());
-    }
-    let tags = retag(chart, text); // same gated path as all routing
-    let note = chart
-        .notes
-        .iter_mut()
-        .find(|n| n.id == id)
-        .ok_or("no such note")?;
-    note.text = text.to_string();
-    if !tags.is_empty() {
-        note.tags = tags;
-    }
-    Ok(())
-}
-
+/// Write a note against the chart a reading is open on — new when `id` is
+/// absent, an amendment when it is present.
 #[tauri::command]
-fn merge_up(state: State<'_, AppState>, id: String) -> Result<ChartData, String> {
-    with_chart(&state, |chart| merge_up_in(&mut chart.notes, &id))
-}
-
-#[tauri::command]
-fn correct_note(
+fn write_note(
+    app: AppHandle,
     state: State<'_, AppState>,
-    id: String,
-    text: String,
-) -> Result<ChartData, String> {
-    with_chart(&state, |chart| correct_in(chart, &id, &text))
-}
-
-/// Write a note by hand. Hand-picked tags must exist in the chart's
-/// vocabulary (the verify gate's spirit); with none picked, the router files
-/// it from the words — and a note it can't file stays untagged, visible
-/// whenever no filter is active.
-fn add_in(chart: &mut ChartData, text: &str, tags: Vec<String>) -> Result<(), String> {
-    let text = text.trim();
-    if text.is_empty() {
-        return Err("a note needs words".to_string());
-    }
-    if let Some(bad) = tags.iter().find(|t| !astro::vocab::contains(t)) {
-        return Err(format!("unknown tag {bad}"));
-    }
-    let tags = if tags.is_empty() {
-        retag(chart, text) // already sorted + deduped
-    } else {
-        let mut tags = tags;
-        tags.sort();
-        tags.dedup();
-        tags
-    };
-    chart.notes.push(Note {
-        id: format!("x{}", next_ordinal(&chart.notes)),
-        at: None, // written by hand, not spoken in a recording
-        text: text.to_string(),
-        tags,
-    });
-    Ok(())
-}
-
-#[tauri::command]
-fn add_note(
-    state: State<'_, AppState>,
+    id: Option<String>,
     text: String,
     tags: Vec<String>,
-) -> Result<ChartData, String> {
-    with_chart(&state, |chart| add_in(chart, &text, tags))
+) -> Result<Vec<Note>, String> {
+    let chart_id = open_chart_id(&state)?;
+    let locale = astro::i18n::Locale::parse(&state.session().chart()?.meta.locale);
+    let store = store_of(&app)?;
+    notes::write(
+        &store,
+        notes::Written { id, chart: &chart_id, text: &text, tags, locale, now_ms: now_ms() as i64 },
+    )?;
+    Ok(notes::under(&store, &chart_id).iter().map(StoredNote::note).collect())
 }
 
-/// Remove a passage. The frontend confirms first; removal is final.
-fn delete_in(notes: &mut Vec<Note>, id: &str) -> Result<(), String> {
-    let i = notes.iter().position(|n| n.id == id).ok_or("no such note")?;
-    notes.remove(i);
-    Ok(())
-}
-
+/// Write a note against a chart named by id — the home page's path, where
+/// there is no open reading and the sky is one the astrologer was only
+/// looking at.
+///
+/// The chart record is minted if this is the first note about that moment, so
+/// ten notes over one transit share one chart and "everything I wrote about
+/// this sky" is a question with an answer.
 #[tauri::command]
-fn delete_note(state: State<'_, AppState>, id: String) -> Result<ChartData, String> {
-    with_chart(&state, |chart| delete_in(&mut chart.notes, &id))
+fn write_moment_note(
+    app: AppHandle,
+    id: Option<String>,
+    text: String,
+    tags: Vec<String>,
+    anchor: Chart,
+) -> Result<StoredNote, String> {
+    let store = store_of(&app)?;
+    // The place as the gazetteer says it, not as the webview typed it — the
+    // id is the truth, and a stored label that disagreed with it would name
+    // somewhere the note was not written over.
+    let computed = chart_of(&anchor)?;
+    let locale = astro::i18n::Locale::parse(&anchor.locale);
+    let chart_id = match existing_chart(&store, &anchor) {
+        Some(found) => found,
+        None => {
+            let record = Chart {
+                id: store.mint_id::<Chart>(now_ms()),
+                place: computed.meta.place.clone(),
+                ..anchor
+            };
+            store.put(&record)?;
+            record.id
+        }
+    };
+    notes::write(
+        &store,
+        notes::Written { id, chart: &chart_id, text: &text, tags, locale, now_ms: now_ms() as i64 },
+    )
 }
 
-// ---- the journal ----
-//
-// A note written in the reading view goes into that reading's chart, above.
-// A note written from the home page has no reading to go into, so it goes to
-// the journal — and carries the sky it was written over as a seed.
-
-/// The configured journal, or the refusal to show when no readings folder is
-/// set. The message is the one the webview turns into a folder prompt: this is
-/// the *first need*, and asking here is why the app never picks a folder for
-/// someone unasked.
-fn journal_of(app: &AppHandle) -> Result<journal::Journal, String> {
-    journal::Journal::configured(prefs::load(app).readings_dir.as_deref())
-        .ok_or_else(|| "no readings folder configured".to_string())
+/// The chart record for a sky already written about, matched on the seed and
+/// the calculation codes — everything that decides the geometry. Two notes
+/// over the same moment must land on one chart or neither can find the other.
+fn existing_chart(store: &Store, want: &Chart) -> Option<String> {
+    store
+        .all::<Chart>()
+        .into_iter()
+        .find(|c| {
+            c.seed == want.seed
+                && c.house_system == want.house_system
+                && c.ayanamsa == want.ayanamsa
+                && c.kind == want.kind
+                && c.person == want.person
+        })
+        .map(|c| c.id)
 }
 
-/// Recompute the chart an anchor names.
+/// Merge a note into the one before it in reading order.
+#[tauri::command]
+fn merge_up(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<Note>, String> {
+    let chart_id = open_chart_id(&state)?;
+    let store = store_of(&app)?;
+    notes::merge_up(&store, &chart_id, &id)?;
+    Ok(notes::under(&store, &chart_id).iter().map(StoredNote::note).collect())
+}
+
+/// Remove a note. The frontend confirms first; removal is final.
+#[tauri::command]
+fn delete_note(app: AppHandle, id: String) -> Result<(), String> {
+    store_of(&app)?.remove::<StoredNote>(&id)
+}
+
+/// Every note filed under the open reading's chart, in reading order.
+#[tauri::command]
+fn list_notes(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<Note>, String> {
+    let chart_id = open_chart_id(&state)?;
+    Ok(notes::under(&store_of(&app)?, &chart_id).iter().map(StoredNote::note).collect())
+}
+
+/// Recompute the chart a record names.
 ///
 /// The webview sends the seed it was looking at, never the chart. Recomputing
-/// here is what lets the backend check a note's tags against a real vocabulary
-/// instead of taking the webview's word for them — the Verify gate's rule,
-/// applied to a note nobody spoke.
-fn chart_of(anchor: &journal::Anchor) -> Result<ChartData, String> {
-    let place = geo::by_id(anchor.seed.place_id).ok_or("that place is no longer in the gazetteer")?;
-    let date = anchor
+/// here is what lets the backend render and label a note's sky rather than
+/// taking the webview's word for it.
+fn chart_of(record: &Chart) -> Result<ChartData, String> {
+    let place = geo::by_id(record.seed.place_id).ok_or("that place is no longer in the gazetteer")?;
+    let date = record
         .seed
         .date
         .parse()
@@ -687,110 +682,34 @@ fn chart_of(anchor: &journal::Anchor) -> Result<ChartData, String> {
     let birth = resolve_input(
         "",
         date,
-        &anchor.seed.time,
+        &record.seed.time,
         place,
-        astro::i18n::Locale::parse(&anchor.locale),
+        astro::i18n::Locale::parse(&record.locale),
         systems::Codes::new(
-            Some(anchor.house_system.as_str()),
-            Some(if anchor.ayanamsa.is_some() { "sidereal" } else { "tropical" }),
-            anchor.ayanamsa.as_deref(),
+            Some(record.house_system.as_str()),
+            Some(if record.ayanamsa.is_some() { "sidereal" } else { "tropical" }),
+            record.ayanamsa.as_deref(),
         ),
         systems::Codes::default(),
     )?;
     astro::chart::compute_chart(&birth)
 }
 
-/// Write a note to the journal — a new one when `id` is absent, an amendment to
-/// an existing one when it is present.
+/// One row of the journal view: every note the app holds, whatever sky it was
+/// written over.
 ///
-/// Tags are checked against the vocabulary of the chart the anchor names, so a
-/// tag the webview invented, or one that belonged to a different sky, is
-/// refused. Unlike [`add_in`] there is no router fallback: a journal note is a
-/// thought, not a transcript, and inferring elements from a sentence is what the
-/// lexicon was built for and a short note is worst at.
-#[tauri::command]
-fn write_journal_note(
-    app: AppHandle,
-    id: Option<String>,
-    text: String,
-    tags: Vec<String>,
-    anchor: journal::Anchor,
-) -> Result<journal::JournalNote, String> {
-    let journal = journal_of(&app)?;
-    let text = text.trim();
-    if text.is_empty() {
-        return Err("a note needs words".to_string());
-    }
-    let chart = chart_of(&anchor)?;
-    if let Some(bad) = tags.iter().find(|t| !astro::vocab::contains(t)) {
-        return Err(format!("unknown tag {bad}"));
-    }
-    // The place as the gazetteer says it, not as the webview typed it — the id
-    // is the truth, and a stored label that disagreed with it would be a row
-    // naming somewhere the note was not written over.
-    let mut anchor = anchor;
-    anchor.place = chart.meta.place.clone();
-    let mut tags = tags;
-    tags.sort();
-    tags.dedup();
-
-    let now = chrono::Local::now();
-    // An amendment keeps the id it was given; a new note is minted against the
-    // same clock its `writtenAt` reads from.
-    let id = match id {
-        Some(id) => id,
-        None => journal.mint_id(now.timestamp_millis().max(0) as u64),
-    };
-    let entry = journal::JournalNote {
-        written_at: now.to_rfc3339(),
-        anchor,
-        note: Note { id, at: None, text: text.to_string(), tags },
-    };
-    journal.write(&entry)?;
-    Ok(entry)
-}
-
-/// Remove a note from the journal. Final, like removing a reading.
-#[tauri::command]
-fn delete_journal_note(app: AppHandle, id: String) -> Result<(), String> {
-    journal_of(&app)?.remove(&id)
-}
-
-/// Where a journal row's note actually lives, and so where clicking it goes.
-#[derive(Serialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
-// `rename_all` on an enum renames its *variants*; the fields inside them need
-// saying separately, or a row arrives as `chart_path` beside `ReadingEntry`'s
-// `chartPath` and the webview has two spellings for one thing.
-#[serde(tag = "kind", rename_all = "camelCase")]
-enum RowSource {
-    /// A note in the journal: its id amends and deletes it, its anchor restores
-    /// the sky it was written over.
-    #[serde(rename_all = "camelCase")]
-    Journal { id: String, anchor: journal::Anchor },
-    /// A note inside a saved reading: enough to open that reading.
-    #[serde(rename_all = "camelCase")]
-    Reading {
-        note_id: String,
-        chart_path: String,
-        dir: String,
-        name: String,
-        born: String,
-    },
-}
-
-/// One row of the journal view: every note the app holds, wherever it lives and
-/// however it was made.
+/// There used to be a `RowSource` enum here, splitting rows into the
+/// journal's own notes and notes found inside saved readings, because those
+/// were two different stores with two different ways of pointing back at a
+/// note. One store, one kind of row: a note names a chart, and a chart may
+/// name a person.
 #[derive(Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 #[serde(rename_all = "camelCase")]
 struct JournalRow {
-    /// What to show as the note's date, RFC 3339.
-    ///
-    /// For a journal note this is when it was written. For a note in a reading
-    /// it is when that reading was last saved — *not* the composed instant the
-    /// ordering uses, which is a save time plus a recording offset and would be
-    /// a lie if displayed as "spoken at".
+    /// The note's own id — what amends or deletes it.
+    id: String,
+    /// When it was written, RFC 3339.
     written_at: String,
     text: String,
     tags: Vec<String>,
@@ -798,20 +717,25 @@ struct JournalRow {
     ///
     /// Composed here because a row carries no chart to derive them from, and
     /// because nobody searches for `planet:saturn`. The row's language is the
-    /// chart's, not the app's: a note written under a Russian reading reads and
-    /// searches in Russian wherever it is shown.
+    /// chart's, not the app's: a note written under a Russian reading reads
+    /// and searches in Russian wherever it is shown.
     tag_labels: Vec<String>,
-    source: RowSource,
+    /// The sky it was written over — enough to restore it.
+    chart: Chart,
+    /// Whose sky it is, when it is anyone's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    person: Option<Person>,
 }
 
 /// A tag id as the words a reader would search for.
 ///
-/// A journal row deliberately carries no chart — that is what makes listing a
-/// few hundred of them affordable — so the names have to be composed from the
-/// id and the row's language alone. `planet:`, `sign:` and `house:` all name
-/// themselves from `i18n`. An aspect's proper name needs its kind, which only
-/// its chart knows, so it becomes its two endpoints: still the words someone
-/// would type, which is what this is for.
+/// A journal row carries no computed chart — that is what makes listing a few
+/// hundred of them affordable — so the names are composed from the id and the
+/// row's language alone. `planet:`, `sign:`, `house:` and `kind:` all name
+/// themselves from `i18n`. An aspect's proper name would need its kind, which
+/// the pair alone does not say, so it becomes its two endpoints: still the
+/// words someone would type, which is what this is for.
 fn tag_label(tag: &str, loc: astro::i18n::Locale) -> String {
     let Some((cat, slug)) = tag.split_once(':') else {
         return tag.to_string();
@@ -820,6 +744,7 @@ fn tag_label(tag: &str, loc: astro::i18n::Locale) -> String {
         "planet" => loc.planet_name(slug).to_string(),
         "sign" => loc.sign_name(slug).to_string(),
         "house" => slug.parse().map(|n| loc.house_name(n).to_string()).unwrap_or_default(),
+        "kind" => loc.aspect_word(slug).to_string(),
         "aspect" => match slug.split_once('-') {
             Some((a, b)) => format!("{} – {}", loc.planet_name(a), loc.planet_name(b)),
             None => String::new(),
@@ -831,95 +756,42 @@ fn tag_label(tag: &str, loc: astro::i18n::Locale) -> String {
     if named.trim().is_empty() { tag.to_string() } else { named }
 }
 
-/// Milliseconds into a recording from an `"HH:MM:SS"` anchor; 0 for a note with
-/// no anchor, which is what a written one and an untimestamped transcript both
-/// have.
-fn offset_ms(time: &str) -> i64 {
-    let mut parts = time.split(':').map(|p| p.parse::<i64>().ok());
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(Some(h)), Some(Some(m)), Some(Some(s))) => (h * 3600 + m * 60 + s) * 1000,
-        _ => 0,
-    }
-}
-
-/// Every note the app holds — the journal's own, and every note filed under
-/// every saved reading — newest first.
+/// Every note the app holds, newest first.
 ///
-/// Spoken and written alike, because they are the same thing: a view that
-/// showed only the typed ones would be reviving a distinction the app does not
-/// otherwise make. The cost is real and worth naming: this opens and fully
-/// parses every `chart.json` in the library, which is exactly what
-/// `Library::entries`'s cheap read exists to avoid, and a few transcribed
-/// readings will outnumber the typed notes by two orders of magnitude.
+/// This used to be two listings interleaved: the journal's own folder, plus
+/// every note inside every saved `chart.json`. The second half opened and
+/// fully parsed every reading in the library — "the cost is real and worth
+/// naming", said the comment that used to be here, because a few transcribed
+/// readings outnumber the typed notes by two orders of magnitude. Notes are
+/// their own records now, so listing them reads notes and nothing else.
 #[tauri::command]
 fn list_journal(app: AppHandle) -> Vec<JournalRow> {
-    let prefs = prefs::load(&app);
-    let mut rows: Vec<(i64, JournalRow)> = Vec::new();
+    let Ok(store) = store_of(&app) else { return Vec::new() };
+    let charts: std::collections::HashMap<String, Chart> =
+        store.all::<Chart>().into_iter().map(|c| (c.id.clone(), c)).collect();
+    let people: std::collections::HashMap<String, Person> =
+        store.all::<Person>().into_iter().map(|p| (p.id.clone(), p)).collect();
 
-    if let Some(journal) = journal::Journal::configured(prefs.readings_dir.as_deref()) {
-        for e in journal.entries() {
-            let at = chrono::DateTime::parse_from_rfc3339(&e.written_at)
-                .map(|d| d.timestamp_millis())
-                .unwrap_or(0);
-            let loc = astro::i18n::Locale::parse(&e.anchor.locale);
-            let tag_labels = e.note.tags.iter().map(|t| tag_label(t, loc)).collect();
-            rows.push((
-                at,
-                JournalRow {
-                    written_at: e.written_at,
-                    text: e.note.text,
-                    tags: e.note.tags,
-                    tag_labels,
-                    source: RowSource::Journal { id: e.note.id, anchor: e.anchor },
-                },
-            ));
-        }
-    }
-
-    if let Some(lib) = Library::configured(prefs.readings_dir.as_deref()) {
-        for (entry, notes) in lib.notes() {
-            let saved_ms = entry.modified_ms.unwrap_or(0) as i64;
-            let saved_at = rfc3339(saved_ms);
-            let loc = astro::i18n::Locale::parse(&entry.locale);
-            for note in notes {
-                // The reading's save time composed with the note's offset into
-                // the recording: readings order against each other and against
-                // journal notes, and notes order within a reading the way they
-                // were spoken. Approximate as an absolute instant, which is why
-                // it never leaves this function.
-                rows.push((
-                    saved_ms + offset_ms(note.at.as_deref().unwrap_or_default()),
-                    JournalRow {
-                        written_at: saved_at.clone(),
-                        tag_labels: note.tags.iter().map(|t| tag_label(t, loc)).collect(),
-                        text: note.text,
-                        tags: note.tags,
-                        source: RowSource::Reading {
-                            note_id: note.id,
-                            chart_path: entry.chart_path.clone(),
-                            dir: entry.dir.clone(),
-                            name: entry.name.clone(),
-                            born: entry.born.clone(),
-                        },
-                    },
-                ));
-            }
-        }
-    }
-
-    // Newest first. `Library::notes` and `Journal::entries` each arrive sorted;
-    // this is what interleaves them, and it is stable, so notes sharing an
-    // instant (a transcript with no timestamps) keep the order they were filed.
-    rows.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
-    rows.into_iter().map(|(_, row)| row).collect()
-}
-
-/// Milliseconds since the epoch as an RFC 3339 local timestamp — the same shape
-/// a journal note stores, so both kinds of row read alike.
-fn rfc3339(ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(ms)
-        .map(|d| d.with_timezone(&chrono::Local).to_rfc3339())
-        .unwrap_or_default()
+    store
+        .notes_newest_first()
+        .into_iter()
+        .filter_map(|n| {
+            // A note whose chart is gone has nothing to be read against, so it
+            // is skipped rather than shown adrift — the same stance the store
+            // takes on a file that will not parse.
+            let chart = charts.get(&n.chart)?.clone();
+            let loc = astro::i18n::Locale::parse(&chart.locale);
+            Some(JournalRow {
+                id: n.id,
+                written_at: n.written_at,
+                tag_labels: n.tags.iter().map(|t| tag_label(t, loc)).collect(),
+                text: n.text,
+                tags: n.tags,
+                person: chart.person.as_ref().and_then(|id| people.get(id)).cloned(),
+                chart,
+            })
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -964,10 +836,6 @@ fn set_preferences(app: AppHandle, prefs: prefs::Preferences) -> Result<(), Stri
         // Not a pane field — carried through so saving preferences never
         // erases the calculator's remembered place.
         last_place_id: prefs.last_place_id,
-        // Read from disk rather than from the webview: this is the migration's
-        // own bookkeeping, and a client that simply did not send it would
-        // otherwise reset it, making every launch re-read the whole library.
-        schema_version: prefs::load(&app).schema_version,
     };
     if let Some(size) = &prefs.page_size {
         astro::pdf::PageSize::parse(size)?;
@@ -1028,80 +896,139 @@ fn list_models(dir: String) -> Vec<String> {
     models
 }
 
-/// Reopen a saved reading: parse a library `chart.json` back into the session
-/// so it renders, curates, and re-exports exactly like a fresh build. The
-/// file's own folder becomes the session dir (curation re-saves there, the
-/// library convention), the folder name the suggested export stem, and new
-/// live takes continue past any already on disk.
+//// Reopen a chart from the store — the readings panel's way back in.
+///
+/// This used to be `load_chart`, which took a filesystem path to a
+/// `chart.json` inside a reading folder, deserialized an untrusted file and
+/// validated it before anything downstream could touch it. A chart is a
+/// record now: it is named by id, its geometry is recomputed from its seed
+/// rather than read back, and there is no file for a hand-edit to have
+/// corrupted.
 #[tauri::command]
-fn load_chart(state: State<'_, AppState>, path: String) -> Result<ChartData, String> {
-    let path = PathBuf::from(path.trim());
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let mut chart: ChartData =
-        serde_json::from_str(&raw).map_err(|e| format!("not a Midheaven chart.json: {e}"))?;
-    // Derived fields first: charts saved before they existed carry none, and a
-    // hand-edited file's copies are not to be trusted. Recomputing from the
-    // longitudes makes both cases identical and gives `validate` real values to
-    // check rather than whatever the file claimed.
-    astro::derive::fill(&mut chart);
-    // The file is untrusted: enforce the structural/vocabulary invariants the
-    // compute path guarantees but deserialization doesn't, before it can reach
-    // curation, PDF export, or the emitted artifact.
-    chart.validate().map_err(|e| format!("not a valid Midheaven chart.json: {e}"))?;
+fn open_chart(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<ChartData, String> {
+    let store = store_of(&app)?;
+    let record = store.get::<Chart>(&id)?.ok_or("no such chart")?;
+    let mut chart = chart_of(&record)?;
+    chart.meta.id = Some(record.id.clone());
+    if let Some(person) = record.person.as_ref().and_then(|p| store.get::<Person>(p).ok().flatten())
+    {
+        chart.meta.name = person.name;
+        chart.meta.born = person.born;
+    }
+    // Branding is the practitioner's current setting rather than whatever was
+    // stamped when the reading was first built — it is about who is exporting
+    // it, not about the sky.
+    let p = prefs::load(&app);
+    chart.meta.astrologer = p.astrologer.clone().filter(|s| !s.trim().is_empty());
+    chart.meta.logo = p.logo.as_deref().and_then(|l| prefs::logo_data_uri(Path::new(l)));
 
-    let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).map(Path::to_path_buf);
-    let stem = dir
-        .as_ref()
-        .and_then(|d| d.file_name())
-        .and_then(|s| s.to_str())
-        .map(String::from)
-        .unwrap_or_else(|| library::stem(&chart.meta.name, chrono::Local::now().date_naive()));
-    let takes = dir.as_deref().map(library::max_take_ordinal).unwrap_or(0);
-
-    state
-        .session()
-        .open(Reading::reopened(chart.clone(), dir, library::artifact_name(&stem), takes))?;
+    state.session().open(Reading::reopened(chart.clone(), record.id, 0))?;
     Ok(chart)
 }
 
-/// The readings library, newest first: every direct subfolder of the
-/// configured readings dir that holds a `chart.json`. Empty when no readings
-/// folder is set. Foreign or unreadable folders are silently skipped.
-#[tauri::command]
-fn list_readings(app: AppHandle) -> Vec<ReadingEntry> {
-    Library::configured(prefs::load(&app).readings_dir.as_deref())
-        .map(|lib| lib.entries())
-        .unwrap_or_default()
+/// One row of the readings panel: a chart, who it is of, and how much has
+/// been written about it.
+#[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+struct ChartRow {
+    chart: Chart,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    person: Option<Person>,
+    /// How many notes are filed under it.
+    notes: usize,
 }
 
-/// Remove a reading from the library, folder and all. Guarded by
-/// [`reading_to_remove`] so only a real reading inside the library root can go.
+/// Every chart in the store, most written-about first.
+///
+/// This used to walk the readings folder and read a `chart.json` out of every
+/// subfolder. A chart is a record, so listing them is a folder of records.
 #[tauri::command]
-fn delete_reading(app: AppHandle, dir: String) -> Result<(), String> {
-    Library::configured(prefs::load(&app).readings_dir.as_deref())
-        .ok_or("no readings folder configured")?
-        .remove(&dir)
+fn list_charts(app: AppHandle) -> Vec<ChartRow> {
+    let Ok(store) = store_of(&app) else { return Vec::new() };
+    let people: std::collections::HashMap<String, Person> =
+        store.all::<Person>().into_iter().map(|p| (p.id.clone(), p)).collect();
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for n in store.all::<StoredNote>() {
+        *counts.entry(n.chart).or_default() += 1;
+    }
+    let mut rows: Vec<ChartRow> = store
+        .all::<Chart>()
+        .into_iter()
+        .map(|c| ChartRow {
+            notes: counts.get(&c.id).copied().unwrap_or(0),
+            person: c.person.as_ref().and_then(|id| people.get(id)).cloned(),
+            chart: c,
+        })
+        .collect();
+    // Newest chart first — ids are base-36 of the millisecond they were
+    // minted, so id order is minting order.
+    rows.sort_by(|a, b| b.chart.id.cmp(&a.chart.id));
+    rows
+}
+
+/// Remove a chart and every note filed under it.
+///
+/// Final, and it says what it is taking: deleting a sky deletes what was
+/// written about that sky, because a note with no chart has nothing to be
+/// read against. The person stays — they may have other charts, and a person
+/// is not deleted by deleting one of their skies.
+#[tauri::command]
+fn delete_chart(app: AppHandle, id: String) -> Result<(), String> {
+    let store = store_of(&app)?;
+    for note in notes::under(&store, &id) {
+        store.remove::<StoredNote>(&note.id)?;
+    }
+    store.remove::<Chart>(&id)
 }
 
 /// The generated export name, `{name}_{date}.html` — the save dialog's
 /// default, matching the library folder convention.
 #[tauri::command]
 fn artifact_filename(state: State<'_, AppState>) -> Result<String, String> {
-    Ok(state.session().reading()?.artifact_name.clone())
+    let guard = state.session();
+    let chart = guard.chart()?;
+    Ok(naming::artifact_name(&naming::stem(
+        &chart.meta.name,
+        chrono::Local::now().date_naive(),
+    )))
 }
 
 // async: rendering + disk write stay off the main thread. Both exporters clone
 // the chart out of a scoped lock first — rendering under the lock would stall
 // every other command for the length of a disk write.
 #[tauri::command]
-async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<String, String> {
-    let chart = state.session().chart()?.clone();
+async fn save_artifact(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
+    let (chart, chart_id) = {
+        let guard = state.session();
+        let reading = guard.reading()?;
+        (reading.chart.clone(), reading.chart_id.clone())
+    };
+    let notes = exported_notes(&app, &chart_id);
     tauri::async_runtime::spawn_blocking(move || {
-        astro::emit::write_artifact(&chart, path.as_ref()).map(|()| path)
+        astro::emit::write_artifact(&chart, &notes, path.as_ref()).map(|()| path)
     })
     .await
     .map_err(|e| format!("artifact task failed: {e}"))?
+}
+
+/// The notes an export carries: whatever is filed under the chart.
+///
+/// An export with no store behind it is an export of the chart alone, which
+/// is what a reading held only in the session has always been.
+fn exported_notes(app: &AppHandle, chart_id: &str) -> Vec<Note> {
+    store_of(app)
+        .map(|store| notes::under(&store, chart_id).iter().map(StoredNote::note).collect())
+        .unwrap_or_default()
 }
 
 /// The PDF rendition; page size comes from preferences (A4
@@ -1109,9 +1036,14 @@ async fn save_artifact(state: State<'_, AppState>, path: String) -> Result<Strin
 #[tauri::command]
 async fn save_pdf(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<String, String> {
     let size = astro::pdf::PageSize::from_pref(prefs::load(&app).page_size.as_deref())?;
-    let chart = state.session().chart()?.clone();
+    let (chart, chart_id) = {
+        let guard = state.session();
+        let reading = guard.reading()?;
+        (reading.chart.clone(), reading.chart_id.clone())
+    };
+    let notes = exported_notes(&app, &chart_id);
     tauri::async_runtime::spawn_blocking(move || {
-        astro::pdf::write_pdf(&chart, size, path.as_ref()).map(|()| path)
+        astro::pdf::write_pdf(&chart, &notes, size, path.as_ref()).map(|()| path)
     })
     .await
     .map_err(|e| format!("pdf task failed: {e}"))?
@@ -1145,20 +1077,19 @@ macro_rules! commands {
             save_artifact,
             save_pdf,
             merge_up,
-            correct_note,
-            add_note,
+            write_note,
+            write_moment_note,
             delete_note,
-            write_journal_note,
+            list_notes,
             list_journal,
-            delete_journal_note,
             get_preferences,
             set_preferences,
             open_licenses,
             list_models,
             artifact_filename,
-            load_chart,
-            list_readings,
-            delete_reading
+            open_chart,
+            list_charts,
+            delete_chart
             $(, $extra)*
         ]
     };
@@ -1175,41 +1106,11 @@ macro_rules! names {
     ($($name:ident),* $(,)?) => { [$(stringify!($name)),*] };
 }
 
-/// Bring this install's saved data forward, once.
-///
-/// Version 1 gives every saved reading an id, so a note can be about a person
-/// rather than about a folder path that moves. Readings saved before ids
-/// existed are exactly the ones an existing user has, which is why this exists
-/// at all rather than only stamping new ones.
-///
-/// The version is only recorded **when a library was actually swept**. Someone
-/// with no readings folder configured has nothing to migrate today and may
-/// configure one tomorrow; recording success now would mean their existing
-/// readings were never reached. Nothing else here writes preferences, so the
-/// only thing that can be lost by failing is the chance to try again — which is
-/// the safe direction.
-fn migrate(app: &AppHandle) {
-    let mut p = prefs::load(app);
-    let library = Library::configured(p.readings_dir.as_deref());
-    if !needs_migrating(p.schema_version, library.is_some()) {
-        return;
-    }
-    library.expect("checked just above").stamp_ids(now_ms());
-    p.schema_version = Some(prefs::SCHEMA_VERSION);
-    // A failed write costs a repeat run, which is why `stamp_ids` is idempotent.
-    prefs::save(app, &p).ok();
-}
-
-/// Whether there is a migration to run — and, because the two are the same
-/// question, whether finishing one is worth recording.
-///
-/// `has_library` is the half that is easy to get wrong. Someone with no
-/// readings folder has nothing to migrate *today* and may configure one
-/// tomorrow; calling that a completed migration would mean the readings they
-/// already have are never reached.
-fn needs_migrating(recorded: Option<u32>, has_library: bool) -> bool {
-    has_library && recorded.unwrap_or(0) < prefs::SCHEMA_VERSION
-}
+// The v1 migration stood here. It swept the readings library stamping an id
+// onto every saved chart, so that a note could be about a reading rather than
+// about a folder path that moves. Both halves of that are gone: charts are
+// records with ids of their own, and the folders it swept are not where
+// anything lives any more. It had nothing left to migrate to.
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -1217,13 +1118,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
-        .setup(|app| {
+        .setup(|_app| {
             // one-time gazetteer parse off the critical path
             tauri::async_runtime::spawn_blocking(geo::warm);
-            let handle = app.handle().clone();
-            // Likewise off the critical path: it reads and may rewrite every
-            // chart in the library, and nothing on the first frame needs it.
-            tauri::async_runtime::spawn_blocking(move || migrate(&handle));
             Ok(())
         });
 
@@ -1278,11 +1175,15 @@ fn export_bindings_command_names() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use astro::route::{Filing, route_into};
 
     fn chart_fixture() -> ChartData {
         astro::fixtures::berlin_chart()
     }
+
+    // Writing, amending, merging, deleting and re-tagging a note are all one
+    // path now, over the store, and their tests live with it in `notes`.
+    // What is left here is the command layer's own: recomputing a chart from
+    // a record, resolving a birth input, and naming a tag.
 
     fn ex(id: &str, text: &str, tags: &[&str]) -> Note {
         Note {
@@ -1296,27 +1197,26 @@ mod tests {
     #[test]
     fn chart_json_round_trips_for_loading() {
         // The load_chart path relies on ChartData deserializing from the same
-        // pretty JSON `library::save_chart` writes. File a note first so the
-        // note list is non-empty.
-        let mut chart = chart_fixture();
-        chart.notes = vec![ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"])];
+        let chart = chart_fixture();
         let json = serde_json::to_string_pretty(&chart).unwrap();
         let back: ChartData = serde_json::from_str(&json).unwrap();
         assert_eq!(back.meta.name, chart.meta.name);
         assert_eq!(back.planets.len(), chart.planets.len());
         assert_eq!(back.aspects.len(), chart.aspects.len());
-        assert_eq!(back.notes.len(), 1);
-        assert_eq!(back.notes[0].text, "The sun in cancer.");
-        assert_eq!(back.notes[0].tags, vec!["planet:sun", "sign:cancer"]);
         // `Aspect::kind` is #[serde(skip)] — it defaults to "" on load.
         assert!(back.aspects.iter().all(|a| a.kind.is_empty()));
     }
 
-    /// A reproject changes only the geometry. Everything else — the routed
-    /// passages, the practitioner's branding, and the birth seed that makes the
-    /// *next* recalculation possible — must cross onto the recomputed chart.
+    /// A reproject changes only the geometry. The practitioner's branding and
+    /// the birth seed that makes the *next* recalculation possible must cross
+    /// onto the recomputed chart.
+    ///
+    /// The notes used to cross here too, and the test said so. They no longer
+    /// need to — they name the chart's id, and the id survives a reproject —
+    /// so what is left to check is that their tags would still be valid,
+    /// which is what makes a house-system swap safe for them.
     #[test]
-    fn a_reproject_carries_passages_branding_and_the_seed_onto_the_new_geometry() {
+    fn a_reproject_carries_branding_and_the_seed_onto_the_new_geometry() {
         let mut old = chart_fixture();
         old.meta.birth = Some(astro::contract::BirthSeed {
             place_id: 2950159,
@@ -1325,7 +1225,6 @@ mod tests {
         });
         old.meta.astrologer = Some("A. Practitioner".into());
         old.meta.logo = Some("data:image/png;base64,AAAA".into());
-        old.notes = vec![ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"])];
 
         let carried = Carried::from(&old).expect("a seeded chart can be recalculated");
         assert_eq!(carried.name, old.meta.name);
@@ -1337,19 +1236,18 @@ mod tests {
             input.house_system = systems::house_system("placidus").unwrap();
             astro::chart::compute_chart(&input).unwrap()
         };
-        assert!(fresh.notes.is_empty());
         assert_ne!(fresh.house_cusps, old.house_cusps, "the geometry really changed");
 
         carried.onto(&mut fresh);
 
-        assert_eq!(fresh.notes.len(), 1);
-        assert_eq!(fresh.notes[0].text, "The sun in cancer.");
         assert_eq!(fresh.meta.astrologer.as_deref(), Some("A. Practitioner"));
         assert_eq!(fresh.meta.logo.as_deref(), Some("data:image/png;base64,AAAA"));
         assert!(fresh.meta.birth.is_some(), "still recalculable afterwards");
-        // The carried tags remain in the new chart's vocabulary — that is what
-        // makes carrying them legitimate rather than a leak.
         assert!(fresh.validate().is_ok(), "{:?}", fresh.validate());
+        // A note filed against the old geometry stays filed under tags the new
+        // one admits, which is what makes the swap safe for it.
+        let filed = ex("x1", "The sun in cancer.", &["planet:sun", "sign:cancer"]);
+        assert!(filed.validate().is_ok());
     }
 
     /// A chart with no birth seed (CLI output, or one saved before seeds
@@ -1364,51 +1262,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn merge_up_joins_text_and_unions_tags() {
-        let mut list = vec![
-            ex("x1", "The sun shines.", &["planet:sun"]),
-            ex("x2", "In cancer.", &["sign:cancer", "planet:sun"]),
-        ];
-        merge_up_in(&mut list, "x2").unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].text, "The sun shines. In cancer.");
-        assert_eq!(list[0].tags, vec!["planet:sun", "sign:cancer"]);
-    }
 
-    #[test]
-    fn merge_up_refuses_the_first_passage() {
-        let mut list = vec![ex("x1", "Alone.", &["planet:sun"])];
-        assert!(merge_up_in(&mut list, "x1").is_err());
-        assert!(merge_up_in(&mut list, "x9").is_err());
-    }
 
-    #[test]
-    fn correction_retags_from_the_corrected_words() {
-        let mut chart = chart_fixture();
-        chart.notes = vec![ex("x1", "Your son is in cancer.", &["sign:cancer"])];
-        correct_in(&mut chart, "x1", "Your sun is in cancer.").unwrap();
-        let ex = &chart.notes[0];
-        assert_eq!(ex.text, "Your sun is in cancer.");
-        assert!(ex.tags.contains(&"planet:sun".to_string()), "tags: {:?}", ex.tags);
-        assert!(ex.tags.contains(&"sign:cancer".to_string()));
-    }
 
-    #[test]
-    fn added_passage_validates_tags_and_continues_ids_past_gaps() {
-        let mut chart = chart_fixture();
-        // merged lists leave gaps: x1, x5
-        chart.notes = vec![
-            ex("x1", "First.", &["planet:sun"]),
-            ex("x5", "Fifth.", &["planet:moon"]),
-        ];
-        assert!(add_in(&mut chart, "Note.", vec!["planet:vulcan".into()]).is_err());
-        add_in(&mut chart, "A note on the moon.", vec!["planet:moon".into()]).unwrap();
-        let added = chart.notes.last().unwrap();
-        assert_eq!(added.id, "x6");
-        assert_eq!(added.tags, vec!["planet:moon"]);
-        assert!(add_in(&mut chart, "   ", vec![]).is_err());
-    }
 
     #[test]
     fn resolve_input_carries_the_calculation_and_gates_the_time() {
@@ -1443,55 +1299,15 @@ mod tests {
             .is_err());
     }
 
-    #[test]
-    fn delete_removes_by_id_and_rejects_unknown() {
-        let mut list = vec![ex("x1", "One.", &["planet:sun"]), ex("x2", "Two.", &["planet:moon"])];
-        delete_in(&mut list, "x1").unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].id, "x2");
-        assert!(delete_in(&mut list, "x9").is_err());
-    }
 
-    #[test]
-    fn appended_takes_never_collide_with_added_passage_ids() {
-        // add past a merge gap, then route a take: ids must stay unique
-        let mut chart = chart_fixture();
-        chart.notes = vec![ex("x1", "First.", &["planet:sun"]), ex("x5", "Fifth.", &["planet:moon"])];
-        add_in(&mut chart, "A note.", vec!["planet:sun".into()]).unwrap(); // x6
-        let take = astro::route::Transcript::from_segments([astro::contract::Segment {
-            start: 0.0,
-            text: "The moon in pisces.".into(),
-        }]);
-        route_into(&mut chart, &take, Filing::Append);
-        let mut ids: Vec<&str> = chart.notes.iter().map(|e| e.id.as_str()).collect();
-        let before = ids.len();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), before, "duplicate excerpt ids: {ids:?}");
-    }
 
-    #[test]
-    fn an_added_note_without_tags_is_filed_by_the_router() {
-        let mut chart = chart_fixture();
-        add_in(&mut chart, "The sun rules this whole chart.", vec![]).unwrap();
-        let added = chart.notes.last().unwrap();
-        assert!(added.tags.contains(&"planet:sun".to_string()), "tags: {:?}", added.tags);
-        assert_eq!(added.at, None, "typed by hand, so it points into no recording");
-    }
 
-    #[test]
-    fn correction_without_router_hits_keeps_old_tags() {
-        let mut chart = chart_fixture();
-        chart.notes = vec![ex("x1", "Something vague.", &["house:2"])];
-        correct_in(&mut chart, "x1", "Still nothing astrological here.").unwrap();
-        assert_eq!(chart.notes[0].tags, vec!["house:2"]);
-        assert!(correct_in(&mut chart, "x1", "   ").is_err());
-    }
 
     // ---- the journal's cross-reading view ----
 
-    fn anchor() -> journal::Anchor {
-        journal::Anchor {
+    fn anchor() -> Chart {
+        Chart {
+            id: "c1".into(),
             kind: "moment".into(),
             seed: astro::contract::BirthSeed {
                 place_id: 2_950_159,
@@ -1502,7 +1318,7 @@ mod tests {
             house_system: "whole-sign".into(),
             ayanamsa: None,
             locale: "en".into(),
-            reading: None,
+            person: None,
         }
     }
 
@@ -1548,28 +1364,6 @@ mod tests {
         assert!(chart_of(&nonsense).is_err(), "an unknown code is refused, not defaulted");
     }
 
-    /// The migration runs once — but "once" has to mean once *per install that
-    /// had something to migrate*, not once per launch.
-    #[test]
-    fn a_migration_waits_for_a_library_to_migrate() {
-        // An existing install, readings folder set: the case the sweep exists for.
-        assert!(needs_migrating(None, true));
-        assert!(needs_migrating(Some(0), true));
-        // Already brought forward.
-        assert!(!needs_migrating(Some(prefs::SCHEMA_VERSION), true));
-        // Ahead of us — a newer build wrote this preferences file. Leave it be
-        // rather than sweeping on its behalf.
-        assert!(!needs_migrating(Some(prefs::SCHEMA_VERSION + 1), true));
-
-        // No readings folder: nothing to migrate, and crucially not recorded as
-        // done — one may be configured tomorrow, and the readings already in it
-        // would otherwise never be reached.
-        assert!(!needs_migrating(None, false));
-        assert!(
-            needs_migrating(None, true),
-            "the same install, once it has a folder, still has a migration to run"
-        );
-    }
 
     /// A journal row carries no chart, so its elements have to name themselves
     /// from the id and the row's language alone — and nobody searches for
@@ -1581,6 +1375,7 @@ mod tests {
         assert_eq!(tag_label("sign:leo", En), "Leo");
         assert_eq!(tag_label("house:5", En), "Fifth House");
         assert_eq!(tag_label("aspect:sun-moon", En), "Sun – Moon");
+        assert_eq!(tag_label("kind:trine", En), "trine");
 
         // The reading's language, not the app's — a note written under a
         // Russian reading searches in Russian wherever it is shown.
@@ -1599,15 +1394,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_recording_offset_reads_as_milliseconds() {
-        assert_eq!(offset_ms("00:00:00"), 0);
-        assert_eq!(offset_ms("00:00:42"), 42_000);
-        assert_eq!(offset_ms("01:02:03"), 3_723_000);
-        // A written note and an untimestamped transcript both have no anchor,
-        // and both must land on the reading's own instant rather than skew it.
-        assert_eq!(offset_ms(""), 0);
-        assert_eq!(offset_ms("garbage"), 0);
-        assert_eq!(offset_ms("00:00"), 0, "a partial anchor is not half an offset");
-    }
 }

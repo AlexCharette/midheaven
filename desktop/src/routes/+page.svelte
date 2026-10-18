@@ -21,6 +21,7 @@
     whyCannotRecord,
   } from "$lib/session.svelte";
   import { busy, during, isBusy, setProgress } from "$lib/busy.svelte";
+  import { clearNotes, notes, setNotes } from "$lib/notes.svelte";
   import { clearPins, mode, resetFocus, setMode, visibleNotes } from "$lib/focus.svelte";
   import { canRecord, loadCalcOptions, loadLocales, modelPath, setModelPath } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
@@ -38,7 +39,7 @@
   // Which notes the hover and the pins add up to is the focus module's rule,
   // not this view's — the hover-preview half of it used to live here, apart from
   // the pin rule it completes.
-  const visible = $derived(reading ? visibleNotes(reading) : []);
+  const visible = $derived(reading ? visibleNotes(notes()) : []);
   // A local binding so the template can narrow the discriminated phase.
   const phase = $derived(busy());
 
@@ -103,10 +104,12 @@
     try {
       // `transcribe` rather than `compute`: the backend reports whole-percent
       // progress through `setProgress`, which only lands in that phase.
+      // A landed take hands back the reading's notes, not a chart: the sky
+      // did not change, only what was said about it.
       const routed = await during("transcribe", stopRecording);
-      updateChart(routed);
+      setNotes(routed);
       // English: this whole sentence has no Russian yet, like the forms'.
-      notify(`${routed.excerpts.length} notes on the chart`);
+      notify(`${routed.length} notes on the chart`);
     } catch (e) {
       notify(reason(e), "error");
     }
@@ -149,6 +152,7 @@
   function back() {
     if (!leaveReading()) return;
     resetFocus();
+    clearNotes();
   }
 </script>
 
@@ -160,9 +164,9 @@
              replays its ring-draw/rise-in entrance as the transition; ChartCore
              stays mounted so the caption control keeps focus across the swap -->
         {#key reading.meta.house_system + "|" + (reading.meta.ayanamsa ?? TROPICAL)}
-          <Wheel chart={reading} />
+          <Wheel chart={reading} notes={notes()} />
         {/key}
-        <ChartCore chart={reading} />
+        <ChartCore chart={reading} notes={notes()} />
       </div>
     </figure>
 
@@ -175,7 +179,7 @@
         </span>
         <span class="apparatus-text">{t().ofSelection}</span>
         <button class="ghost" onclick={clearPins}>{t().clear}</button>
-        <span class="count apparatus-text">{fmt(t().count, { shown: visible.length, total: reading.excerpts.length })}</span>
+        <span class="count apparatus-text">{fmt(t().count, { shown: visible.length, total: notes().length })}</span>
       </div>
 
       <IndexOfElements chart={reading} />

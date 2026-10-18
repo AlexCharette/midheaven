@@ -49,20 +49,4 @@ default_ayanamsa: string | null,
  * Gazetteer id of the calculator's last-used place — written when a place
  * is picked (`set_last_place`), not by the preferences pane.
  */
-last_place_id: number | null, 
-/**
- * How far this install's saved data has been brought forward. Absent means
- * "before any migration existed", which is what every existing install
- * says and what a fresh one says until it saves.
- *
- * Not a preference — nothing in the preferences pane sets it, and a person
- * never sees it. It lives here because this is the one file the app
- * already owns per install, and a second one for a single integer would be
- * a second thing to find, back up and lose.
- *
- * Absent from the JSON and from the webview's type when unset: the
- * preferences pane builds a `Preferences` by hand and should not have to
- * carry a field it neither shows nor may change. `set_preferences` reads
- * this one from disk for the same reason.
- */
-schema_version?: number, };
+last_place_id: number | null, };

@@ -34,8 +34,8 @@ export const mode = (): Mode => store.value.mode;
 
 /** The notes the commentary shows, pins and hover preview both accounted
  * for. */
-export const visibleNotes = (chart: ChartData): Note[] =>
-  rules.visibleNotes(chart, store.value);
+export const visibleNotes = (notes: Note[]): Note[] =>
+  rules.visibleNotes(notes, store.value);
 
 /** Whether a note is part of the pinned selection. */
 export const touchesPins = (note: Note): boolean => rules.touchesPins(store.value, note);

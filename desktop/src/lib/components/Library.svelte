@@ -1,17 +1,18 @@
 <script lang="ts">
-  import { ask, open } from "@tauri-apps/plugin-dialog";
-  import { deleteReading, getPreferences, listReadings, loadChart } from "$lib/api";
+  import { ask } from "@tauri-apps/plugin-dialog";
+  import { deleteChart, getPreferences, listCharts, openChart } from "$lib/api";
   import { openReading as installReading, whyCannotOpenAnother } from "$lib/session.svelte";
   import { during, isBusy } from "$lib/busy.svelte";
   import { plural, t } from "$lib/chrome.svelte";
   import { notify } from "$lib/toasts.svelte";
-  import type { ReadingEntry } from "$lib/types";
+  import type { ChartRow } from "$lib/types";
   import { reason } from "$lib/failure";
   import { chooseReadingsDir } from "$lib/readings";
+  import { refreshNotes } from "$lib/notes.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
-  let entries = $state<ReadingEntry[]>([]);
+  let entries = $state<ChartRow[]>([]);
   let loading = $state(true);
   let err = $state("");
   let readingsDir = $state<string | null>(null);
@@ -26,7 +27,7 @@
     err = "";
     try {
       readingsDir = (await getPreferences()).readings_dir;
-      entries = await listReadings();
+      entries = await listCharts();
     } catch (e) {
       err = reason(e);
     } finally {
@@ -39,12 +40,15 @@
   // shown. Refused mid-take: it would re-seat the chart under a live recorder,
   // and the take would then land on this reading instead of the one it was
   // spoken over.
-  async function openReading(chartPath: string) {
+  async function openReading(id: string) {
     if (isBusy() || whyCannotOpenAnother()) return;
     err = "";
     try {
-      const chart = await during("compute", () => loadChart(chartPath));
-      if (installReading(chart)) notify(`opened ${chart.meta.name}'s reading`);
+      const chart = await during("compute", () => openChart(id));
+      if (installReading(chart)) {
+        await refreshNotes();
+        notify(`opened ${chart.meta.name}'s reading`);
+      }
     } catch (e) {
       err = reason(e);
     }
@@ -57,42 +61,25 @@
     if (await chooseReadingsDir()) refresh();
   }
 
-  async function openFile() {
-    const path = await open({
-      multiple: false,
-      directory: false,
-      defaultPath: readingsDir ?? undefined,
-      filters: [{ name: "Midheaven reading", extensions: ["json"] }],
-    });
-    if (typeof path === "string") openReading(path);
-  }
-
-  async function remove(ev: MouseEvent, e: ReadingEntry) {
+  async function remove(ev: MouseEvent, e: ChartRow) {
     ev.stopPropagation();
-    const who = e.name || "this";
+    const who = e.person?.name || "this";
+    const n = e.notes;
     const sure = await ask(
-      `Remove ${who}'s reading from the library?\n\n${e.dir}\n\nThe folder and its files are not recoverable.`,
+      `Remove ${who}'s reading?\n\n${n} ${n === 1 ? "note" : "notes"} written about it ` +
+        `will go with it. It is not recoverable.`,
       { title: "Midheaven", kind: "warning" },
     );
     if (!sure) return;
     try {
-      await deleteReading(e.dir);
-      entries = entries.filter((x) => x.dir !== e.dir);
+      await deleteChart(e.chart.id);
+      entries = entries.filter((x) => x.chart.id !== e.chart.id);
       notify("reading removed");
     } catch (e2) {
       err = String(e2);
     }
   }
 
-  const savedLabel = (ms: number) => {
-    const d = new Date(ms);
-    const sameYear = d.getFullYear() === new Date().getFullYear();
-    return d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      ...(sameYear ? {} : { year: "numeric" }),
-    });
-  };
 </script>
 
 <div class="library">
@@ -121,32 +108,29 @@
     </div>
   {:else}
     <ul class="list">
-      {#each entries as e (e.dir)}
+      {#each entries as e (e.chart.id)}
         <li>
           <button
             type="button"
             class="row"
-            onclick={() => openReading(e.chartPath)}
+            onclick={() => openReading(e.chart.id)}
             disabled={isBusy() || whyCannotOpenAnother() !== null}
             title={whyCannotOpenAnother() ?? undefined}
           >
             <span class="who">
-              <span class="name">{e.name || "untitled"}</span>
+              <span class="name">{e.person?.name || "untitled"}</span>
               <span class="apparatus-text sub"
-                >{e.born}{e.born && e.place ? " · " : ""}{e.place}</span
+                >{e.person?.born ?? ""}{e.person?.born && e.chart.place ? " · " : ""}{e.chart
+                  .place}</span
               >
             </span>
-            <span class="meta apparatus-text">
-              {plural(t().notes, e.excerpts)}{e.modifiedMs
-                ? ` · saved ${savedLabel(e.modifiedMs)}`
-                : ""}
-            </span>
+            <span class="meta apparatus-text">{plural(t().notes, e.notes)}</span>
           </button>
           <button
             type="button"
             class="remove"
             title="remove from library"
-            aria-label={`remove ${e.name || "this"}'s reading`}
+            aria-label={`remove ${e.person?.name || "this"}'s reading`}
             onclick={(ev) => remove(ev, e)}
           >
             ✕
@@ -157,16 +141,6 @@
   {/if}
 
   <p class="foot">
-    <button
-      type="button"
-      class="ghost"
-      onclick={openFile}
-      disabled={isBusy() || whyCannotOpenAnother() !== null}
-      title={whyCannotOpenAnother() ?? undefined}
-    >
-      open a file…
-    </button>
-    <span class="sep" aria-hidden="true">·</span>
     <button type="button" class="ghost" onclick={onclose}>← back</button>
   </p>
 </div>
@@ -267,9 +241,5 @@
     text-align: center;
     margin-top: 1.8rem;
     font-size: 0.85rem;
-  }
-  .sep {
-    color: var(--ink-3);
-    margin: 0 0.6rem;
   }
 </style>

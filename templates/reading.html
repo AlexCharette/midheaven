@@ -676,12 +676,12 @@ const CHROME = /*__CHROME__*/null;
   };
 
   const renderExcerpts = () => {
-    const visible = DATA.excerpts.filter(matches);
+    const visible = DATA.notes.filter(matches);
     document.getElementById('count').textContent =
-      DATA.excerpts.length === 0 ? T.noNotesFiled
-        : fmt(T.count, { shown: visible.length, total: DATA.excerpts.length });
+      DATA.notes.length === 0 ? T.noNotesFiled
+        : fmt(T.count, { shown: visible.length, total: DATA.notes.length });
     excerptsHost.innerHTML = visible.length === 0
-      ? `<p class="empty">${DATA.excerpts.length === 0
+      ? `<p class="empty">${DATA.notes.length === 0
           ? T.emptyNoneFiled
           : fmt(T.emptyNoMatch, { word: mode === 'all' ? T.all : T.any })}</p>`
       : '';

@@ -170,13 +170,16 @@ pub struct BuildReport {
 
 /// The whole pipeline in one call: obtain the transcript (reading a file, or
 /// transcribing audio while reporting whole-percent `progress`), compute the
-/// chart, route + verify notes into `notes`. Returns the chart and a
+/// chart, route + verify the notes. Returns the chart, the notes, and a
 /// [`BuildReport`]. This is the single entry point every frontend shares.
+///
+/// The notes come back *beside* the chart rather than on it. Whoever stores
+/// them gives them their ids; the pipeline leaves every `id` empty.
 pub fn build_reading(
     input: &chart::BirthInput,
     source: TranscriptSource,
     progress: impl FnMut(i32) + Send + 'static,
-) -> Result<(contract::ChartData, BuildReport), String> {
+) -> Result<(contract::ChartData, Vec<contract::Note>, BuildReport), String> {
     // `progress` is only consumed by the audio arm; without the feature that
     // arm is gone, so drop the callback to keep it from reading as unused.
     #[cfg(not(feature = "transcribe"))]
@@ -203,21 +206,23 @@ pub fn build_reading(
             (Some(route::Transcript::from_segments(segments)), Some(archived))
         }
     };
-    let (chart, mut report) = route_into_chart(input, transcript)?;
+    let (chart, notes, mut report) = compute_and_route(input, transcript)?;
     report.transcript = archived;
-    Ok((chart, report))
+    Ok((chart, notes, report))
 }
 
-fn route_into_chart(
+fn compute_and_route(
     input: &chart::BirthInput,
     transcript: Option<route::Transcript>,
-) -> Result<(contract::ChartData, BuildReport), String> {
-    let (mut chart, mut warnings) = chart::compute_chart_reporting(input)?;
+) -> Result<(contract::ChartData, Vec<contract::Note>, BuildReport), String> {
+    let (chart, mut warnings) = chart::compute_chart_reporting(input)?;
+    let mut notes = Vec::new();
     let mut n_routed = 0;
     if let Some(transcript) = transcript {
-        let report = route::route_into(&mut chart, &transcript, route::Filing::Fresh);
+        let (routed, report) = route::route(&transcript, input.locale);
+        notes = routed;
         n_routed = report.n_routed;
         warnings.extend(report.warnings);
     }
-    Ok((chart, BuildReport { n_routed, warnings, transcript: None }))
+    Ok((chart, notes, BuildReport { n_routed, warnings, transcript: None }))
 }

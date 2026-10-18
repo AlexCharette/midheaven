@@ -34,16 +34,12 @@
 //! Like the library and the journal before it, the root is handed in rather
 //! than fetched from an `AppHandle`, and the clock is handed in rather than
 //! read — which is what makes any of this testable.
-//!
-//! Nothing calls this yet. It lands reviewed and tested on its own so that
-//! moving the commands onto it is a rewiring rather than a rewrite.
-#![allow(dead_code)]
 
 use crate::ids;
 use astro::contract::{BirthSeed, Note};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Something the store keeps one file per.
 ///
@@ -285,22 +281,8 @@ impl Store {
         out
     }
 
-    /// Whether this root holds anything at all — the question "is there
-    /// something here to open".
-    pub fn is_empty(&self) -> bool {
-        [StoredNote::DIR, Chart::DIR, Person::DIR]
-            .iter()
-            .all(|d| !dir_has_json(&self.root.join(d)))
-    }
 }
 
-fn dir_has_json(dir: &Path) -> bool {
-    std::fs::read_dir(dir).is_ok_and(|mut rd| {
-        rd.any(|e| {
-            e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "json"))
-        })
-    })
-}
 
 #[cfg(test)]
 mod tests {
@@ -502,7 +484,6 @@ mod tests {
         let t = TempStore::new("empty");
         assert!(t.store.all::<StoredNote>().is_empty());
         assert!(t.store.get::<Chart>("c1").unwrap().is_none());
-        assert!(t.store.is_empty());
         assert!(!t.root.join("notes").exists(), "a read must not create the folder");
     }
 

@@ -54,49 +54,40 @@ describe("what a note is about", () => {
     expect(anchorFor(input, chart({ ayanamsa: "lahiri" })).ayanamsa).toBe("lahiri");
   });
 
-  it("names a subject only when there is one", () => {
-    expect(anchorFor(input, chart()).reading).toBeUndefined();
-    const about = { id: "r1", name: "Mira Holt", born: "1990-07-13 14:30" };
-    expect(anchorFor(input, chart(), about).reading).toEqual(about);
+  it("names a person only when there is one", () => {
+    expect(anchorFor(input, chart()).person).toBeUndefined();
+    expect(anchorFor(input, chart(), "p1").person).toBe("p1");
   });
 });
 
 const row = (over: Partial<JournalRow> = {}): JournalRow =>
   ({
+    id: "abc",
     writtenAt: "2026-08-04T09:12:00+02:00",
     text: "Mars is loud today.",
     tags: ["planet:mars"],
     tagLabels: ["Mars"],
-    source: {
-      kind: "journal",
-      id: "abc",
-      anchor: {
-        kind: "moment",
-        seed: { place_id: 1, date: "2026-08-04", time: "09:12" },
-        place: "Berlin, Germany",
-        houseSystem: "whole-sign",
-        locale: "en",
-      },
+    chart: {
+      id: "c1",
+      kind: "moment",
+      seed: { place_id: 1, date: "2026-08-04", time: "09:12" },
+      place: "Berlin, Germany",
+      houseSystem: "whole-sign",
+      locale: "en",
     },
     ...over,
   }) as JournalRow;
 
 const aboutMira = row({
+  id: "x1",
   text: "She kept returning to the tenth house.",
   tags: ["house:10"],
   tagLabels: ["Tenth House"],
-  source: {
-    kind: "reading",
-    noteId: "x1",
-    chartPath: "/lib/mira/chart.json",
-    dir: "/lib/mira",
-    name: "Mira Holt",
-    born: "1990-07-13 14:30",
-  },
+  person: { id: "p1", name: "Mira Holt", born: "1990-07-13 14:30" },
 });
 
 describe("finding a note again", () => {
-  it("names a reading by its person and a moment by its place", () => {
+  it("names a chart by its person, and one with no person by its place", () => {
     expect(rowSubject(aboutMira)).toBe("Mira Holt");
     expect(rowSubject(row())).toBe("Berlin, Germany");
   });

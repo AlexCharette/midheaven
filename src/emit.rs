@@ -2,7 +2,7 @@
 //! template. The template embeds all CSS/JS inline and makes no network
 //! calls, so the artifact runs from `file://`.
 
-use crate::contract::ChartData;
+use crate::contract::{ChartData, Note};
 
 const TEMPLATE: &str = include_str!("../templates/reading.html");
 const DATA: &str = "/*__DATA__*/null";
@@ -17,8 +17,25 @@ const PLATE: &str = "/*__PLATE__*/null";
 /// parallel to the Rust one, so adding a language meant editing both.
 const CHROME: &str = "/*__CHROME__*/null";
 
-pub fn emit(data: &ChartData) -> Result<String, String> {
-    let chart = serde_json::to_string(data).map_err(|e| e.to_string())?;
+/// What the artifact's `const DATA` holds: the chart's own fields, flattened,
+/// plus the notes to show against it.
+///
+/// The notes used to be a field *on* `ChartData` — spelled `excerpts` on the
+/// wire, because that name was in every saved `chart.json` and every artifact
+/// already exported. Neither constraint survives: notes are not part of a
+/// chart any more, and the artifact is the only thing that reads this shape.
+/// `emit::tests::every_data_field_the_script_reads_is_one_the_chart_emits` is
+/// what keeps this struct and the template's `DATA.x` reads in step.
+#[derive(serde::Serialize)]
+struct ArtifactData<'a> {
+    #[serde(flatten)]
+    chart: &'a ChartData,
+    notes: &'a [Note],
+}
+
+pub fn emit(data: &ChartData, notes: &[Note]) -> Result<String, String> {
+    let chart = serde_json::to_string(&ArtifactData { chart: data, notes })
+        .map_err(|e| e.to_string())?;
     let plate = serde_json::to_string(&crate::plate::PLATE).map_err(|e| e.to_string())?;
     let loc = crate::i18n::Locale::parse(&data.meta.locale);
     // The plate title is shared with the PDF, so it lives beside the chrome
@@ -50,8 +67,12 @@ pub fn emit(data: &ChartData) -> Result<String, String> {
 
 /// Render the artifact and write it — the emit-then-write idiom shared by
 /// the CLI and the desktop app.
-pub fn write_artifact(data: &ChartData, path: &std::path::Path) -> Result<(), String> {
-    let html = emit(data)?;
+pub fn write_artifact(
+    data: &ChartData,
+    notes: &[Note],
+    path: &std::path::Path,
+) -> Result<(), String> {
+    let html = emit(data, notes)?;
     std::fs::write(path, html).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
@@ -62,7 +83,7 @@ mod tests {
     #[test]
     fn emitted_html_is_self_contained() {
         let data = crate::fixtures::minimal_chart();
-        let html = emit(&data).unwrap();
+        let html = emit(&data, &[]).unwrap();
         assert!(html.contains("const DATA = {"));
         assert!(!html.contains(DATA), "the chart placeholder must be filled");
         assert!(!html.contains(PLATE), "the plate placeholder must be filled");
@@ -164,8 +185,11 @@ mod tests {
     /// two names are one decision and nothing else in the suite says so.
     #[test]
     fn every_data_field_the_script_reads_is_one_the_chart_emits() {
-        let chart = serde_json::to_value(crate::fixtures::minimal_chart())
-            .expect("the chart serializes");
+        let chart = serde_json::to_value(ArtifactData {
+            chart: &crate::fixtures::minimal_chart(),
+            notes: &[],
+        })
+        .expect("the chart serializes");
         let keys = chart.as_object().expect("a chart object");
         let mut checked = 0;
         for (at, _) in TEMPLATE.match_indices("DATA.") {

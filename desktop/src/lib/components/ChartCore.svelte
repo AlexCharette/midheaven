@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChartData } from "$lib/types";
+  import type { ChartData, Note } from "$lib/types";
   import { SIDEREAL, calculationOf, catOf, planetById, signOf, textGlyph } from "$lib/types";
   // A cusp is a longitude the chart carries, not a body, so it has no derived
   // position to read — the one case in this file that still derives.
@@ -17,7 +17,7 @@
   import { fade } from "svelte/transition";
   import { reason } from "$lib/failure";
 
-  let { chart }: { chart: ChartData } = $props();
+  let { chart, notes }: { chart: ChartData; notes: Note[] } = $props();
 
   const coreSwap = { duration: swapDuration() };
 
@@ -54,9 +54,9 @@
   const focusTag = $derived(focusedTag());
   const cat = $derived(focusTag ? catOf(focusTag) : "");
   const count = $derived(
-    focusTag ? noteCount(chart, focusTag) : 0,
+    focusTag ? noteCount(notes, focusTag) : 0,
   );
-  const notes = (n: number) => plural(t().notes, n);
+  const notesWord = (n: number) => plural(t().notes, n);
 
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
   const planetGlyph = (id: string) => planetById(chart, id)?.glyph ?? "";
@@ -122,7 +122,7 @@
               {/each}
             </p>
           {/if}
-          <p class="count">{notes(count)}</p>
+          <p class="count">{notesWord(count)}</p>
         {/if}
       {:else if cat === "sign"}
         {@const s = chart.signs.find((x) => x.id === focusTag)}
@@ -136,7 +136,7 @@
               {#each occ as p (p.id)}<span class="astro g-planet" title={p.name}>{textGlyph(p.glyph)}</span>{/each}
             {:else}<span class="empty">no bodies here</span>{/if}
           </p>
-          <p class="count">{notes(count)}</p>
+          <p class="count">{notesWord(count)}</p>
         {/if}
       {:else if cat === "house"}
         {@const h = chart.houses.find((x) => x.id === focusTag)}
@@ -153,7 +153,7 @@
               {#each occ as p (p.id)}<span class="astro g-planet" title={p.name}>{textGlyph(p.glyph)}</span>{/each}
             {:else}<span class="empty">no bodies here</span>{/if}
           </p>
-          <p class="count">{notes(count)}</p>
+          <p class="count">{notesWord(count)}</p>
         {/if}
       {:else if cat === "aspect"}
         {@const a = chart.aspects.find((x) => x.id === focusTag)}
@@ -162,7 +162,7 @@
           <p class="name">{planetName(a.a)} – {planetName(a.b)}</p>
           <p class="pos sub nature-{a.nature}">{a.name} · {a.nature}</p>
           <p class="pos sub">{fmtOrb(a.orb)}</p>
-          <p class="count">{notes(count)}</p>
+          <p class="count">{notesWord(count)}</p>
         {/if}
       {/if}
       </div>

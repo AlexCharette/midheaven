@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChartData } from "$lib/types";
+  import type { ChartData, Note } from "$lib/types";
   import { catOf, planetById, textGlyph } from "$lib/types";
   import { norm360 } from "$lib/derive";
   import { PLATE } from "$lib/generated/plate";
@@ -18,9 +18,15 @@
   // aspect chords) while a ring is being dragged.
   let {
     chart,
+    notes = [],
     interactive = true,
     scrubbing = false,
-  }: { chart: ChartData; interactive?: boolean; scrubbing?: boolean } = $props();
+  }: {
+    chart: ChartData;
+    notes?: Note[];
+    interactive?: boolean;
+    scrubbing?: boolean;
+  } = $props();
 
   // Once the entrance choreography has played, late-mounting elements (an
   // aspect chord entering orb mid-scrub) must not replay its long delays —
@@ -111,7 +117,7 @@
   );
 
   // Note-density track — how much the reading dwelt on each sign.
-  const density = $derived(signDensity(chart));
+  const density = $derived(signDensity(chart, notes));
   const maxDensity = $derived(Math.max(1, ...density));
 
   // element washes (canonical treatment lives in templates/reading.html);

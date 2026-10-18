@@ -71,11 +71,11 @@ export const withMode = (f: Focus, mode: Mode): Focus => ({ ...f, mode });
  * that cannot import this one — that copy is the only other, and it says so.
  * Rust used to carry a third in `contract.rs`, documented as the shared one and
  * called by nobody. */
-export function matching(chart: ChartData, tags: string[], mode: Mode): Note[] {
-  if (tags.length === 0) return chart.excerpts;
+export function matching(notes: Note[], tags: string[], mode: Mode): Note[] {
+  if (tags.length === 0) return notes;
   const has = (note: Note) => (t: string) => note.tags.includes(t);
-  return chart.excerpts.filter((ex) =>
-    mode === "any" ? tags.some(has(ex)) : tags.every(has(ex)),
+  return notes.filter((n) =>
+    mode === "any" ? tags.some(has(n)) : tags.every(has(n)),
   );
 }
 
@@ -84,11 +84,11 @@ export function matching(chart: ChartData, tags: string[], mode: Mode): Note[] {
  * With nothing pinned, hovering an element previews just its notes; once
  * anything is pinned the hover preview stops and the list tracks the pinned
  * selection (an empty selection being the whole reading). */
-export function visibleNotes(chart: ChartData, f: Focus): Note[] {
+export function visibleNotes(notes: Note[], f: Focus): Note[] {
   if (f.pinned.length === 0 && f.hovered !== null) {
-    return matching(chart, [f.hovered], "any");
+    return matching(notes, [f.hovered], "any");
   }
-  return matching(chart, f.pinned, f.mode);
+  return matching(notes, f.pinned, f.mode);
 }
 
 /** Whether a note is part of the pinned selection — the wash the commentary
@@ -98,8 +98,8 @@ export function touchesPins(f: Focus, note: Note): boolean {
 }
 
 /** How many notes touch a single tag — the hub read-out's count. */
-export const noteCount = (chart: ChartData, tag: string): number =>
-  matching(chart, [tag], "any").length;
+export const noteCount = (notes: Note[], tag: string): number =>
+  matching(notes, [tag], "any").length;
 
 // ---- what lights up with it ----
 
@@ -148,10 +148,10 @@ export function occupiedTags(chart: ChartData): Set<string> {
  * toward a sign when it is tagged with that sign, or with a planet standing in
  * it — so a talkative Sun lights up its own sign even when the words never
  * named the sign directly. */
-export function signDensity(chart: ChartData): number[] {
+export function signDensity(chart: ChartData, notes: Note[]): number[] {
   const planetSign = new Map(chart.planets.map((p) => [p.id, p.sign]));
   const weight = new Array(12).fill(0);
-  for (const ex of chart.excerpts) {
+  for (const ex of notes) {
     const hit = new Set<number>();
     for (const tag of ex.tags) {
       if (tag.startsWith("sign:")) {

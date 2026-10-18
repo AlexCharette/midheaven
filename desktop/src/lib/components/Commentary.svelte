@@ -1,10 +1,10 @@
 <script lang="ts">
   import { ask } from "@tauri-apps/plugin-dialog";
-  import { addNote, correctNote, deleteNote, mergeUp } from "$lib/api";
+  import { deleteNote, mergeUp, writeNote } from "$lib/api";
   import { SvelteSet } from "svelte/reactivity";
   import type { ChartData, Note } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
-  import { updateChart } from "$lib/session.svelte";
+  import { notes, refreshNotes, setNotes } from "$lib/notes.svelte";
   import { isBusy } from "$lib/busy.svelte";
   import { hoveredTag, isPinned, mode, pinCount, toggle, touchesPins } from "$lib/focus.svelte";
   import { notify } from "$lib/toasts.svelte";
@@ -29,7 +29,7 @@
 
   async function join(id: string) {
     try {
-      updateChart(await mergeUp(id));
+      setNotes(await mergeUp(id));
       notify("two notes joined");
     } catch (e) {
       notify(reason(e), "error");
@@ -48,7 +48,7 @@
     editing = null;
     if (draft.trim() === original) return;
     try {
-      updateChart(await correctNote(id, draft));
+      setNotes(await writeNote(draft, [], id));
       notify("note amended — re-sectioned");
     } catch (e) {
       notify(reason(e), "error");
@@ -75,7 +75,8 @@
     });
     if (!sure) return;
     try {
-      updateChart(await deleteNote(exId));
+      await deleteNote(exId);
+      await refreshNotes();
       notify("note removed");
     } catch (e) {
       notify(reason(e), "error");
@@ -97,7 +98,7 @@
     if (!draftText.trim()) return;
     composing = false;
     try {
-      updateChart(await addNote(draftText, [...draftTags]));
+      setNotes(await writeNote(draftText, [...draftTags]));
       notify("note added");
     } catch (e) {
       notify(reason(e), "error");
@@ -120,7 +121,7 @@
 {#if visible.length === 0}
   <div class="empty-plate">
     <span class="mark" aria-hidden="true">✶</span>
-    {#if chart.excerpts.length === 0}
+    {#if notes().length === 0}
       <p class="caption">{t().emptyNoneFiled}</p>
       <p class="sub">Transcribe a session or add one by hand to begin the commentary.</p>
     {:else}
@@ -134,7 +135,7 @@
   <article class="note" class:pinned>
     <div class="folio">
       {#if pinned}<span class="pin-mark astro" title="tied to the pinned selection">☞</span>{/if}
-      {ex.time || "—"}
+      {ex.at || "—"}
       {#if mergeable && i > 0}
         <button class="curate" title="join this note to the previous one" onclick={() => join(ex.id)}
           >merge ↑</button

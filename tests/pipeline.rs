@@ -5,13 +5,13 @@ use astro::chart::compute_chart;
 use astro::fixtures;
 use astro::emit::emit;
 use astro::i18n::Locale;
-use astro::route::{Filing, LexiconRouter, Transcript, route_into_with};
+use astro::route::{LexiconRouter, Transcript, route_with};
 use astro::{TranscriptSource, build_reading};
 
 #[test]
 fn transcript_to_artifact() {
     let input = fixtures::named("Integration");
-    let mut chart = compute_chart(&input).expect("chart computes");
+    let chart = compute_chart(&input).expect("chart computes");
 
     let raw = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -21,12 +21,12 @@ fn transcript_to_artifact() {
     let transcript = Transcript::load(&raw);
 
     let router = LexiconRouter::new(Locale::En);
-    route_into_with(&mut chart, &transcript, &router, Filing::Fresh);
+    let (notes, _) = route_with(&transcript, &router);
 
     // Nine routed sentences coalesce into five notes (consecutive
     // notes sharing a tag merge); spot-check known tags.
-    assert_eq!(chart.notes.len(), 5);
-    let first = &chart.notes[0];
+    assert_eq!(notes.len(), 5);
+    let first = &notes[0];
     assert!(first.tags.contains(&"planet:sun".to_string()));
     assert!(first.tags.contains(&"sign:cancer".to_string()));
     assert!(first.tags.contains(&"house:10".to_string()));
@@ -34,12 +34,12 @@ fn transcript_to_artifact() {
     // Provenance is enforced at the gate rather than carried on the note, so
     // what is checkable here is the result of it: every stored text is still a
     // slice of the transcript it came from, and every tag is in vocabulary.
-    for note in &chart.notes {
-        assert!(transcript.text.contains(&note.text), "{:?} is not verbatim", note.id);
+    for note in &notes {
+        assert!(transcript.text.contains(&note.text), "{:?} is not verbatim", note.text);
         assert!(note.tags.iter().all(|t| astro::vocab::contains(t)));
     }
 
-    let html = emit(&chart).expect("emit succeeds");
+    let html = emit(&chart, &notes).expect("emit succeeds");
     assert!(html.contains("const DATA = {"));
     assert!(!html.contains("/*__DATA__*/null"));
     assert!(html.contains("Integration"));
@@ -48,8 +48,8 @@ fn transcript_to_artifact() {
     let source = TranscriptSource::File(
         concat!(env!("CARGO_MANIFEST_DIR"), "/examples/transcript.jsonl").into(),
     );
-    let (via_lib, report) = build_reading(&input, source, |_| {}).expect("build_reading");
-    assert_eq!(via_lib.notes.len(), chart.notes.len());
+    let (_chart, via_lib, report) = build_reading(&input, source, |_| {}).expect("build_reading");
+    assert_eq!(via_lib.len(), notes.len());
     assert_eq!(report.n_routed, 9, "router emits sentence-level spans before coalescing");
     assert!(report.warnings.is_empty(), "clean chart routes without warnings: {:?}", report.warnings);
 
@@ -60,7 +60,7 @@ fn transcript_to_artifact() {
     assert_eq!(archived.filename, "transcript.jsonl");
     assert_eq!(archived.contents, raw, "archived verbatim");
     let reparsed = Transcript::load(&archived.contents);
-    for note in &via_lib.notes {
+    for note in &via_lib {
         assert!(
             reparsed.text.contains(&note.text),
             "every note's words must still be findable in the archived transcript"
@@ -90,15 +90,14 @@ fn transcript_to_artifact() {
 #[test]
 fn routing_the_example_transcript_is_unchanged() {
     let input = fixtures::named("Integration");
-    let mut chart = compute_chart(&input).expect("chart computes");
+    compute_chart(&input).expect("chart computes");
     let raw = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/examples/transcript.jsonl"
     ))
     .expect("example transcript present");
     let transcript = Transcript::load(&raw);
-    let router = LexiconRouter::new(Locale::En);
-    route_into_with(&mut chart, &transcript, &router, Filing::Fresh);
+    let (notes, _) = route_with(&transcript, &LexiconRouter::new(Locale::En));
 
     let expected: [(&str, &str, &[&str], &str); 5] = [
         (
@@ -170,9 +169,9 @@ fn routing_the_example_transcript_is_unchanged() {
         ),
     ];
 
-    assert_eq!(chart.notes.len(), expected.len(), "note count");
-    for (note, (id, time, tags, text)) in chart.notes.iter().zip(expected) {
-        assert_eq!(note.id, id);
+    assert_eq!(notes.len(), expected.len(), "note count");
+    for (note, (_id, time, tags, text)) in notes.iter().zip(expected) {
+        let id = _id;
         assert_eq!(note.at.as_deref(), Some(time), "time anchor on {id}");
         assert_eq!(note.tags, tags, "tags on {id}");
         assert_eq!(note.text, text, "text on {id}");
@@ -184,9 +183,9 @@ fn routing_the_example_transcript_is_unchanged() {
 #[test]
 fn a_chart_only_build_archives_no_transcript() {
     let input = fixtures::named("No Words");
-    let (chart, report) =
+    let (_chart, notes, report) =
         build_reading(&input, TranscriptSource::None, |_| {}).expect("build_reading");
-    assert!(chart.notes.is_empty());
+    assert!(notes.is_empty());
     assert_eq!(report.n_routed, 0);
     assert_eq!(report.transcript, None);
 }
@@ -202,15 +201,15 @@ fn a_text_transcript_keeps_its_extension() {
     std::fs::write(&path, words).expect("write transcript");
 
     let input = fixtures::named("Plain Text");
-    let (chart, report) = build_reading(&input, TranscriptSource::File(path), |_| {})
+    let (_chart, notes, report) = build_reading(&input, TranscriptSource::File(path), |_| {})
         .expect("build_reading");
 
     let archived = report.transcript.expect("archived");
     assert_eq!(archived.filename, "transcript.txt");
     assert_eq!(archived.contents, words);
-    assert!(!chart.notes.is_empty(), "the words name chart elements");
+    assert!(!notes.is_empty(), "the words name chart elements");
     // Plain text carries no time anchors, so notes have no time.
-    assert!(chart.notes.iter().all(|n| n.at.is_none()));
+    assert!(notes.iter().all(|n| n.at.is_none()));
 
     std::fs::remove_dir_all(&dir).ok();
 }

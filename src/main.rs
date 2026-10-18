@@ -311,11 +311,11 @@ fn run(cli: Cli) -> Result<Report, String> {
             } else {
                 unreachable!("clap requires --transcript or --audio")
             };
-            let (chart, report) = build_reading(&input, source, cli_progress)?;
-            emit::write_artifact(&chart, &out)?;
+            let (chart, notes, report) = build_reading(&input, source, cli_progress)?;
+            emit::write_artifact(&chart, &notes, &out)?;
             let mut wrote = Vec::new();
             if let Some(pdf_out) = pdf {
-                astro::pdf::write_pdf(&chart, page_size, &pdf_out)?;
+                astro::pdf::write_pdf(&chart, &notes, page_size, &pdf_out)?;
                 wrote.push(pdf_out);
             }
             wrote.push(out);
@@ -324,7 +324,7 @@ fn run(cli: Cli) -> Result<Report, String> {
                 chart.planets.len(),
                 chart.aspects.len(),
                 report.n_routed,
-                chart.notes.len()
+                notes.len()
             );
             Ok(Report::Built { notice, warnings: report.warnings, summary, wrote })
         }

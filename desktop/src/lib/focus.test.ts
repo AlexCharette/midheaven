@@ -20,7 +20,7 @@ import type { ChartData, Note } from "./types";
 
 /** A chart just real enough for the focus rules: two bodies with derived signs,
  * one aspect between them, and notes tagged from the vocabulary. */
-function chart(excerpts: Note[] = []): ChartData {
+function chart(): ChartData {
   return {
     signs: Array.from({ length: 12 }, (_, i) => ({
       id: `sign:s${i}`,
@@ -48,7 +48,6 @@ function chart(excerpts: Note[] = []): ChartData {
         orb: 0,
       },
     ],
-    excerpts,
   } as unknown as ChartData;
 }
 
@@ -96,11 +95,11 @@ describe("the focused element", () => {
 });
 
 describe("matching", () => {
-  const c = chart([
+  const c = [
     ex("x1", ["planet:sun", "sign:s3"]),
     ex("x2", ["planet:moon"]),
     ex("x3", []),
-  ]);
+  ];
 
   it("shows everything for an empty selection", () => {
     expect(matching(c, [], "any")).toHaveLength(3);
@@ -123,11 +122,11 @@ describe("matching", () => {
 });
 
 describe("what the commentary shows", () => {
-  const c = chart([
+  const c = [
     ex("x1", ["planet:sun", "sign:s3"]),
     ex("x2", ["planet:moon"]),
     ex("x3", []),
-  ]);
+  ];
 
   it("is the whole reading when nothing is pinned or hovered", () => {
     expect(visibleNotes(c, NOTHING)).toHaveLength(3);
@@ -155,10 +154,10 @@ describe("what the commentary shows", () => {
 
   it("washes only the rows a pin touches, and nothing when nothing is pinned", () => {
     const f = toggled(NOTHING, "planet:sun");
-    expect(touchesPins(f, c.excerpts[0])).toBe(true);
-    expect(touchesPins(f, c.excerpts[1])).toBe(false);
+    expect(touchesPins(f, c[0])).toBe(true);
+    expect(touchesPins(f, c[1])).toBe(false);
     // a hover is not a pin
-    expect(touchesPins(peeked(NOTHING, "planet:sun"), c.excerpts[0])).toBe(false);
+    expect(touchesPins(peeked(NOTHING, "planet:sun"), c[0])).toBe(false);
   });
 });
 
@@ -197,36 +196,36 @@ describe("what lights up with the focus", () => {
 
 describe("sign density", () => {
   it("counts a note toward the sign it names", () => {
-    const d = signDensity(chart([ex("x1", ["sign:s3"])]));
+    const d = signDensity(chart(), [ex("x1", ["sign:s3"])]);
     expect(d[3]).toBe(1);
     expect(d.reduce((a, b) => a + b, 0)).toBe(1);
   });
 
   it("counts a note toward the sign a tagged body stands in", () => {
     // The words never named the sign — the Sun standing in it carries the weight.
-    const d = signDensity(chart([ex("x1", ["planet:sun"])]));
+    const d = signDensity(chart(), [ex("x1", ["planet:sun"])]);
     expect(d[3]).toBe(1);
   });
 
   it("counts a note once per sign however many of its tags point there", () => {
     // The sign and its tenant are the same hit, not two.
-    const d = signDensity(chart([ex("x1", ["planet:sun", "sign:s3"])]));
+    const d = signDensity(chart(), [ex("x1", ["planet:sun", "sign:s3"])]);
     expect(d[3]).toBe(1);
   });
 
   it("spreads a note across every sign it touches", () => {
-    const d = signDensity(chart([ex("x1", ["planet:sun", "planet:moon"])]));
+    const d = signDensity(chart(), [ex("x1", ["planet:sun", "planet:moon"])]);
     expect(d[3]).toBe(1);
     expect(d[7]).toBe(1);
   });
 
   it("ignores tags that name no sign and no body", () => {
-    const d = signDensity(chart([ex("x1", ["house:4", "aspect:sun-moon"])]));
+    const d = signDensity(chart(), [ex("x1", ["house:4", "aspect:sun-moon"])]);
     expect(d.reduce((a, b) => a + b, 0)).toBe(0);
   });
 
   it("is twelve long and all zero for a reading with no notes", () => {
-    expect(signDensity(chart())).toEqual(new Array(12).fill(0));
+    expect(signDensity(chart(), [])).toEqual(new Array(12).fill(0));
   });
 });
 

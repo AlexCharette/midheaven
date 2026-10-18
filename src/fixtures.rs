@@ -42,8 +42,8 @@ pub fn berlin_chart() -> ChartData {
     crate::chart::compute_chart(&berlin()).expect("the fixture birth computes")
 }
 
-/// A structurally valid chart with no astronomy behind it: twelve signs, houses
-/// and cusps, one body, one aspect, no notes.
+/// A structurally valid chart with no astronomy behind it: twelve signs,
+/// houses and cusps, one body, one aspect.
 ///
 /// Deliberately the *fullest* minimal chart — `validate` requires twelve of
 /// each, and a test that wants less can clear what it does not need.
@@ -104,7 +104,6 @@ pub fn minimal_chart() -> ChartData {
             orb: 0.0,
             kind: "",
         }],
-        notes: Vec::new(),
     };
     // The same filling the compute stage does, so the fixture is a chart the
     // renderers could actually be handed.
@@ -137,7 +136,6 @@ mod tests {
         let chart = minimal_chart();
         assert!(chart.validate().is_ok(), "{:?}", chart.validate());
         assert_eq!(chart.house_sweeps.len(), 12, "derive::fill ran");
-        assert!(chart.notes.is_empty(), "a caller adds the notes it wants");
     }
 
     #[test]

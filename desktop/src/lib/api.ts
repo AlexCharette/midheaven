@@ -19,20 +19,21 @@ import { listen } from "@tauri-apps/api/event";
 import { reason } from "./failure";
 import type { CommandName } from "./generated/commands";
 import type {
-  Anchor,
   AppChrome,
   BirthForm,
   CalculationDefaults,
+  Chart,
   ChartData,
-  JournalNote,
+  ChartRow,
   JournalRow,
   LocaleDto,
+  Note,
   OptionDto,
   PlaceDto,
   Preferences,
   PreviewDto,
   PreviewInput,
-  ReadingEntry,
+  StoredNote,
 } from "./types";
 
 /** A command the backend refused. `message` is the reason it gave, ready to
@@ -93,11 +94,15 @@ export const lastPlace = () => call<PlaceDto>("last_place");
 /** Persist the calculator's place; called on pick, never per scrub tick. */
 export const setLastPlace = (id: number) => call<void>("set_last_place", { id });
 
-export const loadChart = (path: string) => call<ChartData>("load_chart", { path });
+/** Reopen a chart from the store, by id. */
+export const openChart = (id: string) => call<ChartData>("open_chart", { id });
 
-export const listReadings = () => call<ReadingEntry[]>("list_readings");
+/** Every chart the store holds, newest first, with who it is of and how much
+ * has been written about it. */
+export const listCharts = () => call<ChartRow[]>("list_charts");
 
-export const deleteReading = (dir: string) => call<void>("delete_reading", { dir });
+/** Remove a chart and every note filed under it. The person stays. */
+export const deleteChart = (id: string) => call<void>("delete_chart", { id });
 
 export const saveArtifact = (path: string) => call<string>("save_artifact", { path });
 
@@ -114,39 +119,43 @@ export const onBuildWarnings = (handler: (warnings: string[]) => void) =>
 export const startRecording = (model: string) =>
   call<void>("start_recording", { model });
 
-export const stopRecording = () => call<ChartData>("stop_recording");
+/** A landed take's notes — the whole reading's, in reading order. */
+export const stopRecording = () => call<Note[]>("stop_recording");
 
-export const mergeUp = (id: string) => call<ChartData>("merge_up", { id });
-
-export const correctNote = (id: string, text: string) =>
-  call<ChartData>("correct_note", { id, text });
-
-export const addNote = (text: string, tags: string[]) =>
-  call<ChartData>("add_note", { text, tags });
-
-export const deleteNote = (id: string) => call<ChartData>("delete_note", { id });
-
-// ---- the journal ----
+// ---- notes ----
 //
-// The three above work on the open reading's chart. These three work on notes
-// that belong to no reading, and reach disk directly rather than through the
-// session — which is why none of them returns a `ChartData`.
+// One path. These used to be two: four commands against the open chart's note
+// list, and three more against a separate journal. Every one of them returns
+// the reading's notes rather than a chart, because a chart no longer holds
+// any.
 
-/** Write a note to the journal: a new one with no `id`, an amendment with one.
- * Tags are checked against the chart the anchor names, backend-side. */
-export const writeJournalNote = (
+/** Every note filed under the open reading's chart, in reading order. */
+export const listNotes = () => call<Note[]>("list_notes");
+
+/** Write a note against the open reading: new with no `id`, an amendment with
+ * one. With no tags picked, the router files it from its own words. */
+export const writeNote = (text: string, tags: string[], id?: string) =>
+  call<Note[]>("write_note", { id, text, tags });
+
+/** Merge a note into the one before it in reading order. */
+export const mergeUp = (id: string) => call<Note[]>("merge_up", { id });
+
+/** Remove a note. Final. */
+export const deleteNote = (id: string) => call<void>("delete_note", { id });
+
+/** Write a note against a sky nobody is consulting over — the home page's
+ * path. The chart record is minted on the first note about that moment, so
+ * every note over one sky shares one chart. */
+export const writeMomentNote = (
   text: string,
   tags: string[],
-  anchor: Anchor,
+  anchor: Chart,
   id?: string,
-) => call<JournalNote>("write_journal_note", { id, text, tags, anchor });
+) => call<StoredNote>("write_moment_note", { id, text, tags, anchor });
 
-/** Every note the app holds — the journal's own and every saved reading's,
- * spoken and written alike — newest first. */
+/** Every note the app holds, whatever sky it was written over — newest
+ * first. */
 export const listJournal = () => call<JournalRow[]>("list_journal");
-
-export const deleteJournalNote = (id: string) =>
-  call<void>("delete_journal_note", { id });
 
 export const getPreferences = () => call<Preferences>("get_preferences");
 

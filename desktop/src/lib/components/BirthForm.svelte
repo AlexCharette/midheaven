@@ -11,6 +11,7 @@
   import { defaults, locales, setModelPath } from "$lib/options.svelte";
   import { SIDEREAL } from "$lib/types";
   import { notify } from "$lib/toasts.svelte";
+  import { clearNotes, notes, refreshNotes } from "$lib/notes.svelte";
   import CalcOptions from "./CalcOptions.svelte";
   import MomentField from "./MomentField.svelte";
   import PlacePicker from "./PlacePicker.svelte";
@@ -136,8 +137,13 @@
       // Only worth announcing the routing when a transcript was actually
       // supplied; a bare chart with no transcript routes nothing.
       if (transcript.trim()) {
-        const n = chart.excerpts.length;
+        // The take's notes are in the store, not on the chart — read them
+        // back rather than counting a field that no longer exists.
+        await refreshNotes();
+        const n = notes().length;
         notify(`${n} ${n === 1 ? "note" : "notes"} routed past the verify gate`);
+      } else {
+        clearNotes();
       }
       setModelPath(model.trim());
     } catch (e) {

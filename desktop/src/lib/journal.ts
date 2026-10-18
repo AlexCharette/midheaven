@@ -3,7 +3,7 @@
 // Rune-free and pure, so it is directly testable; the components hold the
 // state. The same split as `focus.ts`/`focus.svelte.ts`.
 
-import type { Anchor, ChartData, JournalRow, PreviewInput, Subject } from "./types";
+import type { Chart, ChartData, JournalRow, PreviewInput } from "./types";
 
 /**
  * The anchor for a note written over a previewed sky.
@@ -20,9 +20,12 @@ import type { Anchor, ChartData, JournalRow, PreviewInput, Subject } from "./typ
 export function anchorFor(
   input: PreviewInput,
   chart: ChartData,
-  subject?: Subject | null,
-): Anchor {
+  person?: string | null,
+): Chart {
   return {
+    // Minted backend-side on the first note about this sky, so every note
+    // over one moment shares one chart. Sent empty so the type is whole.
+    id: "",
     kind: "moment",
     seed: { place_id: input.place_id, date: input.date, time: input.time },
     // Overwritten backend-side from the resolved place; sent so the type is
@@ -31,14 +34,14 @@ export function anchorFor(
     houseSystem: chart.meta.house_system,
     ...(chart.meta.ayanamsa ? { ayanamsa: chart.meta.ayanamsa } : {}),
     locale: chart.meta.locale,
-    ...(subject ? { reading: subject } : {}),
+    ...(person ? { person } : {}),
   };
 }
 
 /** Who a row is about, for display: the person when there is one, else the
  * place the sky was over. */
 export function rowSubject(row: JournalRow): string {
-  return row.source.kind === "reading" ? row.source.name : row.source.anchor.place;
+  return row.person?.name ?? row.chart.place;
 }
 
 /**
@@ -62,7 +65,7 @@ export function matches(row: JournalRow, query: string): boolean {
 }
 
 /** The rows a search leaves. Order is the backend's and is never re-sorted
- * here — it composed instants this side cannot see. */
+ * here. */
 export function search(rows: JournalRow[], query: string): JournalRow[] {
   return rows.filter((r) => matches(r, query));
 }

@@ -7,11 +7,16 @@
   // readings outnumber the notes anyone typed, so the search field is not a
   // convenience here, it is how the view is used.
   //
+  // A row used to carry a `source` saying which of two stores it came from,
+  // and every control here branched on it. There is one store now: a row is
+  // a note, and the chart it names is either someone's or a moment nobody
+  // was consulting over.
+  //
   // Follows `Library.svelte`'s grammar deliberately: same rubric, same empty
   // plate, same manicule sliding in on a row. They are the two ways back into
   // work already done.
   import { ask } from "@tauri-apps/plugin-dialog";
-  import { deleteJournalNote, listJournal, loadChart } from "$lib/api";
+  import { deleteNote, listJournal, openChart } from "$lib/api";
   import { during, isBusy } from "$lib/busy.svelte";
   import { openReading as installReading, whyCannotOpenAnother } from "$lib/session.svelte";
   import { rowSubject, search } from "$lib/journal";
@@ -20,8 +25,9 @@
   import { notify } from "$lib/toasts.svelte";
   import { chooseReadingsDir } from "$lib/readings";
   import { getPreferences } from "$lib/api";
-  import type { JournalRow, RowSource } from "$lib/types";
+  import type { Chart, JournalRow } from "$lib/types";
   import { SIDEREAL, TROPICAL } from "$lib/types";
+  import { refreshNotes } from "$lib/notes.svelte";
   import { reason } from "$lib/failure";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -56,15 +62,18 @@
     if (await chooseReadingsDir()) refresh();
   }
 
-  /** Open the reading a note was spoken or written in. Refused mid-take for
-   * the same reason the library's is: it would re-seat the chart under a live
+  /** Open the reading a note belongs to. Refused mid-take for the same
+   * reason the library's is: it would re-seat the chart under a live
    * recorder. */
-  async function openIts(source: Extract<RowSource, { kind: "reading" }>) {
+  async function openIts(row: JournalRow) {
     if (isBusy() || whyCannotOpenAnother()) return;
     err = "";
     try {
-      const chart = await during("compute", () => loadChart(source.chartPath));
-      if (installReading(chart)) notify(`opened ${chart.meta.name}'s reading`);
+      const chart = await during("compute", () => openChart(row.chart.id));
+      if (installReading(chart)) {
+        await refreshNotes();
+        notify(`opened ${chart.meta.name}'s reading`);
+      }
     } catch (e) {
       err = reason(e);
     }
@@ -72,8 +81,8 @@
 
   /** Put the calculator back on the sky a note was written over. The seed is
    * all it takes — the chart was never stored, only what recomputes it. */
-  function restoreIts(source: Extract<RowSource, { kind: "journal" }>) {
-    const { seed, houseSystem, ayanamsa, locale, place } = source.anchor;
+  function restoreIts(chart: Chart) {
+    const { seed, houseSystem, ayanamsa, locale, place } = chart;
     const minutes = toMinutes(seed.date, seed.time);
     if (minutes === null) {
       err = "that note's moment cannot be read";
@@ -90,9 +99,13 @@
     onclose();
   }
 
+  /** A row about someone opens their reading; a row about a moment nobody
+   * was consulting over puts the calculator back on that sky. */
+  const isReading = (row: JournalRow) => row.person !== undefined;
+
   function jump(row: JournalRow) {
-    if (row.source.kind === "reading") openIts(row.source);
-    else restoreIts(row.source);
+    if (isReading(row)) openIts(row);
+    else restoreIts(row.chart);
   }
 
   async function remove(ev: MouseEvent, row: JournalRow, id: string) {
@@ -103,20 +116,15 @@
     });
     if (!sure) return;
     try {
-      await deleteJournalNote(id);
-      rows = rows.filter((r) => !(r.source.kind === "journal" && r.source.id === id));
+      await deleteNote(id);
+      rows = rows.filter((r) => r.id !== id);
       notify("note removed");
     } catch (e) {
       err = reason(e);
     }
   }
 
-  /** A note's identity across a re-search: its journal id, or its id within
-   * the reading that holds it. Both are unique; neither is unique on its own. */
-  const keyOf = (row: JournalRow) =>
-    row.source.kind === "journal"
-      ? `journal:${row.source.id}`
-      : `${row.source.dir}:${row.source.noteId}`;
+  // A note's id is unique across the whole store, so it is the key.
 
   const dayLabel = (iso: string) => {
     const d = new Date(iso);
@@ -170,15 +178,14 @@
       <p class="apparatus-text note">Nothing here matches “{query}”.</p>
     {:else}
       <ul class="list">
-        {#each shown as row (keyOf(row))}
+        {#each shown as row (row.id)}
           <li>
             <button
               type="button"
               class="row"
               onclick={() => jump(row)}
-              disabled={row.source.kind === "reading" &&
-                (isBusy() || whyCannotOpenAnother() !== null)}
-              title={row.source.kind === "reading"
+              disabled={isReading(row) && (isBusy() || whyCannotOpenAnother() !== null)}
+              title={isReading(row)
                 ? (whyCannotOpenAnother() ?? "open this reading")
                 : "put the calculator back on this sky"}
             >
@@ -191,18 +198,15 @@
               </span>
               <span class="meta apparatus-text">{dayLabel(row.writtenAt)}</span>
             </button>
-            {#if row.source.kind === "journal"}
-              {@const jid = row.source.id}
-              <button
-                type="button"
-                class="remove"
-                title="remove this note"
-                aria-label="remove this note"
-                onclick={(ev) => remove(ev, row, jid)}
-              >
-                ✕
-              </button>
-            {/if}
+            <button
+              type="button"
+              class="remove"
+              title="remove this note"
+              aria-label="remove this note"
+              onclick={(ev) => remove(ev, row, row.id)}
+            >
+              ✕
+            </button>
           </li>
         {/each}
       </ul>

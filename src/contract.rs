@@ -1,7 +1,12 @@
-//! The `ChartData` contract between pipeline stages, mirroring the TS
-//! interface in `docs/natal-reading-indexer.md`. The chart stage produces it,
-//! the routing stage fills `excerpts`, and the emit stage serializes it into
-//! the HTML artifact as `const DATA = {...}`. No stage owns it.
+//! The `ChartData` contract between pipeline stages: a computed sky and
+//! nothing else. The chart stage produces it and the emit stage serializes it
+//! into the HTML artifact. No stage owns it.
+//!
+//! It used to carry the notes filed under it, which made the chart the thing
+//! that owned them — a note could not exist without one, and "every note I
+//! have written about this planet" could only ever be asked of a single
+//! reading. Notes live in their own store now and are handed to the renderers
+//! beside the chart rather than inside it.
 
 use serde::{Deserialize, Serialize};
 
@@ -21,12 +26,6 @@ pub struct ChartData {
     pub signs: Vec<Ref>,
     pub houses: Vec<HouseRef>,
     pub aspects: Vec<Aspect>,
-    /// Every note filed under this chart, spoken and written alike. The wire
-    /// name stays `excerpts`: it is in every saved `chart.json` and in the
-    /// `const DATA` of every artifact ever exported, both of which must keep
-    /// loading. The word the project uses is *note* — see CONTEXT.md.
-    #[serde(rename = "excerpts")]
-    pub notes: Vec<Note>,
 }
 
 impl ChartData {
@@ -79,13 +78,6 @@ impl ChartData {
         for a in &self.aspects {
             check_id(&a.id, "aspect")?;
         }
-        for note in &self.notes {
-            for tag in &note.tags {
-                if !crate::vocab::contains(tag) {
-                    return Err(format!("note {:?} references unknown tag {tag:?}", note.id));
-                }
-            }
-        }
         if self.meta.logo.as_deref().is_some_and(|l| !l.starts_with("data:")) {
             return Err("meta.logo must be an embedded data: URI".to_string());
         }
@@ -131,6 +123,23 @@ pub struct Segment {
 // which is what made it safe to delete.
 
 impl Note {
+    /// Every tag is in the vocabulary, and the words are not only whitespace.
+    ///
+    /// `ChartData::validate` used to check a note's tags, back when notes rode
+    /// on the chart. They arrive from their own store now, and from the same
+    /// untrusted direction a chart does, so the check moved with them.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.text.trim().is_empty() {
+            return Err(format!("note {:?} has no words", self.id));
+        }
+        for tag in &self.tags {
+            if !crate::vocab::contains(tag) {
+                return Err(format!("note {:?} references unknown tag {tag:?}", self.id));
+            }
+        }
+        Ok(())
+    }
+
     /// Merge a later note into this one: tags become the sorted union, this
     /// note's `at` anchor is kept, and the merged `text` is the caller's
     /// decision.
@@ -347,12 +356,8 @@ pub struct Note {
 mod tests {
     use super::*;
 
-    /// The shared minimal chart plus one note, so the vocabulary check has
-    /// something to check. Every assertion below mutates a copy of it.
     fn valid_chart() -> ChartData {
-        let mut chart = crate::fixtures::minimal_chart();
-        chart.notes = vec![crate::fixtures::note("x1", "hi", &["planet:sun"])];
-        chart
+        crate::fixtures::minimal_chart()
     }
 
     #[test]
@@ -376,13 +381,6 @@ mod tests {
         c.aspects[0].id = "aspect:".into();
         assert!(c.validate().is_err());
 
-        // a tag outside the vocabulary. `planet:pluto` would not do: the
-        // vocabulary is global now, so Pluto is a real tag whether or not this
-        // particular chart carries the body.
-        let mut c = valid_chart();
-        c.notes[0].tags = vec!["planet:vulcan".into()];
-        assert!(c.validate().is_err());
-
         // fewer than twelve signs → PDF/wheel index panic
         let mut c = valid_chart();
         c.signs.pop();
@@ -397,6 +395,22 @@ mod tests {
         let mut c = valid_chart();
         c.planets[0].house = 0;
         assert!(c.validate().is_err());
+    }
+
+    /// A note arrives from its own store, from the same untrusted direction a
+    /// chart does, so it checks itself. `planet:pluto` would not do as the bad
+    /// tag here: the vocabulary is global, so Pluto is real whether or not any
+    /// particular chart carries the body.
+    #[test]
+    fn a_note_refuses_an_unknown_tag_and_empty_words() {
+        let ok = crate::fixtures::note("x1", "hi", &["planet:sun", "kind:trine"]);
+        assert!(ok.validate().is_ok());
+
+        let bad = crate::fixtures::note("x1", "hi", &["planet:vulcan"]);
+        assert!(bad.validate().is_err());
+
+        let empty = crate::fixtures::note("x1", "   ", &["planet:sun"]);
+        assert!(empty.validate().is_err());
     }
 
     /// An absent time anchor is absent from the JSON, not an empty string.
@@ -424,15 +438,15 @@ mod tests {
         assert_eq!(serde_json::from_str::<Note>(&json).unwrap(), spoken);
     }
 
-    /// The field renamed; the JSON key did not.
+    /// A chart is a sky and nothing else. `excerpts` was the wire name of the
+    /// note list it used to carry, kept for compatibility with saved files
+    /// that no longer need keeping.
     #[test]
-    fn notes_are_still_spelled_excerpts_on_the_wire() {
+    fn a_chart_carries_no_notes_under_any_name() {
         let json = serde_json::to_string(&valid_chart()).unwrap();
-        assert!(json.contains("\"excerpts\":["), "{json}");
-        assert!(!json.contains("\"notes\":"), "{json}");
-
-        let back: ChartData = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.notes.len(), 1);
+        for gone in ["\"excerpts\"", "\"notes\""] {
+            assert!(!json.contains(gone), "{gone} is still on the wire: {json}");
+        }
     }
 
     /// Absent on everything written before it existed, and absent from the

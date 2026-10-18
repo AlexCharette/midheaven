@@ -208,7 +208,12 @@ fn note_block<'c>(
 }
 
 /// Everything that flows on pages 2+ — index of elements, then commentary.
-pub(crate) fn build_flow<'c>(chart: &'c ChartData, fonts: &Fonts, frame: &Frame) -> Vec<FlowLine<'c>> {
+pub(crate) fn build_flow<'c>(
+    chart: &'c ChartData,
+    notes: &'c [Note],
+    fonts: &Fonts,
+    frame: &Frame,
+) -> Vec<FlowLine<'c>> {
     let margin = frame.margin;
     let cw = frame.content_w();
     let loc = Locale::parse(&chart.meta.locale);
@@ -251,11 +256,11 @@ pub(crate) fn build_flow<'c>(chart: &'c ChartData, fonts: &Fonts, frame: &Frame)
         }
     }
 
-    if !chart.notes.is_empty() {
+    if !notes.is_empty() {
         flow.push(spacer(20.0));
         flow.push(rubric(frame, loc.pdf().commentary));
         flow.push(spacer(4.0));
-        for note in &chart.notes {
+        for note in notes {
             flow.extend(note_block(chart, note, fonts, frame));
         }
     }
