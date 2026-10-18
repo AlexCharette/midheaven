@@ -68,7 +68,7 @@
   let draftPerson = $state("");
   let saving = $state(false);
 
-  const filtered = $derived(filter.person !== undefined);
+  const filtered = $derived(filter.person !== undefined || filter.tags.length > 0);
   const shown = $derived(search(rows, query));
 
   // once on mount (no reactive reads in the body)
@@ -95,6 +95,12 @@
     } finally {
       loading = false;
     }
+  }
+
+  /** Narrow to one element — what clicking a chip does, anywhere. */
+  async function byTag(tag: string) {
+    filter = { ...filter, tags: tag ? [tag] : [], mode: "any" };
+    await refresh();
   }
 
   /** Narrow to one person, or to everyone. */
@@ -350,6 +356,14 @@
         </span>
       {/if}
 
+      {#if filter.tags.length > 0}
+        <span class="narrowed apparatus-text">
+          filed under
+          {#each filter.tags as t}<span class="chip-static">{t}</span>{/each}
+          <button type="button" class="ghost" onclick={() => byTag("")}>clear</button>
+        </span>
+      {/if}
+
       {#if !composing}
         <button type="button" class="ghost" onclick={beginCompose}>write a note…</button>
       {/if}
@@ -410,11 +424,24 @@
                 <span class="apparatus-text sub">
                   <span class="mark astro" title={rowMark(row).title}>{rowMark(row).glyph}</span>
                   {rowSubject(row)}
-                  {#each row.tags as tag, i}<span class="chip">{row.tagLabels[i]}</span>{/each}
                 </span>
               </span>
               <span class="meta apparatus-text">{dayLabel(row.writtenAt)}</span>
             </button>
+            <!-- Outside the row button: a chip is its own control, and a
+                 button inside a button is not markup a browser agrees on. -->
+            {#if row.tags.length > 0}
+              <span class="chips apparatus-text">
+                {#each row.tags as tag, i}
+                  <button
+                    type="button"
+                    class="chip"
+                    title={`everything filed under ${row.tagLabels[i]}`}
+                    onclick={() => byTag(tag)}>{row.tagLabels[i]}</button
+                  >
+                {/each}
+              </span>
+            {/if}
             <button
               type="button"
               class="remove"
@@ -484,6 +511,41 @@
   .mark {
     color: var(--ink-3);
     margin-right: 0.35rem;
+  }
+  /* Chips sit under the row rather than inside its button: a chip is its
+     own control, and clicking one asks a different question from clicking
+     the row. */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    grid-column: 1;
+    padding: 0 0 0.3rem 0.2rem;
+  }
+  .chips .chip {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    color: var(--ink-3);
+    font: inherit;
+    font-size: 0.74rem;
+    padding: 0.02rem 0.32rem;
+    cursor: pointer;
+  }
+  .chips .chip:hover {
+    color: var(--ink);
+    border-color: var(--hairline);
+  }
+  .narrowed {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+  }
+  .chip-static {
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 0.02rem 0.32rem;
+    font-size: 0.74rem;
   }
 
   /* The standing question: who it is about, and the views kept of it. Sits
@@ -582,8 +644,11 @@
     padding: 0;
     border-top: 1px solid var(--line);
   }
+  /* A grid rather than a row, so the chips can sit under the note they
+     belong to instead of competing with it for the same line. */
   .list li {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto;
     align-items: center;
     border-bottom: 1px solid var(--line);
   }
