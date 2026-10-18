@@ -1,2 +1,6 @@
 /target
 desktop/src-tauri/gen/
+
+# Impeccable skill scratch (decision-page state)
+.impeccable/
+.playwright-mcp/
