@@ -249,10 +249,7 @@ async fn build(
     )
     .map_err(|e| e.to_string())?;
 
-    // The whole pipeline, on the blocking pool. `build_reading` hands back the
-    // transcript it routed from (`report.transcript`), which is what the
-    // readings library persists verbatim — the desktop used to fork this entire
-    // match for want of that one value.
+    // The whole pipeline, on the blocking pool.
     let progress_app = app.clone();
     let (mut chart, routed, report) = tauri::async_runtime::spawn_blocking(move || {
         astro::build_reading(&input, source, move |pct| {

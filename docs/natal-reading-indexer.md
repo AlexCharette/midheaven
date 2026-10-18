@@ -1,5 +1,12 @@
 # Natal Reading Indexer — Build Brief
 
+> **Historical.** This is the brief the project was built from, kept for the
+> reasoning behind the artifact, the Verify gate and the closed vocabulary. It
+> is no longer an accurate description of the data model: notes are their own
+> records rather than an `excerpts` list on a chart, they carry no `span`, and
+> the vocabulary is global with five categories. `CONTEXT.md` is the current
+> account.
+
 ## Goal
 Turn a recorded birth-chart reading (≈1h call) into a **single, self-contained HTML artifact** where the astrologer's *verbatim* words are filed under the chart elements they refer to — planets, signs, houses, and aspects (edges) — and can be filtered by clicking a **computed chart wheel** or element toggles. One excerpt may attach to many elements.
 

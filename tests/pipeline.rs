@@ -53,19 +53,6 @@ fn transcript_to_artifact() {
     assert_eq!(report.n_routed, 9, "router emits sentence-level spans before coalescing");
     assert!(report.warnings.is_empty(), "clean chart routes without warnings: {:?}", report.warnings);
 
-    // The transcript comes back for callers that archive the reading — the
-    // desktop writes exactly this into the library folder. Verbatim, and named
-    // after the source's kind, so a saved note's span still points at it.
-    let archived = report.transcript.expect("a file build archives its transcript");
-    assert_eq!(archived.filename, "transcript.jsonl");
-    assert_eq!(archived.contents, raw, "archived verbatim");
-    let reparsed = Transcript::load(&archived.contents);
-    for note in &via_lib {
-        assert!(
-            reparsed.text.contains(&note.text),
-            "every note's words must still be findable in the archived transcript"
-        );
-    }
 }
 
 /// What routing the example transcript produces, stated in full, in the terms
@@ -178,22 +165,21 @@ fn routing_the_example_transcript_is_unchanged() {
     }
 }
 
-/// A build with no transcript archives nothing — the chart is the whole
-/// reading, and the library has no transcript file to write.
+/// A build with no transcript routes nothing — the chart is the whole
+/// reading.
 #[test]
-fn a_chart_only_build_archives_no_transcript() {
+fn a_chart_only_build_produces_no_notes() {
     let input = fixtures::named("No Words");
     let (_chart, notes, report) =
         build_reading(&input, TranscriptSource::None, |_| {}).expect("build_reading");
     assert!(notes.is_empty());
     assert_eq!(report.n_routed, 0);
-    assert_eq!(report.transcript, None);
 }
 
-/// A plain-text transcript is archived under its own extension, not forced to
-/// `.jsonl` — the desktop's library folder shows the words the way they arrived.
+/// A plain-text transcript routes like any other — it simply carries no time
+/// anchors, so its notes point into no recording.
 #[test]
-fn a_text_transcript_keeps_its_extension() {
+fn a_plain_text_transcript_routes_without_anchors() {
     let dir = std::env::temp_dir().join("midheaven-pipeline-text-transcript");
     std::fs::create_dir_all(&dir).expect("temp dir");
     let path = dir.join("session.txt");
@@ -201,14 +187,10 @@ fn a_text_transcript_keeps_its_extension() {
     std::fs::write(&path, words).expect("write transcript");
 
     let input = fixtures::named("Plain Text");
-    let (_chart, notes, report) = build_reading(&input, TranscriptSource::File(path), |_| {})
+    let (_chart, notes, _report) = build_reading(&input, TranscriptSource::File(path), |_| {})
         .expect("build_reading");
 
-    let archived = report.transcript.expect("archived");
-    assert_eq!(archived.filename, "transcript.txt");
-    assert_eq!(archived.contents, words);
     assert!(!notes.is_empty(), "the words name chart elements");
-    // Plain text carries no time anchors, so notes have no time.
     assert!(notes.iter().all(|n| n.at.is_none()));
 
     std::fs::remove_dir_all(&dir).ok();

@@ -21,7 +21,6 @@ function chart(over: Partial<ChartData> = {}): ChartData {
     aspects: [
       { id: "aspect:sun-moon", glyph: "x", name: "Trine", a: "planet:sun", b: "planet:moon", nature: "harmonious", orb: 0 },
     ],
-    excerpts: [],
     ...over,
   } as unknown as ChartData;
 }

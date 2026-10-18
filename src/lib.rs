@@ -2,7 +2,8 @@
 //! offline HTML artifact where the astrologer's *verbatim* words are filed
 //! under the chart elements they refer to.
 //!
-//! Four-stage pipeline (build brief: `docs/natal-reading-indexer.md`):
+//! Four-stage pipeline (the original brief, now historical, is
+//! `docs/natal-reading-indexer.md`; `CONTEXT.md` is the current account):
 //! 1. **Transcribe** — [`transcribe`]: local whisper.cpp over a WAV file
 //!    (cross-platform, user-supplied ggml model); external transcripts are
 //!    equally welcome as plain text or timestamped JSONL via
@@ -141,31 +142,20 @@ pub fn birth_at_place(
     }
 }
 
-/// The words a build routed from, in the form they should be archived: a
-/// filename following the source's kind (`transcript.jsonl` for a recording,
-/// `transcript.{ext}` for a file) and their verbatim contents.
+/// What a full build produced besides the chart and its notes: the span count
+/// the router emitted before gating, and any non-fatal warnings (a
+/// DST-ambiguous birth time, Verify-gate rejections) for the caller to
+/// surface.
 ///
-/// A library that saves a reading has to save these too — a note is verbatim
-/// by definition, and without the transcript its span points at nothing, so
-/// provenance can no longer be re-checked. [`build_reading`] therefore hands the
-/// transcript back rather than consuming it: the desktop used to fork the whole
-/// transcript-acquisition match for want of this one value.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ArchivedTranscript {
-    pub filename: String,
-    pub contents: String,
-}
-
-/// What a full build produced besides the chart: the span count the router
-/// emitted before gating, any non-fatal warnings (a DST-ambiguous birth
-/// time, Verify-gate rejections) for the caller to surface, and the transcript
-/// it routed from, for callers that persist the reading.
+/// It used to hand the transcript back too, as an `ArchivedTranscript` with a
+/// filename, because a saved reading had to keep the words its notes' spans
+/// pointed into — without them provenance could not be re-checked. Notes do
+/// not carry spans and readings are not folders, so there is nothing left for
+/// a stored transcript to be checked against.
 #[derive(Debug, Default)]
 pub struct BuildReport {
     pub n_routed: usize,
     pub warnings: Vec<String>,
-    /// `None` when the build had no transcript at all.
-    pub transcript: Option<ArchivedTranscript>,
 }
 
 /// The whole pipeline in one call: obtain the transcript (reading a file, or
@@ -184,31 +174,22 @@ pub fn build_reading(
     // arm is gone, so drop the callback to keep it from reading as unused.
     #[cfg(not(feature = "transcribe"))]
     let _ = progress;
-    let (transcript, archived) = match source {
-        TranscriptSource::None => (None, None),
+    let transcript = match source {
+        TranscriptSource::None => None,
         TranscriptSource::File(path) => {
             let contents = std::fs::read_to_string(&path)
                 .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("txt");
-            let archived =
-                ArchivedTranscript { filename: format!("transcript.{ext}"), contents };
-            (Some(route::Transcript::load(&archived.contents)), Some(archived))
+            Some(route::Transcript::load(&contents))
         }
         #[cfg(feature = "transcribe")]
         TranscriptSource::Audio { wav, model } => {
             let lang = input.locale.whisper_lang();
             let segments = transcribe::transcribe(&wav, &model, Some(lang), progress)?;
-            let archived = ArchivedTranscript {
-                filename: "transcript.jsonl".to_string(),
-                contents: transcribe::to_jsonl(&segments),
-            };
             // Straight from the segments, skipping the JSONL round trip.
-            (Some(route::Transcript::from_segments(segments)), Some(archived))
+            Some(route::Transcript::from_segments(segments))
         }
     };
-    let (chart, notes, mut report) = compute_and_route(input, transcript)?;
-    report.transcript = archived;
-    Ok((chart, notes, report))
+    compute_and_route(input, transcript)
 }
 
 fn compute_and_route(
@@ -224,5 +205,5 @@ fn compute_and_route(
         n_routed = report.n_routed;
         warnings.extend(report.warnings);
     }
-    Ok((chart, notes, BuildReport { n_routed, warnings, transcript: None }))
+    Ok((chart, notes, BuildReport { n_routed, warnings }))
 }

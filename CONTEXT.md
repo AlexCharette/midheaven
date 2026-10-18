@@ -7,14 +7,39 @@ Seeded while introducing `src/derive.rs`; extend it rather than coining synonyms
 
 ## Reading
 
-A recorded birth-chart consultation: the astrologer's spoken words plus the
-chart they were speaking about. The unit the whole app works on — a reading is
-what gets built, curated, saved to the library, and exported.
+A birth-chart consultation: the words spoken or written about a chart, and the
+chart they are about. Not a stored thing — there is no reading record. A
+reading is a **chart** plus the **notes** that name it, and "open a reading"
+means open that chart and read back its notes.
+
+It used to be a folder: `{slug}_{date}/` holding a `chart.json` and its
+transcripts, listed by walking the library. That made a note's home a path
+that moves, and made "every note about this person" unanswerable without
+opening every folder.
 
 ## Chart
 
-The computed natal chart — `contract::ChartData`. Positions, houses, aspects and
-the localized names for them, plus any notes filed against them.
+Two things wear this name, deliberately, because they are the same sky said
+twice.
+
+`contract::ChartData` is the **computed** chart: positions, houses, aspects,
+the five aspect kinds, and the localized names for all of them. It is derived,
+never stored, and it carries no notes.
+
+`store::Chart` is the **record**: a `BirthSeed` plus the calculation codes —
+everything needed to recompute the first — and the person whose sky it is. It
+has an id, and that id is what a note names. Ten notes about one transit share
+one record rather than ten copies of one sky.
+
+A chart's birth moment is part of its identity. Change it and you have a
+different sky, so you get a new record; notes stay with the one they were
+written about. A **person's** name is not: correct it and every chart of
+theirs reads the correction, because none of them copied it.
+
+## Person
+
+Someone a chart is of — `store::Person`. Separate from the chart because one
+person has several: a natal chart, the transits over it, a progression.
 
 ## Note
 
@@ -39,8 +64,10 @@ back. Removing it took a sentinel with it: an absent span had been spelled
 `[0, 0]` on the wire, which meant an empty span had to be an error, which put
 a rule about an impossible case into two separate validators.
 
-The wire is still out of step in one place: the list is spelled `excerpts` on
-`ChartData`.
+A note is a record of its own — `store::StoredNote`, one file per note, named
+by its id. It names the chart it is about; nothing contains it. That is what
+makes "every note I have written about this planet" a question with an answer,
+and it is the single change this vocabulary turns on.
 
 ## Tag id
 
@@ -76,6 +103,29 @@ exists. The gate hands each accepted note back *beside* its span rather than
 carrying one: `coalesce` needs the spans to take a verbatim slice across a
 merge, and `route::file` drops them on the way to storage.
 
+## View
+
+A saved question — `query::View`: a name and a `Query`. A question, not an
+answer: reopening one runs it again, so a view written last month shows what
+was written since.
+
+`Query` is closed on purpose. Five dimensions (tags with any/all, person,
+chart, date range, free text), combining with AND, and an empty query is every
+note — so a view is always a refinement of "all my notes" and cannot be
+written to mean nothing.
+
+## Store
+
+Where everything lives — `store::Store`, four sibling folders of one-file
+records under the folder the astrologer chose: `notes/`, `charts/`,
+`people/`, `views/`.
+
+One file per record is load-bearing: writing is create-and-amend rather than a
+read-modify-write of a shared log, and a file that will not parse costs one
+record rather than the folder. Every id is checked before it becomes a
+filename, because the webview hands back ids it was given and `../../x` is a
+filename too.
+
 ## Artifact
 
 The single self-contained offline HTML file a reading exports to. Self-contained
@@ -84,10 +134,14 @@ forever. Distinct from the PDF, which is a separate rendering of the same chart.
 
 ## Session
 
-The open working state: a reading the app currently holds, and possibly a live
-recorder capturing a take into it. Ten of the twenty-five backend commands
-require a session; all ten refuse through one guard with one message
-(`session::NO_READING`, "no chart has been built yet").
+The open working state: the chart the app currently has open, and possibly a
+live recorder capturing a take into it. Commands that need one refuse through
+a single guard with a single message (`session::NO_READING`, "no chart has
+been built yet").
+
+A session holds no notes. It is the open *window*, and a note outlives the
+window it was typed in — so the session holds the chart's id, and the notes
+are read from the store.
 
 A session is never recording without a reading. It is modelled as one value on
 **both** sides precisely so that cannot drift —
@@ -102,8 +156,13 @@ take is in flight rather than reconciled.
 
 ## Take
 
-One recording appended to a live session. Takes accumulate — each is transcribed
-and routed on its own, then appended, so earlier curation survives.
+One recording into a live session. Takes accumulate — each is transcribed and
+routed on its own, and its notes are filed under the open chart.
+
+"Appended" used to be a choice: routing could replace the chart's note list or
+add to it, and adding was what let earlier curation survive a second take.
+Notes are their own records now, so a take can only add; there is nothing left
+to overwrite.
 
 A take is **in flight** from the moment recording starts until its words land in
 the chart, which spans two phases: **recording**, while the capture runs, and
@@ -115,9 +174,9 @@ the same stretch of the recording. A take that fails to transcribe is
 
 ## Reproject
 
-Recompute a chart's geometry for a different house system or zodiac, carrying its
-notes onto the result. Only the geometry changes; the vocabulary is stable
-enough that existing tags stay valid.
+Recompute a chart's geometry for a different house system or zodiac. Only the
+geometry changes — the record keeps its id, so the notes filed against it stay
+filed against it, and the vocabulary is global, so their tags stay valid.
 
 ## Derivation · Derived field
 
