@@ -67,8 +67,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    border: 1px solid var(--line);
-    padding: 0.7rem 0.8rem;
+    padding: 0.2rem 0 0;
   }
   .band {
     display: flex;

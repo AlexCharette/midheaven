@@ -34,7 +34,10 @@
   // This fold is nobody else's business, so it is local state rather than a
   // field on a shared object. Folded by default so the orrery leads; opening
   // it reveals the full keyboard-accessible mirror.
-  let open = $state(false);
+  // Open by default: as a panel competing with the commentary this was
+  // noise and shut was right, but it hangs off the plate now as that
+  // figure's key — and a key that starts closed is a key nobody reads.
+  let open = $state(true);
 
   interface Entry {
     tag: string;

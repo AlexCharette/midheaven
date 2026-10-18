@@ -35,10 +35,11 @@
   async function refresh() {
     try {
       beside = await listBeside();
-    } catch (e) {
+    } catch {
       // A reading with no store behind it simply has nothing beside it.
+      // Not an error worth showing: this is apparatus, and "no folder
+      // chosen yet" is a normal state of the app, not a failure of it.
       beside = { standing: [], aboutPerson: [] };
-      err = reason(e);
     }
   }
 
@@ -161,13 +162,14 @@
   .add {
     align-self: flex-start;
   }
+  /* Not a card: a ruled opening in the stream, the way a printer sets an
+     inserted note off with a rule rather than a border. */
   .compose {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    border: 1px solid var(--line);
-    border-top: 2px solid var(--brass);
-    padding: 0.6rem;
+    border-top: 1px solid var(--hairline);
+    padding: 0.6rem 0 0;
   }
   .compose textarea {
     width: 100%;

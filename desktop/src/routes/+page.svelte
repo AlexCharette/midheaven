@@ -158,7 +158,7 @@
 </script>
 
 {#if reading}
-  <div class="reading">
+  <div class="reading" data-posture={isRecording() ? "recording" : "curating"}>
     <figure class="plate">
       <div class="plate-frame">
         <!-- keyed on the calculation so a live reproject remounts the wheel and
@@ -169,21 +169,36 @@
         {/key}
         <ChartCore chart={reading} notes={notes()} />
       </div>
+      <!-- the index is the plate's legend, not a region competing with the
+           commentary: it belongs to the figure it annotates, the way a key
+           sits under an engraved plate rather than beside it -->
+      <figcaption class="legend">
+        <IndexOfElements chart={reading} />
+      </figcaption>
     </figure>
 
-    <section>
-      <div class="toolbar">
+    <!-- one continuous ruled stream: filter state, commentary and prior
+         notes separated by rule weight and type, never by enclosure -->
+    <section class="stream">
+      <p class="station">
         <span class="apparatus-text">{t().notesTouching}</span>
-        <span class="segmented">
-          <button aria-pressed={mode() === "any"} onclick={() => setMode("any")} title={t().anyTitle}>{t().any}</button>
-          <button aria-pressed={mode() === "all"} onclick={() => setMode("all")} title={t().allTitle}>{t().all}</button>
+        <span class="detents">
+          <button
+            class="detent"
+            aria-pressed={mode() === "any"}
+            onclick={() => setMode("any")}
+            title={t().anyTitle}>{t().any}</button
+          ><span class="detent-sep" aria-hidden="true">/</span><button
+            class="detent"
+            aria-pressed={mode() === "all"}
+            onclick={() => setMode("all")}
+            title={t().allTitle}>{t().all}</button
+          >
         </span>
         <span class="apparatus-text">{t().ofSelection}</span>
         <button class="ghost" onclick={clearPins}>{t().clear}</button>
         <span class="count apparatus-text">{fmt(t().count, { shown: visible.length, total: notes().length })}</span>
-      </div>
-
-      <IndexOfElements chart={reading} />
+      </p>
 
       <Commentary chart={reading} {visible} />
 
@@ -200,7 +215,7 @@
     <span class="foot-actions">
       {#if canRecord()}
         <button
-          class="frame-btn rec"
+          class="mark-btn rec"
           class:on={isRecording()}
           onclick={toggleRecording}
           disabled={!isRecording() && (isBusy() || whyCannotRecord() !== null)}
@@ -223,7 +238,7 @@
           title="the self-contained HTML reading — opens in any browser"
         >HTML</button>
         <button
-          class="frame-btn"
+          class="mark-btn"
           onclick={engravePdf}
           disabled={isRecording()}
           title="a printer-friendly PDF"
@@ -238,20 +253,58 @@
 {/if}
 
 <style>
-  /* the wheel is the hero plate; the apparatus and commentary are its caption */
+  /* Two postures, one page.
+     The astrologer works here in two scenes that want opposite things: a live
+     call, where the chart is what they are looking at while they talk, and the
+     curation afterwards, where the words are. Rather than compromise into a
+     layout that serves neither, the composition shifts: recording widens the
+     plate and lets the apparatus recede; stopping gives the stream its room
+     back. It is the page's one authored moment of motion. */
   .reading {
     display: grid;
-    grid-template-columns: minmax(520px, 60%) minmax(0, 1fr);
-    gap: 2rem;
-    padding: 1rem 1.6rem 4.4rem 1.1rem;
+    grid-template-columns: minmax(460px, 48fr) minmax(0, 52fr);
+    gap: clamp(1.6rem, 3vw, 3.2rem);
+    padding: 1.4rem clamp(1.2rem, 3vw, 2.6rem) 4.8rem;
     max-width: 1580px;
     margin: 0 auto;
+  }
+  /* While a take runs there is nothing new to read — the words arrive in a
+     batch when it stops — so the page stops pretending otherwise and gives
+     the room to the thing actually in use. */
+  .reading[data-posture="recording"] {
+    grid-template-columns: minmax(460px, 64fr) minmax(0, 36fr);
+  }
+  .reading[data-posture="recording"] .stream {
+    opacity: 0.58;
+  }
+  .reading[data-posture="recording"] .legend {
+    opacity: 0;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .reading {
+      transition: grid-template-columns var(--dur-slow) var(--ease-out-expo);
+    }
+    .stream,
+    .legend {
+      transition:
+        opacity var(--dur-slow) var(--ease-out-expo),
+        filter var(--dur-slow) var(--ease-out-expo);
+    }
   }
   .plate {
     margin: 0;
     position: sticky;
     top: 0.9rem;
     align-self: start;
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+  }
+  /* The legend hangs off the plate, inset from its frame the way a key is
+     inset from the engraving it explains. */
+  .legend {
+    padding: 0 0.6rem;
   }
   /* the wheel's plate uses a tighter padding than the shared primitive; it also
      anchors the hub read-out core, which is absolutely centred over the wheel */
@@ -266,7 +319,8 @@
   }
   /* below the split point the plate leads, stacked above the reading column */
   @media (max-width: 900px) {
-    .reading {
+    .reading,
+    .reading[data-posture="recording"] {
       grid-template-columns: 1fr;
       gap: 1.6rem;
     }
@@ -276,34 +330,58 @@
       width: 100%;
       margin: 0 auto;
     }
+    /* Stacked, the plate already has the viewport to itself while the take
+       runs, so dimming what is below it would only look broken. */
+    .reading[data-posture="recording"] .stream,
+    .reading[data-posture="recording"] .legend {
+      opacity: 1;
+      pointer-events: auto;
+    }
   }
-  .toolbar {
+  /* The stream's first line, not a toolbar. It reads as a sentence —
+     "notes touching any / all of the selection · 3 of 12" — and is held to
+     the column by a single rule beneath it rather than boxed between two. */
+  .station {
     display: flex;
     align-items: baseline;
-    gap: 0.9rem;
+    gap: 0.55rem;
     flex-wrap: wrap;
-    padding: 0.7rem 0;
-    margin-bottom: 1.4rem;
-    border-top: 1px solid var(--line);
+    margin: 0 0 1.5rem;
+    padding: 0 0 0.6rem;
     border-bottom: 1px solid var(--line);
     font-size: 0.9rem;
   }
-  .segmented {
+  /* A detent is a printed mark, not a button in a box: the chosen reading is
+     underlined in brass, the other is quiet. */
+  .detents {
     display: inline-flex;
-    border: 1px solid var(--hairline);
+    align-items: baseline;
+    gap: 0.3rem;
   }
-  .segmented button {
-    padding: 0.12rem 0.8rem;
-    color: var(--ink-2);
+  .detent {
+    color: var(--ink-3);
     font-variant: small-caps;
     letter-spacing: 0.1em;
+    padding: 0 0.1em 0.12em;
+    border-bottom: 1px solid transparent;
   }
-  .segmented button + button {
-    border-left: 1px solid var(--hairline);
+  .detent:hover {
+    color: var(--ink-2);
   }
-  .segmented button[aria-pressed="true"] {
-    background: var(--ink);
-    color: var(--bg-deep);
+  .detent[aria-pressed="true"] {
+    color: var(--ink);
+    border-bottom-color: var(--brass);
+  }
+  .detent-sep {
+    color: var(--ink-3);
+    opacity: 0.6;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .detent {
+      transition:
+        color var(--dur-fast) var(--ease-out-quint),
+        border-bottom-color var(--dur-fast) var(--ease-out-quint);
+    }
   }
   /* the count is the only thing that reaches this column's right edge, and at
      wide widths that edge is where the layout's fixed preferences gear sits —
@@ -313,6 +391,8 @@
     margin-right: 2.4rem;
     font-variant-numeric: tabular-nums;
   }
+  /* The console rail: one hairline, the page's width, and the actions set on
+     it as marks rather than a row of boxes. */
   footer {
     position: fixed;
     left: 0;
@@ -322,9 +402,9 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 0.45rem 1.4rem;
+    padding: 0.5rem clamp(1.2rem, 3vw, 2.6rem);
     background: var(--bg-deep);
-    border-top: 1px solid var(--hairline);
+    border-top: 1px solid var(--line);
     font-size: 0.88rem;
   }
   .foot-actions {
@@ -337,9 +417,9 @@
      "new reading" / record buttons by a hairline; HTML is the primary. */
   .export-group {
     display: inline-flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding-left: 1.2rem;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding-left: 1.3rem;
     border-left: 1px solid var(--line);
   }
   .export-lbl {
@@ -354,8 +434,8 @@
     background: var(--brass-wash);
   }
   .rec.on {
-    border-color: var(--brass);
     color: var(--ink);
+    border-bottom-color: var(--brass);
   }
   .dot {
     display: inline-block;

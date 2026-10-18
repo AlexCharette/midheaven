@@ -235,6 +235,23 @@
       transition: background var(--dur-base) var(--ease-out-quint);
     }
   }
+  /* Narrow widths cannot afford a fixed margin column: 5.2rem of folio out
+     of 390 leaves the words about thirty characters, which is not a measure.
+     The anchor goes above the line instead, where it costs nothing. */
+  @media (max-width: 560px) {
+    .note {
+      grid-template-columns: 1fr;
+      gap: 0.2rem;
+    }
+    .folio {
+      text-align: left;
+      padding-top: 0;
+    }
+    blockquote,
+    .refs {
+      grid-column: 1;
+    }
+  }
   .folio {
     color: var(--ink-3);
     font-size: 0.8rem;

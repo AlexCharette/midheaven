@@ -243,7 +243,10 @@ input::placeholder {
   color: var(--oxblood);
 }
 
-/* framed small-caps action button + quiet italic button */
+/* The stamped action: a framed small-caps word, which in this register is a
+   print convention rather than a UI box — a struck mark on a plate. It is
+   deliberately the only enclosure left outside the plate frame itself, so it
+   has to stay rare; a page of these is a page of boxes again. */
 .frame-btn {
   border: 1px solid var(--hairline);
   padding: 0.15rem 0.9rem;
@@ -257,6 +260,23 @@ input::placeholder {
 .frame-btn:disabled {
   color: var(--ink-3);
   cursor: wait;
+}
+/* The unstamped sibling: same voice, no frame. For actions that belong in a
+   rail beside a stamp rather than competing with it. */
+.mark-btn {
+  padding: 0.15rem 0;
+  font-variant: small-caps;
+  letter-spacing: 0.14em;
+  color: var(--ink-2);
+  border-bottom: 1px solid transparent;
+}
+.mark-btn:hover:not(:disabled) {
+  color: var(--ink);
+  border-bottom-color: var(--hairline);
+}
+.mark-btn:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
 }
 .ghost {
   font-style: italic;
@@ -296,16 +316,17 @@ input::placeholder {
 
 /* An engraved empty plate: a small ornament over an italic caption inside a
    faint frame. Shared by the library and commentary in place of a bare line. */
+/* An engraved empty state: an ornament over an italic caption, held by air
+   and centring rather than by a frame. It used to be boxed; a box around
+   "nothing here yet" is a container drawing attention to its own emptiness. */
 .empty-plate {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.7rem;
   max-width: 30rem;
-  margin: clamp(1.5rem, 5vw, 3rem) auto;
-  padding: clamp(1.4rem, 4vw, 2.4rem) 1.4rem;
-  border: 1px solid var(--line);
-  background: radial-gradient(ellipse at 50% 30%, var(--ink-a04) 0%, transparent 70%);
+  margin: clamp(2rem, 6vw, 3.6rem) auto;
+  padding: 0 1.4rem;
   text-align: center;
 }
 .empty-plate .mark {

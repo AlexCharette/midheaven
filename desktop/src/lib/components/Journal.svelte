@@ -481,10 +481,10 @@
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    border: 1px solid var(--line);
-    border-top: 2px solid var(--brass);
-    padding: 0.8rem;
-    margin: 0.4rem 0.2rem 0.2rem;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--line);
+    padding: 0.8rem 0.2rem;
+    margin: 0.4rem 0 0.2rem;
   }
   .composing textarea {
     width: 100%;
