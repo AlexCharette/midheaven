@@ -249,6 +249,8 @@
     write a note
   </button>
   <button type="button" class="ghost" onclick={() => (journalOpen = true)}>the journal</button>
+  <!-- SPIKE ENTRY — delete this line and src/routes/spike/ to remove it -->
+  <a class="ghost spike-link" href="/spike/chart">the spike ↗</a>
   <button type="button" class="frame-btn cast" onclick={() => (birthOpen = true)}>
     cast a natal chart
   </button>
@@ -529,6 +531,13 @@
     background: var(--bg-deep);
     border-top: 1px solid var(--line);
     font-size: 0.88rem;
+  }
+  .spike-link {
+    text-decoration: none;
+    color: var(--oxblood);
+  }
+  .spike-link:hover {
+    color: var(--ink);
   }
   footer .cast {
     margin-left: auto;
