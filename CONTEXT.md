@@ -65,9 +65,60 @@ back. Removing it took a sentinel with it: an absent span had been spelled
 a rule about an impossible case into two separate validators.
 
 A note is a record of its own — `store::StoredNote`, one file per note, named
-by its id. It names the chart it is about; nothing contains it. That is what
-makes "every note I have written about this planet" a question with an answer,
-and it is the single change this vocabulary turns on.
+by its id. Nothing contains it; it names what it is about. That is what makes
+"every note I have written about this planet" a question with an answer, and
+it is the single change this vocabulary turns on.
+
+## Anchor
+
+What a note is about — `store::Anchor`, a closed three.
+
+**`Chart`** — said in a reading, about that sky.
+**`Person`** — about someone, not about a moment. "She keeps deflecting about
+her father."
+**`Standing`** — see below.
+
+Two optional fields would have been four states for three real ones, which is
+the mistake `session.rs` already carries a comment about.
+
+## Standing note
+
+Craft knowledge: what the astrologer knows about Saturn, about Leo, about a
+trine. About the elements and about nothing else.
+
+Its tags say what it is about — the vocabulary is global, so `sign:leo` needs
+no chart. What marks it as craft is that it has **no anchor**: a tag cannot
+tell a considered note about Leo from a transcript sentence where someone
+happened to say the word, but the absence of an anchor can, because nothing
+routed into a standing note.
+
+Written from the journal, against a plate with no sky in it (see **Chartless
+plate**). It cannot carry an `aspect:` pair: a pair names two specific bodies,
+which is a fact about a chart rather than about the craft. `kind:trine` is the
+standing concept.
+
+## Chartless plate
+
+The vocabulary as something to click, with no chart behind it —
+`list_elements` and `ElementPlate`. Eleven bodies, twelve signs, twelve
+houses, five kinds.
+
+It exists to keep a rule `Composer.svelte` states: the plate is how you say
+what a note is about, and giving standing notes their own tag picker would
+have been a second way to name elements in an app that has one. The bands were
+never chart-shaped; only the wheel and the pairs were.
+
+## Export boundary
+
+Only chart-anchored notes leave the building. `save_artifact` and `save_pdf`
+render through `notes::under`, which filters to one chart, and that is the
+whole of the rule.
+
+It is a privacy boundary rather than a default. The artifact is the
+recipient's keepsake; standing notes are the practitioner's private craft, and
+person-anchored notes are observations *about* the recipient that they may
+never have been meant to read. Sharing one is an explicit act — copying it
+into the reading as a chart-anchored note.
 
 ## Tag id
 
@@ -109,16 +160,25 @@ A saved question — `query::View`: a name and a `Query`. A question, not an
 answer: reopening one runs it again, so a view written last month shows what
 was written since.
 
-`Query` is closed on purpose. Five dimensions (tags with any/all, person,
-chart, date range, free text), combining with AND, and an empty query is every
-note — so a view is always a refinement of "all my notes" and cannot be
-written to mean nothing.
+`Query` is closed on purpose. Six dimensions (tags with any/all, person,
+chart, anchor kind, date range, free text), combining with AND, and an empty
+query is every note — so a view is always a refinement of "all my notes" and
+cannot be written to mean nothing.
+
+`person` means **both** senses: anchored to them, or said in a reading of one
+of their charts. "Everything about Mira" is one question, and splitting it
+would make the common case take two.
 
 ## Store
 
 Where everything lives — `store::Store`, four sibling folders of one-file
 records under the folder the astrologer chose: `notes/`, `charts/`,
 `people/`, `views/`.
+
+Removing a **chart** takes its notes: one level, and a confirmation can say
+what goes. Removing a **person** is refused while any chart or note still
+refers to them, because that cascade is three levels deep and a click should
+not be able to do it.
 
 One file per record is load-bearing: writing is create-and-amend rather than a
 read-modify-write of a shared log, and a file that will not parse costs one
