@@ -24,6 +24,7 @@ import type {
   CalculationDefaults,
   Chart,
   ChartData,
+  Beside,
   ChartRow,
   ElementDto,
   JournalRow,
@@ -185,6 +186,11 @@ export const listPeople = () => call<Person[]>("list_people");
 export const deletePerson = (id: string) => call<void>("delete_person", { id });
 
 // ---- standing notes ----
+
+/** What belongs beside the open reading without belonging to it: craft
+ * notes (shown for the focused element) and observations about this chart's
+ * person (shown throughout). Never exported. */
+export const listBeside = () => call<Beside>("list_beside");
 
 /** The vocabulary as a plate you can click, with no chart behind it — the
  * tag picker for a note that is about no sky. Excludes `aspect:` pairs. */

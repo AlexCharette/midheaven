@@ -823,6 +823,55 @@ fn delete_view(app: AppHandle, id: String) -> Result<(), String> {
     store_of(&app)?.remove::<query::View>(&id)
 }
 
+/// What sits *beside* a reading rather than in it.
+///
+/// Two populations with different rules, and the difference is cardinality
+/// rather than taste. You have three notes about Mira and three hundred
+/// about Saturn: the first are always worth showing, the second need the
+/// focus to be tractable. The webview applies the focus filter, because it
+/// changes on every hover and a round trip per hover would be absurd.
+#[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+#[serde(rename_all = "camelCase")]
+struct Beside {
+    /// Craft knowledge — every standing note. Shown only for the element
+    /// currently in focus.
+    standing: Vec<Note>,
+    /// Observations about this chart's person. Shown throughout.
+    about_person: Vec<Note>,
+}
+
+/// The notes that belong beside the open reading without belonging to it.
+///
+/// Never exported: `save_artifact` and `save_pdf` go through
+/// `notes::under`, which is chart-anchored only. A practitioner's craft and
+/// their observations about a client are not part of that client's keepsake.
+#[tauri::command]
+fn list_beside(app: AppHandle, state: State<'_, AppState>) -> Result<Beside, String> {
+    let chart_id = open_chart_id(&state)?;
+    let store = store_of(&app)?;
+    let person = store.get::<Chart>(&chart_id)?.and_then(|c| c.person);
+    let standing = query::run(
+        &store,
+        &query::Query { anchor: Some(store::AnchorKind::Standing), ..Default::default() },
+    );
+    let about_person = match person {
+        Some(id) => query::run(
+            &store,
+            &query::Query {
+                anchor: Some(store::AnchorKind::Person),
+                person: Some(id),
+                ..Default::default()
+            },
+        ),
+        None => Vec::new(),
+    };
+    Ok(Beside {
+        standing: standing.iter().map(StoredNote::note).collect(),
+        about_person: about_person.iter().map(StoredNote::note).collect(),
+    })
+}
+
 /// One element of the vocabulary, as something to click.
 #[derive(Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
@@ -1316,6 +1365,7 @@ macro_rules! commands {
             list_people,
             delete_person,
             list_elements,
+            list_beside,
             get_preferences,
             set_preferences,
             open_licenses,

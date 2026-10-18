@@ -29,6 +29,7 @@
   import { fmt, loadChrome, t } from "$lib/chrome.svelte";
   import Calculator from "$lib/components/Calculator.svelte";
   import ChartCore from "$lib/components/ChartCore.svelte";
+  import Beside from "$lib/components/Beside.svelte";
   import Commentary from "$lib/components/Commentary.svelte";
   import IndexOfElements from "$lib/components/IndexOfElements.svelte";
   import Wheel from "$lib/components/Wheel.svelte";
@@ -185,6 +186,8 @@
       <IndexOfElements chart={reading} />
 
       <Commentary chart={reading} {visible} />
+
+      <Beside chart={reading} />
     </section>
   </div>
   <footer>

@@ -35,6 +35,7 @@ export type { View } from "./generated/View";
 export type { Anchor } from "./generated/Anchor";
 export type { AnchorKind } from "./generated/AnchorKind";
 export type { ElementDto } from "./generated/ElementDto";
+export type { Beside } from "./generated/Beside";
 
 import type { Body } from "./generated/Body";
 import type { ChartData } from "./generated/ChartData";

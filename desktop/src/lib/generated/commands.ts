@@ -32,6 +32,7 @@ export type CommandName =
   | "list_people"
   | "delete_person"
   | "list_elements"
+  | "list_beside"
   | "get_preferences"
   | "set_preferences"
   | "open_licenses"
