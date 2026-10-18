@@ -163,8 +163,9 @@ pub struct BuildReport {
 /// chart, route + verify the notes. Returns the chart, the notes, and a
 /// [`BuildReport`]. This is the single entry point every frontend shares.
 ///
-/// The notes come back *beside* the chart rather than on it. Whoever stores
-/// them gives them their ids; the pipeline leaves every `id` empty.
+/// The notes come back *beside* the chart rather than on it, numbered `x1`,
+/// `x2`, … — see [`numbered`] for why this call does that when `route` does
+/// not.
 pub fn build_reading(
     input: &chart::BirthInput,
     source: TranscriptSource,
@@ -192,6 +193,21 @@ pub fn build_reading(
     compute_and_route(input, transcript)
 }
 
+/// Give unnumbered notes the conventional `x{n}` ids, in order.
+///
+/// `route` deliberately leaves `id` empty: a store mints its own, and
+/// numbering there would be a name immediately thrown away. But
+/// `build_reading` is the whole pipeline for callers that have no store — the
+/// CLI emits an artifact straight from it — and the artifact uses a note's id
+/// as a DOM id. An empty one is not an error anywhere; it is a page of
+/// elements all sharing the id `""`.
+fn numbered(mut notes: Vec<contract::Note>) -> Vec<contract::Note> {
+    for (i, note) in notes.iter_mut().enumerate() {
+        note.id = format!("x{}", i + 1);
+    }
+    notes
+}
+
 fn compute_and_route(
     input: &chart::BirthInput,
     transcript: Option<route::Transcript>,
@@ -205,5 +221,5 @@ fn compute_and_route(
         n_routed = report.n_routed;
         warnings.extend(report.warnings);
     }
-    Ok((chart, notes, BuildReport { n_routed, warnings }))
+    Ok((chart, numbered(notes), BuildReport { n_routed, warnings }))
 }

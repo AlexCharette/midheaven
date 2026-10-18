@@ -171,6 +171,35 @@ mod tests {
         assert!(checked >= 25, "only {checked} plate reads checked — did the scan break?");
     }
 
+    /// A note's id becomes a DOM id in the artifact, so a blank or repeated
+    /// one is not an error — it is a page of elements that all answer to the
+    /// same name, and anchors that land on whichever came first.
+    #[test]
+    fn every_emitted_note_has_an_id_of_its_own() {
+        let chart = crate::fixtures::minimal_chart();
+        let notes = vec![
+            crate::fixtures::note("x1", "one", &["planet:sun"]),
+            crate::fixtures::note("x2", "two", &["planet:moon"]),
+        ];
+        let html = emit(&chart, &notes).unwrap();
+        assert!(html.contains("\"id\":\"x1\""), "ids reach the artifact");
+
+        // And the pipeline that feeds it gives them out.
+        let (_chart, routed, _report) = crate::build_reading(
+            &crate::fixtures::named("Ids"),
+            crate::TranscriptSource::File(
+                concat!(env!("CARGO_MANIFEST_DIR"), "/examples/transcript.jsonl").into(),
+            ),
+            |_| {},
+        )
+        .expect("build_reading");
+        let ids: std::collections::BTreeSet<&str> =
+            routed.iter().map(|n| n.id.as_str()).collect();
+        assert!(!routed.is_empty());
+        assert!(!ids.contains(""), "a blank id is a DOM id collision waiting to happen");
+        assert_eq!(ids.len(), routed.len(), "and they must be distinct: {ids:?}");
+    }
+
     /// Every tag category has somewhere to render.
     ///
     /// The viewers resolve a tag through one `lookup` table and drop anything
