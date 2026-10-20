@@ -104,190 +104,154 @@
   }
 </script>
 
-<p class="rubric">preferences</p>
 <form
+  class="form"
   onsubmit={(e) => {
     e.preventDefault();
     keep();
   }}
 >
-  <p class="section">library</p>
-  <label>
-    <span>readings folder</span>
-    <input bind:value={readingsDir} placeholder="charts save themselves here (optional)" />
-    <button type="button" class="browse" onclick={() => pickDir("readings")}>browse…</button>
+  <h3 class="group-head">Library</h3>
+  <label class="fld">
+    <span class="lbl">Readings folder <span class="opt">— charts save themselves here</span></span>
+    <span class="with-act">
+      <input bind:value={readingsDir} placeholder="None chosen" />
+      <button type="button" class="btn quiet" onclick={() => pickDir("readings")}>Browse…</button>
+    </span>
   </label>
-  <label>
-    <span>models folder</span>
-    <input
-      bind:value={modelsDir}
-      onchange={refreshModels}
-      placeholder="folder of ggml whisper models (optional)"
-    />
-    <button type="button" class="browse" onclick={() => pickDir("models")}>browse…</button>
+  <label class="fld">
+    <span class="lbl">Models folder <span class="opt">— ggml whisper models</span></span>
+    <span class="with-act">
+      <input bind:value={modelsDir} onchange={refreshModels} placeholder="None chosen" />
+      <button type="button" class="btn quiet" onclick={() => pickDir("models")}>Browse…</button>
+    </span>
   </label>
-  <label>
-    <span>default model</span>
+  <label class="fld">
+    <span class="lbl">Default model</span>
     <select bind:value={defaultModel} disabled={models.length === 0}>
-      <option value="">— none —</option>
+      <option value="">None</option>
       {#each models as m (m)}
         <option value={m}>{basename(m)}</option>
       {/each}
     </select>
   </label>
 
-  <p class="section">identity</p>
-  <label>
-    <span>your name</span>
-    <input bind:value={astrologer} placeholder="artifacts read “prepared by …” (optional)" />
+  <h3 class="group-head">Identity</h3>
+  <label class="fld">
+    <span class="lbl">Your name <span class="opt">— artifacts read “prepared by …”</span></span>
+    <input bind:value={astrologer} placeholder="Optional" />
   </label>
-  <label>
-    <span>your logo</span>
-    <input bind:value={logo} placeholder="engraved on the title plate (optional)" />
-    <button type="button" class="browse" onclick={pickLogo}>browse…</button>
-  </label>
-
-  <p class="section">output</p>
-  <label>
-    <span>paper size</span>
-    <select bind:value={pageSize}>
-      <option value="a4">A4</option>
-      <option value="letter">US Letter</option>
-    </select>
-  </label>
-  <label>
-    <span>default language</span>
-    <select bind:value={defaultLocale}>
-      {#each locales as l (l.code)}
-        <option value={l.code}>{l.label}</option>
-      {/each}
-    </select>
+  <label class="fld">
+    <span class="lbl">Your logo <span class="opt">— engraved on the title plate</span></span>
+    <span class="with-act">
+      <input bind:value={logo} placeholder="Optional" />
+      <button type="button" class="btn quiet" onclick={pickLogo}>Browse…</button>
+    </span>
   </label>
 
-  <p class="section">calculation</p>
-  <label>
-    <span>house system</span>
-    <select bind:value={defaultHouseSystem}>
-      {#each houseSystems as h (h.code)}
-        <option value={h.code}>{h.label}</option>
-      {/each}
-    </select>
-  </label>
-  <label>
-    <span>zodiac</span>
-    <select bind:value={defaultZodiac}>
-      <option value={TROPICAL}>Tropical</option>
-      <option value={SIDEREAL}>Sidereal</option>
-    </select>
-  </label>
-  {#if defaultZodiac === SIDEREAL}
-    <label>
-      <span>ayanamsa</span>
-      <select bind:value={defaultAyanamsa}>
-        {#each ayanamsas as a (a.code)}
-          <option value={a.code}>{a.label}</option>
+  <h3 class="group-head">Output</h3>
+  <div class="row">
+    <label class="fld">
+      <span class="lbl">Paper size</span>
+      <select bind:value={pageSize}>
+        <option value="a4">A4</option>
+        <option value="letter">US Letter</option>
+      </select>
+    </label>
+    <label class="fld">
+      <span class="lbl">Default language</span>
+      <select bind:value={defaultLocale}>
+        {#each locales as l (l.code)}
+          <option value={l.code}>{l.label}</option>
         {/each}
       </select>
     </label>
-  {/if}
+  </div>
 
-  <p class="section">about</p>
+  <h3 class="group-head">Calculation</h3>
+  <div class="row">
+    <label class="fld">
+      <span class="lbl">House system</span>
+      <select bind:value={defaultHouseSystem}>
+        {#each houseSystems as h (h.code)}
+          <option value={h.code}>{h.label}</option>
+        {/each}
+      </select>
+    </label>
+    <label class="fld">
+      <span class="lbl">Zodiac</span>
+      <select bind:value={defaultZodiac}>
+        <option value={TROPICAL}>Tropical</option>
+        <option value={SIDEREAL}>Sidereal</option>
+      </select>
+    </label>
+    {#if defaultZodiac === SIDEREAL}
+      <label class="fld">
+        <span class="lbl">Ayanamsa</span>
+        <select bind:value={defaultAyanamsa}>
+          {#each ayanamsas as a (a.code)}
+            <option value={a.code}>{a.label}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
+  </div>
+
+  <h3 class="group-head">About</h3>
   <!-- Not a <label>: nothing here is a field. It used to be one, and since a
        <button> is a labelable element the label bound itself to the licenses
        button — clicking anywhere in this sentence opened the licenses file. -->
-  <div class="row">
-    <span>credits</span>
-    <p class="ack">
-      Ephemeris and house calculations by the
-      <button type="button" class="linklike" onclick={showLicenses}>xalen</button>
-      crates (Apache-2.0).
-    </p>
-  </div>
+  <p class="ack">
+    Ephemeris and house calculations by the
+    <button type="button" class="linklike" onclick={showLicenses}>xalen</button>
+    crates (Apache-2.0).
+  </p>
 
-  {#if error}<p class="error">✗ {error}</p>{/if}
-
+  <!-- the sheet's foot stays in reach however far the form scrolls -->
   <div class="actions">
-    <button type="submit" class="frame-btn">keep these preferences</button>
-    <button type="button" class="ghost" onclick={onclose}>cancel</button>
+    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    <span class="grow"></span>
+    <button type="button" class="btn bare" onclick={onclose}>Cancel</button>
+    <button type="submit" class="btn primary">Save preferences</button>
   </div>
 </form>
 
 <style>
-  /* form grammar mirrors BirthForm: italic right-aligned labels on a
-     7.5rem gutter, quiet browse buttons */
-  form {
-    margin-top: 1.6rem;
-    text-align: left;
-  }
-  /* group headings: small-caps section labels, each opening a run of fields */
-  .section {
-    font-variant: small-caps;
-    letter-spacing: 0.16em;
-    color: var(--ink-3);
-    margin: 0 0 0.9rem;
-    padding-bottom: 0.3rem;
-    border-bottom: 1px solid var(--line);
-  }
-  .section:not(:first-of-type) {
-    margin-top: 1.8rem;
-  }
-  label,
-  .row {
-    display: grid;
-    grid-template-columns: 7.5rem 1fr auto;
-    gap: 0 1rem;
-    align-items: baseline;
-    margin-bottom: 1.1rem;
-  }
-  label span:first-child,
-  .row span:first-child {
-    font-style: italic;
-    color: var(--ink-3);
-    text-align: right;
-    /* The gutter is a fixed track, so a label longer than it overflows rather
-       than widening it — and a right-aligned overflow runs *backwards*, out of
-       the panel and under the value beside it. Two-word labels wrap on their
-       space; this catches a one-word label that can't. */
-    overflow-wrap: break-word;
-  }
-  select:disabled {
-    color: var(--ink-3);
-    font-style: italic;
-  }
-  .browse {
-    font-size: 0.85rem;
-    color: var(--ink-3);
-    font-style: italic;
-  }
-  .browse:hover {
-    color: var(--ink);
-  }
   .ack {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: 0.84rem;
     color: var(--ink-3);
     line-height: 1.5;
     text-wrap: pretty;
   }
   .linklike {
-    color: var(--ink);
+    color: var(--ink-2);
     text-decoration: underline;
-    text-underline-offset: 2px;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--hairline);
   }
   .linklike:hover {
-    color: var(--steel);
-  }
-  .error {
-    color: var(--oxblood);
-    font-style: italic;
-    text-align: center;
+    color: var(--ink);
+    text-decoration-color: currentColor;
   }
   .actions {
-    text-align: center;
-    margin-top: 1.6rem;
+    position: sticky;
+    bottom: -1.5rem;
     display: flex;
-    justify-content: center;
-    align-items: baseline;
-    gap: 1.4rem;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.6rem -1.5rem -1.5rem;
+    padding: 0.9rem 1.5rem 1.1rem;
+    background: var(--surface-raised);
+    box-shadow: 0 -1px 0 var(--line);
+  }
+  .actions .error {
+    flex: 1;
+  }
+  .grow {
+    flex: 1;
+  }
+  .actions .error + .grow {
+    display: none;
   }
 </style>

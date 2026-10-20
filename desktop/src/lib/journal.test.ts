@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anchorFor, matches, rowMark, rowSubject, search } from "./journal";
+import { anchorFor, matches, natalOf, previewOf, rowMark, rowSubject, search, zoomOnto } from "./journal";
 import type { ChartData, JournalRow, PreviewInput } from "./types";
 
 const input: PreviewInput = {
@@ -168,5 +168,56 @@ describe("finding a note again", () => {
 
   it("finds nothing when nothing matches", () => {
     expect(search([row(), aboutMira], "saturn")).toEqual([]);
+  });
+});
+
+describe("natalOf", () => {
+  const seed = { place_id: 1, date: "1988-04-17", time: "06:42" };
+  const chart = (id: string, kind: string, person?: string) => ({
+    chart: { id, kind, seed, place: "Berlin", houseSystem: "whole-sign", locale: "en", person },
+    notes: 0,
+  });
+  it("prefers the person's natal chart", () => {
+    const rows = [chart("m", "moment", "p1"), chart("n", "natal", "p1"), chart("x", "natal", "p2")];
+    expect(natalOf("p1", rows)?.id).toBe("n");
+  });
+  it("falls back to any chart of theirs, then to none", () => {
+    expect(natalOf("p1", [chart("m", "moment", "p1")])?.id).toBe("m");
+    expect(natalOf("p3", [chart("m", "moment", "p1")])).toBeNull();
+  });
+});
+
+describe("previewOf", () => {
+  it("reads a sidereal chart's zodiac off its ayanamsa", () => {
+    const seed = { place_id: 7, date: "1979-11-02", time: "22:15" };
+    const base = { id: "c", kind: "natal", seed, place: "Lisbon", houseSystem: "placidus", locale: "ru" };
+    expect(previewOf(base)).toEqual({
+      date: "1979-11-02",
+      time: "22:15",
+      place_id: 7,
+      lang: "ru",
+      house_system: "placidus",
+      zodiac: "tropical",
+      ayanamsa: null,
+    });
+    expect(previewOf({ ...base, ayanamsa: "lahiri" }).zodiac).toBe("sidereal");
+  });
+});
+
+describe("zoomOnto", () => {
+  const centre = { x: 400, y: 400 };
+  const stage = { w: 1000, h: 800 };
+  it("sends the notes outward, past the rim the element faces", () => {
+    expect(zoomOnto({ x: 100, y: 400 }, centre, stage, 2, 80).side).toBe("left");
+    expect(zoomOnto({ x: 700, y: 400 }, centre, stage, 2, 80).side).toBe("right");
+  });
+  it("sends a hub element's notes right", () => {
+    expect(zoomOnto({ x: 390, y: 420 }, centre, stage, 2, 80).side).toBe("right");
+  });
+  it("carries the element to its resting point", () => {
+    const z = zoomOnto({ x: 100, y: 300 }, centre, stage, 2, 80);
+    expect(100 * 2 + z.tx).toBeCloseTo(z.rest.x);
+    expect(300 * 2 + z.ty).toBeCloseTo(z.rest.y);
+    expect(z.rest).toEqual({ x: 640, y: 400 });
   });
 });

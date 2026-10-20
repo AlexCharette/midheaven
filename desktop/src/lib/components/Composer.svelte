@@ -73,18 +73,18 @@
   }
 </script>
 
-<div class="composer">
-  <p class="rubric">a note on this sky</p>
+<div class="composer form">
+  <h2 class="section-head">A note on this sky</h2>
   <textarea
     bind:value={text}
     rows="4"
-    placeholder="what you want to remember about this moment"
+    placeholder="What you want to remember about this moment"
     aria-label="note"
   ></textarea>
 
   <div class="tags" aria-live="polite">
     {#if tags.length === 0}
-      <span class="hint">click the wheel or the index to file it under an element — or leave it unfiled</span>
+      <span class="hint">Click the wheel to file it under an element — or leave it unfiled.</span>
     {:else}
       {#each tags as tag (tag)}
         <span class="chip">{names.get(tag) ?? tag}</span>
@@ -93,72 +93,52 @@
   </div>
 
   {#if error}
-    <p class="err" aria-live="polite">{error}</p>
+    <p class="error" aria-live="polite">{error}</p>
   {/if}
 
   <div class="acts">
-    <button type="button" class="ghost" onclick={cancel}>cancel</button>
-    <button type="button" class="frame-btn" onclick={save} disabled={saving}>
-      {saving ? "keeping…" : "keep note"}
+    <button type="button" class="btn bare small" onclick={cancel}>Cancel</button>
+    <button type="button" class="btn primary small" onclick={save} disabled={saving}>
+      {saving ? "Keeping…" : "Keep note"}
     </button>
   </div>
 </div>
 
 <style>
   .composer {
-    display: flex;
-    flex-direction: column;
     gap: 0.6rem;
-    padding-top: 0.7rem;
+    padding-top: 1.2rem;
     border-top: 1px solid var(--line);
   }
-  /* Written on a ruled line, not into a box — the same treatment every
-     other field on this screen gets. */
-  textarea {
-    width: 100%;
-    resize: vertical;
-    padding: 0.3rem 0 0.4rem;
-    background: transparent;
-    color: var(--ink);
-    border: none;
-    border-bottom: 1px solid var(--line);
-    font: inherit;
-    line-height: 1.5;
-  }
-  textarea:focus {
-    border-bottom-color: var(--hairline);
-  }
-  textarea:focus-visible {
-    outline: none;
-    border-bottom-color: var(--brass);
+  .composer .section-head {
+    margin: 0;
   }
   .tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem;
-    min-height: 1.3rem;
+    gap: 0.25rem;
+    min-height: 1.6rem;
   }
-  /* A tag reads as a struck mark rather than a pill: underlined in its
-     category's ink, which is also how the wheel shows the same selection. */
+  /* what the note will be filed under, lit the way a pinned index entry is */
   .chip {
-    padding: 0.05rem 0.1rem;
-    font-size: 0.8rem;
-    color: var(--ink-2);
-    border-bottom: 1px solid var(--hairline);
+    display: inline-flex;
+    align-items: center;
+    height: 1.6rem;
+    padding: 0 0.55rem;
+    border-radius: var(--radius-sm);
+    background: var(--brass-wash);
+    box-shadow: inset 0 0 0 1px var(--brass-halo);
+    font-size: 0.78rem;
+    color: var(--ink);
   }
-  .hint,
-  .err {
-    font-size: 0.8rem;
-    font-style: italic;
+  .hint {
+    font-size: 0.78rem;
     color: var(--ink-3);
     text-wrap: pretty;
-  }
-  .err {
-    color: var(--oxblood-ink, var(--ink-2));
   }
   .acts {
     display: flex;
     justify-content: flex-end;
-    gap: 0.6rem;
+    gap: 0.4rem;
   }
 </style>

@@ -72,15 +72,15 @@
 
 {#if beside.aboutPerson.length > 0 || focus.length > 0}
   <section class="beside">
-    <h2 class="rubric">written before</h2>
+    <h2 class="section-head">Written before</h2>
 
     {#if err}
-      <p class="apparatus-text err">{err}</p>
+      <p class="err">{err}</p>
     {/if}
 
     {#if beside.aboutPerson.length > 0}
       <div class="group">
-        <h3 class="apparatus-text">about them</h3>
+        <h3>About them</h3>
         {#each beside.aboutPerson as n (n.id)}
           <article class="prior"><blockquote>{n.text}</blockquote></article>
         {/each}
@@ -89,11 +89,11 @@
 
     {#if focus.length > 0}
       <div class="group">
-        <h3 class="apparatus-text">on {focusLabel}</h3>
+        <h3>On {focusLabel}</h3>
         {#each forFocus as n (n.id)}
           <article class="prior"><blockquote>{n.text}</blockquote></article>
         {:else}
-          <p class="apparatus-text none">Nothing written yet.</p>
+          <p class="none">Nothing written yet.</p>
         {/each}
 
         {#if composing}
@@ -105,17 +105,17 @@
               aria-label="a standing note"
             ></textarea>
             <div class="foot">
-              <span class="apparatus-text">filed under {focusLabel}</span>
+              <span class="hint">Filed under {focusLabel}</span>
               <span class="grow"></span>
-              <button type="button" class="ghost" onclick={() => (composing = false)}>cancel</button>
-              <button type="button" class="frame-btn" disabled={saving} onclick={keep}>
-                {saving ? "keeping…" : "keep"}
+              <button type="button" class="btn bare small" onclick={() => (composing = false)}>Cancel</button>
+              <button type="button" class="btn primary small" disabled={saving} onclick={keep}>
+                {saving ? "Keeping…" : "Keep"}
               </button>
             </div>
           </div>
         {:else}
-          <button type="button" class="ghost add" onclick={() => (composing = true)}>
-            write one…
+          <button type="button" class="btn quiet small add" onclick={() => (composing = true)}>
+            Write one
           </button>
         {/if}
       </div>
@@ -138,12 +138,11 @@
     gap: 0.4rem;
   }
   h3 {
-    margin: 0;
-    font-size: 0.6rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--ink-3);
-    font-weight: 400;
+    margin: 0.3rem 0 0;
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--ink-2);
   }
   /* Recessive against the commentary: these are apparatus around the
      reading, not part of it. The verbatim words keep the finest setting. */
@@ -155,42 +154,49 @@
     font-size: 0.92rem;
     line-height: 1.6;
   }
-  .none {
+  .none,
+  .hint {
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
     color: var(--ink-3);
-    font-style: italic;
   }
   .add {
     align-self: flex-start;
   }
-  /* Not a card: a ruled opening in the stream, the way a printer sets an
-     inserted note off with a rule rather than a border. */
+  /* An opening in the stream rather than a card: the field is the only
+     surface, so the note being written reads as the one thing in hand. */
   .compose {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
-    border-top: 1px solid var(--hairline);
-    padding: 0.6rem 0 0;
+    gap: 0.5rem;
   }
   .compose textarea {
     width: 100%;
-    background: transparent;
+    background: var(--surface);
     color: var(--ink);
     border: none;
-    border-bottom: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    box-shadow: inset 0 0 0 1px var(--line);
     font: inherit;
     line-height: 1.6;
-    padding: 0.2rem;
+    padding: 0.5rem 0.75rem;
     resize: vertical;
+  }
+  .compose textarea:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--brass), 0 0 0 3px var(--brass-wash);
   }
   .foot {
     display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 0.4rem;
   }
   .grow {
     flex: 1;
   }
   .err {
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
     color: var(--oxblood);
   }
 </style>

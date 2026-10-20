@@ -95,15 +95,15 @@
     // complete value or an empty string, so "incomplete" is now something this
     // form can see and answer inline rather than send off and be told about.
     if (!date) {
-      error = "enter a birth date";
+      error = "Enter a birth date.";
       return;
     }
     if (!time) {
-      error = "enter a birth time";
+      error = "Enter a birth time.";
       return;
     }
     if (!picked) {
-      error = "pick a place from the suggestions";
+      error = "Pick the place from the suggestions.";
       return;
     }
     const place = picked;
@@ -152,207 +152,158 @@
   }
 </script>
 
-<p class="rubric">cast a natal chart</p>
+<!-- The sheet's head (Overlay's `title`) names it; this is only the fields.
+     In the order a birth certificate gives them, the optional apparatus for a
+     recorded session last. -->
 <form
+  class="form"
   onsubmit={(e) => {
     e.preventDefault();
     compute();
   }}
 >
-  <label>
-    <span>name</span>
-    <input bind:value={name} placeholder="the chart holder's name" />
+  <label class="fld">
+    <span class="lbl">Name</span>
+    <input bind:value={name} placeholder="The chart holder's name" />
   </label>
-  <div class="duo">
-    <label class="lbl" for="f-date">born on</label>
-    <MomentField id="f-date" type="date" value={date} width="10.5rem" oncommit={(v) => (date = v)} />
-    <label class="lbl" for="f-time">at</label>
-    <MomentField id="f-time" type="time" value={time} width="8rem" oncommit={(v) => (time = v)} />
+  <div class="row">
+    <div class="fld">
+      <label class="lbl" for="f-date">Born on</label>
+      <MomentField id="f-date" type="date" value={date} width="100%" oncommit={(v) => (date = v)} />
+    </div>
+    <div class="fld">
+      <label class="lbl" for="f-time">At</label>
+      <MomentField id="f-time" type="time" value={time} width="100%" oncommit={(v) => (time = v)} />
+    </div>
   </div>
-  <label class="place">
-    <span>in</span>
-    <PlacePicker bind:value={picked} />
+  <label class="fld place">
+    <span class="lbl">Place of birth</span>
+    <PlacePicker bind:value={picked} placeholder="Type a city" />
   </label>
-  <label>
-    <span>language</span>
-    <select class="lang" bind:value={lang}>
-      {#each locales as l (l.code)}
-        <option value={l.code}>{l.label}</option>
-      {/each}
-    </select>
-  </label>
-  <CalcOptions bind:houseSystem bind:zodiac bind:ayanamsa />
-  <label>
-    <span>transcript</span>
-    <input bind:value={transcript} placeholder=".txt / .jsonl — or a .wav to transcribe (optional)" />
-    <button type="button" class="browse" onclick={() => pickFile("transcript")}>browse…</button>
-  </label>
-  <label>
-    <span>model</span>
-    <span class="model-slot">
-      <input
-        readonly
-        value={model ? basename(model) : ""}
-        placeholder="ggml whisper model — for audio (optional)"
-        title={model || undefined}
-        onclick={() => pickFile("model")}
-        onkeydown={(e) => e.key === "Enter" && pickFile("model")}
-      />
-      {#if model}
-        <button type="button" class="clear" aria-label="clear the model" onclick={() => (model = "")}>×</button>
-      {/if}
-    </span>
-    <button type="button" class="browse" onclick={() => pickFile("model")}>browse…</button>
-  </label>
+  <div class="row">
+    <label class="fld">
+      <span class="lbl">Language</span>
+      <select bind:value={lang}>
+        {#each locales as l (l.code)}
+          <option value={l.code}>{l.label}</option>
+        {/each}
+      </select>
+    </label>
+    <CalcOptions bind:houseSystem bind:zodiac bind:ayanamsa />
+  </div>
 
-  {#if error}<p class="error">✗ {error}</p>{/if}
+  <h3 class="group-head">Recording <span class="opt">— optional</span></h3>
+  <label class="fld">
+    <span class="lbl">Transcript or audio</span>
+    <span class="with-act">
+      <input bind:value={transcript} placeholder=".txt, .jsonl, or a .wav to transcribe" />
+      <button type="button" class="btn quiet" onclick={() => pickFile("transcript")}>Browse…</button>
+    </span>
+  </label>
+  <label class="fld">
+    <span class="lbl">Whisper model <span class="opt">— needed for audio</span></span>
+    <span class="with-act">
+      <span class="model-slot">
+        <input
+          readonly
+          value={model ? basename(model) : ""}
+          placeholder="No model chosen"
+          title={model || undefined}
+          onclick={() => pickFile("model")}
+          onkeydown={(e) => e.key === "Enter" && pickFile("model")}
+        />
+        {#if model}
+          <button type="button" class="clear" aria-label="clear the model" onclick={() => (model = "")}>
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+          </button>
+        {/if}
+      </span>
+      <button type="button" class="btn quiet" onclick={() => pickFile("model")}>Browse…</button>
+    </span>
+  </label>
 
   <div class="actions">
-    <button type="submit" class="frame-btn compute" disabled={isBusy()}>
+    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    <button type="submit" class="btn primary compute" disabled={isBusy()}>
       {#if phase.kind === "transcribe"}
-        transcribing… {phase.pct}%
+        Transcribing… {phase.pct}%
       {:else if phase.kind === "compute"}
-        computing the chart…
+        Computing the chart…
       {:else}
-        compute the chart
+        Compute the chart
       {/if}
     </button>
+    {#if phase.kind === "transcribe"}
+      <div class="bar"><div class="fill" style="width: {phase.pct}%"></div></div>
+    {/if}
   </div>
-  {#if phase.kind === "transcribe"}
-    <div class="bar"><div class="fill" style="width: {phase.pct}%"></div></div>
-  {/if}
-
-  {#if onclose}
-    <p class="close-line">
-      <button type="button" class="ghost" onclick={onclose}>← back to the calculator</button>
-    </p>
-  {/if}
 </form>
 
 <style>
-  form {
-    margin-top: 1.1rem;
-    text-align: left;
+  .form {
+    padding-top: 0.4rem;
   }
-  label {
-    display: grid;
-    grid-template-columns: 7.5rem 1fr auto;
-    gap: 0 1rem;
-    align-items: baseline;
-    margin-bottom: 0.7rem;
-    position: relative;
+  .place :global(.picker) {
+    display: block;
   }
-  label span:first-child,
-  .duo .lbl {
-    font-style: italic;
-    color: var(--ink-3);
-    text-align: right;
-  }
-  .duo {
-    display: grid;
-    /* content-width fields packed to the left: date and time both size to
-       their own inputs so the time field never stretches to the plate edge,
-       and "at" sits snug between them. The trailing space stays empty. */
-    grid-template-columns: 7.5rem auto auto auto;
-    justify-content: start;
-    gap: 0;
-    align-items: baseline;
-    margin-bottom: 0.7rem;
-  }
-  /* The two fields are `MomentField`s, so their widths are props rather than
-     rules here — a selector in this component cannot reach an input another
-     component renders. What stays ours is the spacing between them: the pair
-     reads as one clause, with "at" pressed up against the date. */
-  .duo :global(input) {
-    margin-left: 1rem;
-  }
-  .duo label[for="f-time"] {
-    margin-left: 0.6rem;
-  }
-  .duo label[for="f-time"] + :global(input) {
-    margin-left: 0.6rem;
-  }
-  .browse {
-    font-size: 0.85rem;
-    color: var(--ink-3);
-    font-style: italic;
-  }
-  .browse:hover {
-    color: var(--ink);
-  }
-  /* the model shows its NAME (the path is a tooltip); the readonly input is
-     itself a picker, with a quiet × to unset it */
+  /* the model shows its NAME (the path is a tooltip); the readonly field is
+     itself a picker, with a quiet clear mark inside its right end */
   .model-slot {
     position: relative;
     display: flex;
-    align-items: baseline;
     min-width: 0;
   }
   .model-slot input {
-    flex: 1;
-    min-width: 0;
     cursor: pointer;
+    padding-right: 2rem;
   }
-  .model-slot .clear {
+  .clear {
     position: absolute;
-    right: 0.15rem;
+    top: 50%;
+    right: 0.4rem;
+    transform: translateY(-50%);
+    display: grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: var(--radius-sm);
     color: var(--ink-3);
-    font-size: 0.9rem;
-    padding: 0 0.2rem;
   }
-  .model-slot .clear:hover {
+  .clear svg {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.3;
+    stroke-linecap: round;
+  }
+  .clear:hover {
     color: var(--ink);
-  }
-  .lang {
-    justify-self: start;
-    background: transparent;
-    color: var(--ink);
-    border: none;
-    border-bottom: 1px solid var(--line);
-    padding: 0.1rem 0.2rem;
-    font: inherit;
-  }
-  .lang option {
-    background: var(--bg-deep);
-    color: var(--ink);
-  }
-  .error {
-    color: var(--oxblood);
-    font-style: italic;
-    text-align: center;
+    background: var(--surface-hover);
   }
   .actions {
-    text-align: center;
-    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    margin-top: 0.6rem;
   }
-  /* the panel's primary act: a brass-framed plate that fills on hover */
   .compute {
-    padding: 0.5rem 2rem;
-    letter-spacing: 0.18em;
-    border-color: var(--brass);
-    color: var(--ink);
-    transition:
-      background var(--dur-base) var(--ease-out-quint),
-      box-shadow var(--dur-base) var(--ease-out-quint);
-  }
-  .compute:hover:not(:disabled) {
-    background: var(--brass-wash);
-    box-shadow: 0 0 0 1px var(--brass-halo);
+    width: 100%;
+    height: 2.6rem;
+    font-size: 0.92rem;
   }
   .bar {
-    margin: 1rem auto 0;
-    max-width: 20rem;
-    height: 2px;
+    height: 3px;
+    border-radius: 2px;
     background: var(--line);
+    overflow: hidden;
   }
   .fill {
     height: 100%;
     background: var(--brass);
-    transition: width 0.4s ease-out;
+    transition: width 0.4s var(--ease-out-quint);
   }
-  .close-line {
-    text-align: center;
-    margin-top: 1.2rem;
-    font-size: 0.85rem;
+  @media (prefers-reduced-motion: reduce) {
+    .fill {
+      transition: none;
+    }
   }
 </style>

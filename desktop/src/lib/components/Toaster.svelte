@@ -22,46 +22,53 @@
 </div>
 
 <style>
-  /* Above the fixed tools footer; a document-scale stack that never
-     intercepts clicks except on a toast itself. */
+  /* The bottom-right corner, clear of the reading column's words: a toast
+     confirms an act, and the act happened up in the bar or in the stream.
+     Never intercepts clicks except on a toast itself. */
   .toaster {
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 2.6rem;
+    right: clamp(1rem, 2.5vw, 1.6rem);
+    bottom: clamp(1rem, 2.5vw, 1.6rem);
     z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-end;
     gap: 0.5rem;
-    padding: 0 1rem;
     pointer-events: none;
   }
-  /* An engraved plate: hairline frame on the deep field, lifted just off the
-     sky. No glow, no gradient — elevation only. */
   .toast {
     pointer-events: auto;
     display: inline-flex;
     align-items: baseline;
     gap: 0.5rem;
-    max-width: min(90vw, 34rem);
-    padding: 0.4rem 1.1rem;
-    background: var(--bg-deep);
-    border: 1px solid var(--hairline);
+    max-width: min(88vw, 26rem);
+    padding: 0.6rem 0.95rem;
+    border-radius: var(--radius);
+    background: var(--surface-raised);
+    box-shadow:
+      inset 0 0 0 1px var(--line),
+      0 12px 32px -10px rgba(0, 0, 0, 0.65);
     color: var(--ink);
-    font-size: 0.88rem;
+    font-family: var(--font-sans);
+    font-size: 0.84rem;
     text-align: left;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
-    animation: toast-in 220ms var(--ease-out-expo);
+    animation: toast-in 260ms var(--ease-out-expo);
   }
   .toast:hover {
-    border-color: var(--ink-3);
+    box-shadow:
+      inset 0 0 0 1px var(--hairline),
+      0 12px 32px -10px rgba(0, 0, 0, 0.65);
   }
   .msg {
     line-height: 1.4;
   }
   /* Colour is never the only signal — the ✗ carries the error reading; the
      message text stays high-contrast ink. */
+  .toast.error {
+    box-shadow:
+      inset 0 0 0 1px rgba(192, 84, 104, 0.45),
+      0 12px 32px -10px rgba(0, 0, 0, 0.65);
+  }
   .toast.error .mark {
     color: var(--oxblood);
     font-weight: 600;
@@ -69,11 +76,11 @@
   @keyframes toast-in {
     from {
       opacity: 0;
-      transform: translateY(6px);
+      transform: translateY(8px) scale(0.98);
     }
     to {
       opacity: 1;
-      transform: translateY(0);
+      transform: none;
     }
   }
   @media (prefers-reduced-motion: reduce) {

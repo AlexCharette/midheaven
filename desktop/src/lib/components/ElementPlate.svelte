@@ -40,7 +40,7 @@
   {#each bands as band (band.cat)}
     {#if band.entries.length > 0}
       <div class="band">
-        <h4 class="apparatus-text">{band.cat}s</h4>
+        <h4>{band.cat}s</h4>
         <div class="entries">
           {#each band.entries as e (e.tag)}
             <button
@@ -63,54 +63,67 @@
 </div>
 
 <style>
+  /* The same grammar as the reading view's Index of Elements: the category in
+     a narrow gutter, its entries flowing beside it, a picked one holding the
+     brass selection. */
   .plate {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.5rem;
     padding: 0.2rem 0 0;
+    font-family: var(--font-sans);
   }
   .band {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    display: grid;
+    grid-template-columns: 4.2rem 1fr;
+    gap: 0 0.5rem;
+    align-items: baseline;
+    min-width: 0;
   }
   h4 {
     margin: 0;
-    font-size: 0.6rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
+    padding-top: 0.2rem;
+    font-size: 0.75rem;
+    font-weight: 500;
     color: var(--ink-3);
-    font-weight: 400;
   }
   .entries {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.2rem 0.3rem;
+    gap: 0.15rem;
+    min-width: 0;
+    margin-left: -0.45rem;
   }
   .entry {
     display: inline-flex;
     align-items: baseline;
-    gap: 0.3rem;
-    background: none;
-    border: 1px solid transparent;
-    border-radius: 2px;
+    gap: 0.35rem;
+    padding: 0.16rem 0.45rem;
+    border-radius: var(--radius-sm);
     color: var(--ink-2);
-    font: inherit;
-    font-size: 0.82rem;
-    padding: 0.08rem 0.35rem;
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
     cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease-out-quint),
+      color var(--dur-fast) var(--ease-out-quint);
   }
   .entry:hover {
     color: var(--ink);
-    border-color: var(--line);
+    background: var(--surface-hover);
   }
   .entry.on {
     color: var(--ink);
-    border-color: var(--hairline);
-    background: var(--plate-inset, rgba(255, 255, 255, 0.04));
+    background: var(--brass-wash);
+    box-shadow: inset 0 0 0 1px var(--brass-halo);
+  }
+  .entry:focus-visible {
+    outline: 2px solid var(--brass-halo);
+    outline-offset: 1px;
   }
   .entry .g {
-    font-size: 0.9em;
+    font-family: var(--font-astro);
+    font-size: 1.05em;
   }
   /* The same category colouring the reading view and the artifact use. */
   .entry[data-cat="planet"] .g {
@@ -120,11 +133,16 @@
     color: var(--verdigris);
   }
   .entry[data-cat="house"] .g {
+    font-family: var(--font-serif);
     color: var(--steel);
-    font-size: 0.8em;
-    letter-spacing: 0.06em;
+    font-size: 0.9em;
   }
   .entry[data-cat="kind"] .g {
     color: var(--oxblood);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .entry {
+      transition: none;
+    }
   }
 </style>

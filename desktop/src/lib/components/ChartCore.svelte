@@ -17,7 +17,18 @@
   import { fade } from "svelte/transition";
   import { reason } from "$lib/failure";
 
-  let { chart, notes }: { chart: ChartData; notes: Note[] } = $props();
+  let {
+    chart,
+    notes,
+    bare = false,
+  }: {
+    chart: ChartData;
+    notes: Note[];
+    /** The plate alone, its calculation controls put away — how it is shown
+     * to a client. The hub read-out stays: it is what pointing at the chart
+     * is for. */
+    bare?: boolean;
+  } = $props();
 
   const coreSwap = { duration: swapDuration() };
 
@@ -73,16 +84,14 @@
   const planetsInHouse = (n: number) => chart.planets.filter((p) => p.house === n);
 </script>
 
-<!-- the plate's title cartouche, tucked in the corner like an atlas figure -->
-<div class="plate-caption">
-  <p class="who">{chart.meta.name}</p>
-  <p class="vitals">{chart.meta.born}</p>
-  <p class="vitals">{chart.meta.place}</p>
-  <span class="double-rule" aria-hidden="true"></span>
+<!-- The calculation, set in the plate's empty top-left corner where it can be
+     changed in place. Who and when moved to the head of the screen: said in
+     the corner as well, they were said twice. -->
+<div class="plate-caption" class:away={bare} inert={bare}>
   {#if chart.meta.birth}
     <div class="calc-line" title={whyCannotRecalculate() ?? undefined}>
       <CalcOptions
-        variant="caption"
+        variant="control"
         houseSystem={shown.houseSystem}
         zodiac={shown.zodiac}
         ayanamsa={shown.ayanamsa}
@@ -98,7 +107,7 @@
 <!-- the hub read-out appears only while an element is focused; at rest the
      centre stays clear so the aspect web reads uninterrupted -->
 {#if focusTag}
-  <div class="core">
+  <div class="core" class:bare>
     {#key focusTag}
       <div class="core-body" in:fade={coreSwap}>
       {#if cat === "planet"}
@@ -204,44 +213,23 @@
   p {
     margin: 0;
   }
-  /* --- title cartouche: chart identity, in the plate's top-left corner --- */
+  /* --- the calculation, in the plate's corner --- */
   .plate-caption {
     position: absolute;
-    top: 0.7rem;
-    left: 0.85rem;
-    max-width: 13.5rem;
+    top: 0;
+    left: 0;
+    max-width: 40%;
     z-index: 1;
+    transition: opacity 320ms var(--ease-out-quint);
+  }
+  .plate-caption.away {
+    opacity: 0;
     pointer-events: none;
   }
-  .plate-caption .who {
-    font-size: 0.98rem;
-    color: var(--ink);
-    line-height: 1.25;
-    text-wrap: balance;
-  }
-  .plate-caption .vitals {
-    font-size: 0.72rem;
-    font-style: italic;
-    color: var(--ink-3);
-    line-height: 1.4;
-  }
-  .plate-caption .double-rule {
-    display: block;
-    width: 3.4rem;
-    margin: 0.45rem 0;
-  }
   .plate-caption .system {
-    font-size: 0.64rem;
-    font-variant: small-caps;
-    letter-spacing: 0.12em;
-    color: var(--ink-2);
-  }
-  /* the calc line is a live control: re-enable pointer events (the caption is
-     a pointer-transparent overlay) and size the shared selector trio to the
-     tight cartouche — the selects themselves live in CalcOptions. */
-  .plate-caption .calc-line {
-    pointer-events: auto;
-    font-size: 0.64rem;
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    color: var(--ink-3);
   }
   /* --- focused element dossier --- */
   .glyph {
@@ -308,6 +296,10 @@
   }
   .nature-challenging {
     color: var(--oxblood);
+  }
+  /* how much the astrologer has written is theirs, not the client's */
+  .core.bare .count {
+    display: none;
   }
   .count {
     margin-top: 0.3rem;

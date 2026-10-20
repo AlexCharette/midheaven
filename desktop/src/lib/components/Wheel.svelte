@@ -207,8 +207,11 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (role and tabindex are
          set together: both "button"/0 when interactive, both absent when not) -->
+    <!-- `data-tag` lets a host find an element on the plate — the journal
+         zooms the plate toward the one it is showing notes for -->
     <g
       class={cls}
+      data-tag={id}
       class:sel={interactive && isPinned(id)}
       class:focus={focusTag === id}
       class:rel={related.has(id)}
