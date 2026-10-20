@@ -5,22 +5,22 @@ import {
   focusedTag,
   matching,
   occupiedTags,
-  passageCount,
+  noteCount,
   peeked,
   relatedTo,
   signDensity,
   toggled,
   touchesPins,
   unpeeked,
-  visibleExcerpts,
+  visibleNotes,
   withMode,
 } from "./focus";
 import type { Focus } from "./focus";
-import type { ChartData, Excerpt } from "./types";
+import type { ChartData, Note } from "./types";
 
 /** A chart just real enough for the focus rules: two bodies with derived signs,
- * one aspect between them, and passages tagged from the vocabulary. */
-function chart(excerpts: Excerpt[] = []): ChartData {
+ * one aspect between them, and notes tagged from the vocabulary. */
+function chart(): ChartData {
   return {
     signs: Array.from({ length: 12 }, (_, i) => ({
       id: `sign:s${i}`,
@@ -48,12 +48,12 @@ function chart(excerpts: Excerpt[] = []): ChartData {
         orb: 0,
       },
     ],
-    excerpts,
+    kinds: [{ id: "kind:trine", glyph: "△", name: "trine" }],
   } as unknown as ChartData;
 }
 
-const ex = (id: string, tags: string[]): Excerpt =>
-  ({ id, time: "", span: [0, 0], text: id, tags }) as unknown as Excerpt;
+const ex = (id: string, tags: string[]): Note =>
+  ({ id, time: "", span: [0, 0], text: id, tags }) as unknown as Note;
 
 describe("the focused element", () => {
   it("is nothing when nothing is pinned or hovered", () => {
@@ -96,69 +96,69 @@ describe("the focused element", () => {
 });
 
 describe("matching", () => {
-  const c = chart([
+  const c = [
     ex("x1", ["planet:sun", "sign:s3"]),
     ex("x2", ["planet:moon"]),
     ex("x3", []),
-  ]);
+  ];
 
   it("shows everything for an empty selection", () => {
     expect(matching(c, [], "any")).toHaveLength(3);
     expect(matching(c, [], "all")).toHaveLength(3);
   });
 
-  it("any = the passage touches one of the tags", () => {
+  it("any = the note touches one of the tags", () => {
     expect(matching(c, ["planet:sun", "planet:moon"], "any").map((e) => e.id)).toEqual(["x1", "x2"]);
   });
 
-  it("all = the passage touches every one", () => {
+  it("all = the note touches every one", () => {
     expect(matching(c, ["planet:sun", "sign:s3"], "all").map((e) => e.id)).toEqual(["x1"]);
     expect(matching(c, ["planet:sun", "planet:moon"], "all")).toHaveLength(0);
   });
 
-  it("counts the passages touching one tag", () => {
-    expect(passageCount(c, "planet:sun")).toBe(1);
-    expect(passageCount(c, "house:12")).toBe(0);
+  it("counts the notes touching one tag", () => {
+    expect(noteCount(c, "planet:sun")).toBe(1);
+    expect(noteCount(c, "house:12")).toBe(0);
   });
 });
 
 describe("what the commentary shows", () => {
-  const c = chart([
+  const c = [
     ex("x1", ["planet:sun", "sign:s3"]),
     ex("x2", ["planet:moon"]),
     ex("x3", []),
-  ]);
+  ];
 
   it("is the whole reading when nothing is pinned or hovered", () => {
-    expect(visibleExcerpts(c, NOTHING)).toHaveLength(3);
+    expect(visibleNotes(c, NOTHING)).toHaveLength(3);
   });
 
-  it("previews just the hovered element's passages while nothing is pinned", () => {
+  it("previews just the hovered element's notes while nothing is pinned", () => {
     const f = peeked(NOTHING, "planet:moon");
-    expect(visibleExcerpts(c, f).map((e) => e.id)).toEqual(["x2"]);
+    expect(visibleNotes(c, f).map((e) => e.id)).toEqual(["x2"]);
   });
 
   it("stops previewing once anything is pinned — pins win over the hover", () => {
     let f = toggled(NOTHING, "planet:sun");
     f = peeked(f, "planet:moon");
-    expect(visibleExcerpts(c, f).map((e) => e.id)).toEqual(["x1"]);
+    expect(visibleNotes(c, f).map((e) => e.id)).toEqual(["x1"]);
   });
 
   it("honours the filter mode across several pins", () => {
     let f = toggled(toggled(NOTHING, "planet:sun"), "sign:s3");
-    expect(visibleExcerpts(c, f).map((e) => e.id)).toEqual(["x1"]);
+    expect(visibleNotes(c, f).map((e) => e.id)).toEqual(["x1"]);
     f = withMode(f, "all");
-    expect(visibleExcerpts(c, f).map((e) => e.id)).toEqual(["x1"]);
+    expect(visibleNotes(c, f).map((e) => e.id)).toEqual(["x1"]);
     f = withMode(toggled(f, "planet:moon"), "all");
-    expect(visibleExcerpts(c, f)).toHaveLength(0);
+    expect(visibleNotes(c, f)).toHaveLength(0);
   });
 
   it("washes only the rows a pin touches, and nothing when nothing is pinned", () => {
     const f = toggled(NOTHING, "planet:sun");
-    expect(touchesPins(f, c.excerpts[0])).toBe(true);
-    expect(touchesPins(f, c.excerpts[1])).toBe(false);
+    expect(touchesPins(f, c[0])).toBe(true);
+    expect(touchesPins(f, c[1])).toBe(false);
     // a hover is not a pin
-    expect(touchesPins(peeked(NOTHING, "planet:sun"), c.excerpts[0])).toBe(false);
+    expect(touchesPins(peeked(NOTHING, "planet:sun"), c[0])).toBe(false);
   });
 });
 
@@ -196,37 +196,37 @@ describe("what lights up with the focus", () => {
 });
 
 describe("sign density", () => {
-  it("counts a passage toward the sign it names", () => {
-    const d = signDensity(chart([ex("x1", ["sign:s3"])]));
+  it("counts a note toward the sign it names", () => {
+    const d = signDensity(chart(), [ex("x1", ["sign:s3"])]);
     expect(d[3]).toBe(1);
     expect(d.reduce((a, b) => a + b, 0)).toBe(1);
   });
 
-  it("counts a passage toward the sign a tagged body stands in", () => {
+  it("counts a note toward the sign a tagged body stands in", () => {
     // The words never named the sign — the Sun standing in it carries the weight.
-    const d = signDensity(chart([ex("x1", ["planet:sun"])]));
+    const d = signDensity(chart(), [ex("x1", ["planet:sun"])]);
     expect(d[3]).toBe(1);
   });
 
-  it("counts a passage once per sign however many of its tags point there", () => {
+  it("counts a note once per sign however many of its tags point there", () => {
     // The sign and its tenant are the same hit, not two.
-    const d = signDensity(chart([ex("x1", ["planet:sun", "sign:s3"])]));
+    const d = signDensity(chart(), [ex("x1", ["planet:sun", "sign:s3"])]);
     expect(d[3]).toBe(1);
   });
 
-  it("spreads a passage across every sign it touches", () => {
-    const d = signDensity(chart([ex("x1", ["planet:sun", "planet:moon"])]));
+  it("spreads a note across every sign it touches", () => {
+    const d = signDensity(chart(), [ex("x1", ["planet:sun", "planet:moon"])]);
     expect(d[3]).toBe(1);
     expect(d[7]).toBe(1);
   });
 
   it("ignores tags that name no sign and no body", () => {
-    const d = signDensity(chart([ex("x1", ["house:4", "aspect:sun-moon"])]));
+    const d = signDensity(chart(), [ex("x1", ["house:4", "aspect:sun-moon"])]);
     expect(d.reduce((a, b) => a + b, 0)).toBe(0);
   });
 
-  it("is twelve long and all zero for a reading with no passages", () => {
-    expect(signDensity(chart())).toEqual(new Array(12).fill(0));
+  it("is twelve long and all zero for a reading with no notes", () => {
+    expect(signDensity(chart(), [])).toEqual(new Array(12).fill(0));
   });
 });
 

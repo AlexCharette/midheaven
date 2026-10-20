@@ -22,14 +22,23 @@ import type {
   AppChrome,
   BirthForm,
   CalculationDefaults,
+  Chart,
   ChartData,
+  Beside,
+  ChartRow,
+  ElementDto,
+  JournalRow,
   LocaleDto,
+  Note,
   OptionDto,
   PlaceDto,
+  Person,
   Preferences,
   PreviewDto,
   PreviewInput,
-  ReadingEntry,
+  Query,
+  StoredNote,
+  View,
 } from "./types";
 
 /** A command the backend refused. `message` is the reason it gave, ready to
@@ -74,7 +83,7 @@ export const appChrome = () => call<AppChrome>("app_chrome");
 export const build = (form: BirthForm) => call<ChartData>("build", { form });
 
 /** Recompute the current chart's geometry under a new house system / zodiac,
- * keeping its passages. `ayanamsa` is used only when zodiac is "sidereal". */
+ * keeping its notes. `ayanamsa` is used only when zodiac is "sidereal". */
 export const reproject = (houseSystem: string, zodiac: string, ayanamsa: string | null) =>
   call<ChartData>("reproject", { houseSystem, zodiac, ayanamsa });
 
@@ -90,11 +99,15 @@ export const lastPlace = () => call<PlaceDto>("last_place");
 /** Persist the calculator's place; called on pick, never per scrub tick. */
 export const setLastPlace = (id: number) => call<void>("set_last_place", { id });
 
-export const loadChart = (path: string) => call<ChartData>("load_chart", { path });
+/** Reopen a chart from the store, by id. */
+export const openChart = (id: string) => call<ChartData>("open_chart", { id });
 
-export const listReadings = () => call<ReadingEntry[]>("list_readings");
+/** Every chart the store holds, newest first, with who it is of and how much
+ * has been written about it. */
+export const listCharts = () => call<ChartRow[]>("list_charts");
 
-export const deleteReading = (dir: string) => call<void>("delete_reading", { dir });
+/** Remove a chart and every note filed under it. The person stays. */
+export const deleteChart = (id: string) => call<void>("delete_chart", { id });
 
 export const saveArtifact = (path: string) => call<string>("save_artifact", { path });
 
@@ -111,17 +124,86 @@ export const onBuildWarnings = (handler: (warnings: string[]) => void) =>
 export const startRecording = (model: string) =>
   call<void>("start_recording", { model });
 
-export const stopRecording = () => call<ChartData>("stop_recording");
+/** A landed take's notes — the whole reading's, in reading order. */
+export const stopRecording = () => call<Note[]>("stop_recording");
 
-export const mergeUp = (id: string) => call<ChartData>("merge_up", { id });
+// ---- notes ----
+//
+// One path. These used to be two: four commands against the open chart's note
+// list, and three more against a separate journal. Every one of them returns
+// the reading's notes rather than a chart, because a chart no longer holds
+// any.
 
-export const correctExcerpt = (id: string, text: string) =>
-  call<ChartData>("correct_excerpt", { id, text });
+/** Every note filed under the open reading's chart, in reading order. */
+export const listNotes = () => call<Note[]>("list_notes");
 
-export const addExcerpt = (text: string, tags: string[]) =>
-  call<ChartData>("add_excerpt", { text, tags });
+/** Write a note against the open reading: new with no `id`, an amendment with
+ * one. With no tags picked, the router files it from its own words. */
+export const writeNote = (text: string, tags: string[], id?: string) =>
+  call<Note[]>("write_note", { id, text, tags });
 
-export const deleteExcerpt = (id: string) => call<ChartData>("delete_excerpt", { id });
+/** Merge a note into the one before it in reading order. */
+export const mergeUp = (id: string) => call<Note[]>("merge_up", { id });
+
+/** Remove a note. Final. */
+export const deleteNote = (id: string) => call<void>("delete_note", { id });
+
+/** Write a note against a sky nobody is consulting over — the home page's
+ * path. The chart record is minted on the first note about that moment, so
+ * every note over one sky shares one chart. */
+export const writeMomentNote = (
+  text: string,
+  tags: string[],
+  anchor: Chart,
+  id?: string,
+) => call<StoredNote>("write_moment_note", { id, text, tags, anchor });
+
+/** Every note the app holds, whatever sky it was written over — newest
+ * first. */
+export const listJournal = () => call<JournalRow[]>("list_journal");
+
+// ---- asking ----
+//
+// A closed set of questions rather than a search string with a syntax. The
+// rows a query returns are the same rows `listJournal` returns, narrowed —
+// searching does not produce a different kind of result.
+
+/** Ask a question of the notes. An empty query is every note. */
+export const queryNotes = (query: Query) => call<JournalRow[]>("query_notes", { query });
+
+/** Save a question by name — new with no `id`, an amendment with one. */
+export const writeView = (name: string, query: Query, id?: string) =>
+  call<View>("write_view", { id, name, query });
+
+export const listViews = () => call<View[]>("list_views");
+
+export const deleteView = (id: string) => call<void>("delete_view", { id });
+
+/** Everyone the store knows about — the people filter's options. */
+export const listPeople = () => call<Person[]>("list_people");
+
+/** Remove a person. Refused while any chart or note still refers to them. */
+export const deletePerson = (id: string) => call<void>("delete_person", { id });
+
+// ---- standing notes ----
+
+/** What belongs beside the open reading without belonging to it: craft
+ * notes (shown for the focused element) and observations about this chart's
+ * person (shown throughout). Never exported. */
+export const listBeside = () => call<Beside>("list_beside");
+
+/** The vocabulary as a plate you can click, with no chart behind it — the
+ * tag picker for a note that is about no sky. Excludes `aspect:` pairs. */
+export const listElements = () => call<ElementDto[]>("list_elements");
+
+/** Write a note about no sky: craft knowledge about the elements, or an
+ * observation about a person. Naming a person is what makes it the second. */
+export const writeStandingNote = (
+  text: string,
+  tags: string[],
+  person?: string,
+  id?: string,
+) => call<StoredNote>("write_standing_note", { id, text, tags, person });
 
 export const getPreferences = () => call<Preferences>("get_preferences");
 

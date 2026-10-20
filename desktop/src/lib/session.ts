@@ -79,7 +79,7 @@ export function whyCannotOpenAnother(session: Session): string | null {
 /** Recomputing this chart's geometry for a different house system or zodiac.
  * Refused while recording because the backend releases the session across the
  * transcription await, so a recalculation can land in that gap and the take's
- * passages would be filed against a chart the user has already replaced. */
+ * notes would be filed against a chart the user has already replaced. */
 export function whyCannotRecalculate(session: Session): string | null {
   if (session.phase === "recording") return WHILE_RECORDING;
   if (session.phase === "idle") return "no reading is open";

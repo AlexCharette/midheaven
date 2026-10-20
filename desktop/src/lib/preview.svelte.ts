@@ -14,7 +14,7 @@
 
 import { preview as sendPreview } from "./api";
 import { defaults as optionDefaults } from "./options.svelte";
-import type { ChartData, PlaceDto } from "./types";
+import type { ChartData, PlaceDto, PreviewInput } from "./types";
 import { ringAngles } from "./civil";
 import { createChartPose, type MoveSource } from "./chartPose.svelte";
 import { poseOf, project } from "./pose";
@@ -38,6 +38,15 @@ const result = $state({
    * renders the pose-interpolated projection of it. Never read by the reading
    * view. */
   target: null as ChartData | null,
+  /** The request `target` was computed from, and the instant it was for —
+   * stored with the chart and never apart from it.
+   *
+   * A note anchors to the sky it was written over, and neither the draft nor
+   * `displayed()` can say what that is: the draft moves while a request is in
+   * flight, and `displayed()` is a tween whose angles describe the frame on
+   * screen rather than the chart the frame is heading toward. Only the settled
+   * pair is a chart together with a true account of what it is a chart of. */
+  settled: null as { input: PreviewInput; minutes: number } | null,
   pending: false,
   /** An invalid moment (Feb 30 typed, DST gap): shown as a quiet caption.
    * `target` keeps the last good chart so the wheel never blanks. */
@@ -61,6 +70,9 @@ const pose = createChartPose({
   dateAngle: 0,
 });
 
+/** Resolved when a round of the pump ends — see `whenSettled`. */
+let waiters: (() => void)[] = [];
+
 const pump = createPump({
   next: () => {
     const input = requestFor(draft);
@@ -73,6 +85,7 @@ const pump = createPump({
   settle: (outcome: Outcome) => {
     if (outcome.ok) {
       result.target = outcome.chart;
+      result.settled = { input: outcome.input, minutes: outcome.minutes };
       result.error = null;
       result.warnings = outcome.warnings;
       const target = poseOf(outcome.chart, outcome.minutes);
@@ -86,7 +99,17 @@ const pump = createPump({
       pose.retarget({ ...pose.current, timeAngle, dateAngle }, outcome.source);
     }
   },
-  pending: (p) => (result.pending = p),
+  pending: (p) => {
+    result.pending = p;
+    // A round ended. Anything waiting for the sky to stop moving gets to look
+    // again — `whenSettled` re-checks rather than assuming, because the round
+    // may have failed or another may already have started.
+    if (!p) {
+      const waking = waiters;
+      waiters = [];
+      waking.forEach((resolve) => resolve());
+    }
+  },
 });
 
 // ---- reads ----
@@ -126,6 +149,46 @@ export const ringPose = () => ({
  * until the first preview lands. */
 export const displayed = (): ChartData | null =>
   result.target === null ? null : project(result.target, pose.current);
+
+/** The settled chart and the request it came from — what a note anchors to.
+ *
+ * Deliberately *not* `displayed()`: that is the tween, and a note anchored to a
+ * frame mid-glide would record a sky nobody asked for. Null only until the
+ * first preview lands; a later failure keeps the last good pair rather than
+ * clearing it, the same rule the plate follows. */
+export const settled = (): { chart: ChartData; input: PreviewInput } | null =>
+  result.target === null || result.settled === null
+    ? null
+    : { chart: result.target, input: result.settled.input };
+
+/** Whether the settled pair describes the moment currently drafted.
+ *
+ * False while a recompute is in flight or queued behind one, and false after a
+ * moment that would not compute — the composer waits on this rather than
+ * anchoring a note to the sky it was looking at a keystroke ago, or to one the
+ * calculator has already refused. */
+export const isSettled = (): boolean =>
+  !result.pending && result.settled?.minutes === draft.minutes;
+
+/**
+ * Wait for the sky to stop moving, then say whether it settled on the drafted
+ * moment.
+ *
+ * The composer saves through this rather than being disabled until it is
+ * quiet: typing a note and finding the button dead is the opposite of jotting
+ * something down. The loop matters — one round ending does not mean the last
+ * one has, because a keystroke during the wait starts another.
+ *
+ * `false` means the drafted moment did not compute (a DST gap, a place that no
+ * longer resolves). The caller has a note and nowhere to anchor it, which is
+ * something to say rather than something to guess around.
+ */
+export async function whenSettled(): Promise<boolean> {
+  while (result.pending) {
+    await new Promise<void>((resolve) => waiters.push(resolve));
+  }
+  return isSettled();
+}
 
 // ---- writes ----
 

@@ -83,6 +83,22 @@ pub fn logo_data_uri(path: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Every existing `preferences.json` predates `schema_version`, and `load`
+    /// falls back to `Default` on any parse failure — so a field that refused
+    /// to be missing would not fail loudly, it would silently erase someone's
+    /// readings folder, their branding and their model path.
+    #[test]
+    fn a_preferences_file_from_before_a_field_existed_still_reads() {
+        let old = r#"{"readings_dir":"/Users/x/Readings","astrologer":"Mira","page_size":"letter"}"#;
+        let p: Preferences = serde_json::from_str(old).expect("an older file still parses");
+        assert_eq!(p.readings_dir.as_deref(), Some("/Users/x/Readings"));
+        assert_eq!(p.astrologer.as_deref(), Some("Mira"));
+
+        // And an empty file is still exactly no preferences at all.
+        assert!(serde_json::from_str::<Preferences>("{}").is_ok());
+    }
+
+
     #[test]
     fn logo_uri_carries_the_mime_and_survives_missing_files() {
         let dir = std::env::temp_dir();

@@ -1,16 +1,18 @@
 <script lang="ts">
-  import { ask, open } from "@tauri-apps/plugin-dialog";
-  import { deleteReading, getPreferences, listReadings, loadChart } from "$lib/api";
-  import { openReading as installReading, whyCannotOpenAnother } from "$lib/session.svelte";
-  import { during, isBusy } from "$lib/busy.svelte";
+  import { ask } from "@tauri-apps/plugin-dialog";
+  import { deleteChart, getPreferences, listCharts } from "$lib/api";
+  import { whyCannotOpenAnother } from "$lib/session.svelte";
+  import { isBusy } from "$lib/busy.svelte";
+  import { reopenReading } from "$lib/reopen";
   import { plural, t } from "$lib/chrome.svelte";
   import { notify } from "$lib/toasts.svelte";
-  import type { ReadingEntry } from "$lib/types";
+  import type { ChartRow } from "$lib/types";
   import { reason } from "$lib/failure";
+  import { chooseReadingsDir } from "$lib/readings";
 
   let { onclose }: { onclose: () => void } = $props();
 
-  let entries = $state<ReadingEntry[]>([]);
+  let entries = $state<ChartRow[]>([]);
   let loading = $state(true);
   let err = $state("");
   let readingsDir = $state<string | null>(null);
@@ -25,7 +27,7 @@
     err = "";
     try {
       readingsDir = (await getPreferences()).readings_dir;
-      entries = await listReadings();
+      entries = await listCharts();
     } catch (e) {
       err = reason(e);
     } finally {
@@ -35,63 +37,47 @@
 
   // Installing the reading makes +page.svelte swap to the reading view,
   // unmounting this panel; a failed load leaves the panel up with the error
-  // shown. Refused mid-take: it would re-seat the chart under a live recorder,
-  // and the take would then land on this reading instead of the one it was
-  // spoken over.
-  async function openReading(chartPath: string) {
-    if (isBusy() || whyCannotOpenAnother()) return;
+  // shown.
+  async function openReading(id: string) {
     err = "";
     try {
-      const chart = await during("compute", () => loadChart(chartPath));
-      if (installReading(chart)) notify(`opened ${chart.meta.name}'s reading`);
+      await reopenReading(id);
     } catch (e) {
       err = reason(e);
     }
   }
 
-  async function openFile() {
-    const path = await open({
-      multiple: false,
-      directory: false,
-      defaultPath: readingsDir ?? undefined,
-      filters: [{ name: "Midheaven reading", extensions: ["json"] }],
-    });
-    if (typeof path === "string") openReading(path);
+  // An explicit click is not a decline, so this always asks — `chooseReadingsDir`
+  // rather than the rule-gated `ensureReadingsDir`. Refreshing afterwards is
+  // what turns this empty plate into the list.
+  async function choose() {
+    if (await chooseReadingsDir()) refresh();
   }
 
-  async function remove(ev: MouseEvent, e: ReadingEntry) {
+  async function remove(ev: MouseEvent, e: ChartRow) {
     ev.stopPropagation();
-    const who = e.name || "this";
+    const who = e.person?.name || "this";
+    const n = e.notes;
     const sure = await ask(
-      `Remove ${who}'s reading from the library?\n\n${e.dir}\n\nThe folder and its files are not recoverable.`,
+      `Remove ${who}'s reading?\n\n${n} ${n === 1 ? "note" : "notes"} written about it ` +
+        `will go with it. It is not recoverable.`,
       { title: "Midheaven", kind: "warning" },
     );
     if (!sure) return;
     try {
-      await deleteReading(e.dir);
-      entries = entries.filter((x) => x.dir !== e.dir);
+      await deleteChart(e.chart.id);
+      entries = entries.filter((x) => x.chart.id !== e.chart.id);
       notify("reading removed");
     } catch (e2) {
       err = String(e2);
     }
   }
 
-  const savedLabel = (ms: number) => {
-    const d = new Date(ms);
-    const sameYear = d.getFullYear() === new Date().getFullYear();
-    return d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      ...(sameYear ? {} : { year: "numeric" }),
-    });
-  };
 </script>
 
 <div class="library">
-  <p class="rubric">a saved reading</p>
-
   {#if loading}
-    <p class="apparatus-text note">reading the library…</p>
+    <p class="note">Reading the library…</p>
   {:else if err}
     <div class="empty-plate">
       <span class="mark err-mark" aria-hidden="true">✗</span>
@@ -102,7 +88,8 @@
     <div class="empty-plate">
       <span class="mark" aria-hidden="true">✶</span>
       <p class="caption">No readings folder is set.</p>
-      <p class="sub">Choose one in preferences to keep a library of saved readings.</p>
+      <p class="sub">Choose one to keep a library of saved readings.</p>
+      <button class="btn primary small" onclick={choose}>Choose a folder…</button>
     </div>
   {:else if entries.length === 0}
     <div class="empty-plate">
@@ -112,155 +99,119 @@
     </div>
   {:else}
     <ul class="list">
-      {#each entries as e (e.dir)}
+      {#each entries as e (e.chart.id)}
         <li>
           <button
             type="button"
             class="row"
-            onclick={() => openReading(e.chartPath)}
+            onclick={() => openReading(e.chart.id)}
             disabled={isBusy() || whyCannotOpenAnother() !== null}
             title={whyCannotOpenAnother() ?? undefined}
           >
             <span class="who">
-              <span class="name">{e.name || "untitled"}</span>
-              <span class="apparatus-text sub"
-                >{e.born}{e.born && e.place ? " · " : ""}{e.place}</span
+              <span class="name">{e.person?.name || "Untitled"}</span>
+              <span class="sub"
+                >{e.person?.born ?? ""}{e.person?.born && e.chart.place ? " · " : ""}{e.chart
+                  .place}</span
               >
             </span>
-            <span class="meta apparatus-text">
-              {plural(t().passages, e.excerpts)}{e.modifiedMs
-                ? ` · saved ${savedLabel(e.modifiedMs)}`
-                : ""}
-            </span>
+            <span class="meta">{plural(t().notes, e.notes)}</span>
           </button>
           <button
             type="button"
-            class="remove"
+            class="x-btn"
             title="remove from library"
-            aria-label={`remove ${e.name || "this"}'s reading`}
+            aria-label={`remove ${e.person?.name || "this"}'s reading`}
             onclick={(ev) => remove(ev, e)}
           >
-            ✕
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"
+              ><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.6 4.5l.6 8.5h5.6l.6-8.5" /></svg
+            >
           </button>
         </li>
       {/each}
     </ul>
   {/if}
 
-  <p class="foot">
-    <button
-      type="button"
-      class="ghost"
-      onclick={openFile}
-      disabled={isBusy() || whyCannotOpenAnother() !== null}
-      title={whyCannotOpenAnother() ?? undefined}
-    >
-      open a file…
-    </button>
-    <span class="sep" aria-hidden="true">·</span>
-    <button type="button" class="ghost" onclick={onclose}>← back</button>
-  </p>
 </div>
 
 <style>
-  .library {
-    text-align: left;
-    margin-top: 1rem;
-  }
   .note {
-    text-align: center;
     margin: 2.4rem 0;
+    text-align: center;
+    font-family: var(--font-sans);
+    font-size: 0.86rem;
+    color: var(--ink-3);
   }
   .err-mark {
     color: var(--oxblood);
   }
   .list {
     list-style: none;
-    margin: 0;
+    margin: 0 -0.6rem;
     padding: 0;
-    border-top: 1px solid var(--line);
   }
   .list li {
     display: flex;
     align-items: center;
-    border-bottom: 1px solid var(--line);
+    gap: 0.3rem;
+    border-radius: var(--radius);
+    transition: background var(--dur-fast) var(--ease-out-quint);
+  }
+  .list li:hover {
+    background: var(--surface-hover);
   }
   .row {
-    position: relative;
     flex: 1;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
     min-width: 0;
-    padding: 0.7rem 0.4rem 0.7rem 1.5em;
+    padding: 0.7rem 0.4rem 0.7rem 0.6rem;
     text-align: left;
-    color: var(--ink-2);
-    transition: background var(--dur-fast) var(--ease-out-quint);
-  }
-  /* a manicule slides in on hover, the same pointing hand the index uses */
-  .row::before {
-    content: "☞\FE0E";
-    position: absolute;
-    left: 0.3em;
-    color: var(--brass);
-    opacity: 0;
-    transition: opacity var(--dur-fast) var(--ease-out-quint);
   }
   .row:disabled {
     cursor: wait;
   }
-  .row:hover:not(:disabled) {
-    color: var(--ink);
-    background: var(--ink-a04);
-  }
-  .row:hover:not(:disabled)::before {
-    opacity: 1;
-  }
-  .row:hover:not(:disabled) .name {
-    text-decoration: underline;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .row,
-    .row::before {
-      transition: none;
-    }
+  .row:focus-visible {
+    outline: 2px solid var(--brass-halo);
+    outline-offset: -2px;
+    border-radius: var(--radius);
   }
   .who {
     display: flex;
     flex-direction: column;
-    gap: 0.12rem;
+    gap: 0.1rem;
     min-width: 0;
   }
+  /* the person is the one line set in the reading's own voice */
   .name {
+    font-family: var(--font-serif);
+    font-size: 1.02rem;
     color: var(--ink);
-    font-size: 1.05rem;
   }
   .sub {
-    font-size: 0.85rem;
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    color: var(--ink-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .meta {
-    white-space: nowrap;
-    font-size: 0.82rem;
-    font-variant-numeric: tabular-nums;
-  }
-  .remove {
     flex: none;
-    padding: 0.3rem 0.55rem;
-    margin-left: 0.4rem;
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
     color: var(--ink-3);
-    font-size: 0.9rem;
   }
-  .remove:hover {
-    color: var(--oxblood);
+  .x-btn {
+    margin-right: 0.4rem;
   }
-  .foot {
-    text-align: center;
-    margin-top: 1.8rem;
-    font-size: 0.85rem;
-  }
-  .sep {
-    color: var(--ink-3);
-    margin: 0 0.6rem;
+  @media (prefers-reduced-motion: reduce) {
+    .list li {
+      transition: none;
+    }
   }
 </style>

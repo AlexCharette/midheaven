@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MINUTES_PER_DAY,
   addMonths,
+  formatBorn,
   daysInYear,
   fromDays,
   fromMinutes,
@@ -188,5 +189,15 @@ describe("the instrument rings", () => {
     const jan31 = toMinutes("1990-01-31", "09:00")!;
     expect(fromMinutes(ringStep("date", jan31, 1, true)).date).toBe("1990-02-28");
     expect(fromMinutes(ringStep("date", jan31, 1, true)).time).toBe("09:00");
+  });
+});
+
+describe("formatBorn", () => {
+  it("reads a chart's birth moment in its language", () => {
+    expect(formatBorn("1988-04-17 06:42", "en")).toBe("17 April 1988, 06:42");
+    expect(formatBorn("1988-04-17", "en")).toBe("17 April 1988");
+  });
+  it("hands back what it cannot read", () => {
+    expect(formatBorn("sometime in spring")).toBe("sometime in spring");
   });
 });

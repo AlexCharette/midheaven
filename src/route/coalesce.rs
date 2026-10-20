@@ -1,36 +1,47 @@
-//! Auto-merge: consecutive passages that share a tag read as one thought, so
-//! they become one passage. Grouping is decided pairwise on each passage's
+//! Auto-merge: consecutive notes that share a tag read as one thought, so
+//! they become one note. Grouping is decided pairwise on each note's
 //! ORIGINAL tags — comparing against a group's accumulated union would chain
 //! nearly everything together through ubiquitous tags like `planet:sun`.
 
 use super::Transcript;
-use crate::contract::Excerpt;
+use crate::contract::Note;
 
-/// Merge runs of consecutive excerpts whose neighboring tag sets intersect.
-/// A merged excerpt is one verbatim transcript slice from the first span's
+/// Merge runs of consecutive notes whose neighboring tag sets intersect.
+/// A merged note is one verbatim transcript slice from the first span's
 /// start to the last span's end (untagged connective sentences included), its
-/// tags the sorted union, its time anchor the first passage's.
+/// tags the sorted union, its time anchor the first note's.
 ///
-/// Ids are left alone — merging changes how many passages there are, so only the
+/// Ids are left alone — merging changes how many notes there are, so only the
 /// filing step downstream knows what to number them from.
-pub fn coalesce(excerpts: Vec<Excerpt>, transcript: &Transcript) -> Vec<Excerpt> {
-    let mut out: Vec<Excerpt> = Vec::new();
+///
+/// Takes and returns notes paired with the spans they came from, because the
+/// span is what makes the merge verbatim: the result is one continuous slice
+/// of the transcript, *not* the merged notes' texts joined together. Those two
+/// differ exactly by the untagged sentences in between, which is to say they
+/// differ by whether the merged note still reads as something a person said.
+pub fn coalesce(
+    notes: Vec<(Note, [usize; 2])>,
+    transcript: &Transcript,
+) -> Vec<(Note, [usize; 2])> {
+    let mut out: Vec<(Note, [usize; 2])> = Vec::new();
     let mut prev_tags: Vec<String> = Vec::new();
-    for ex in excerpts {
+    for (note, span) in notes {
         let shares_with_prev =
-            !out.is_empty() && ex.tags.iter().any(|t| prev_tags.contains(t));
-        prev_tags = ex.tags.clone();
+            !out.is_empty() && note.tags.iter().any(|t| prev_tags.contains(t));
+        prev_tags = note.tags.clone();
         if shares_with_prev {
-            out.last_mut().unwrap().absorb(ex);
+            let (kept, kept_span) = out.last_mut().unwrap();
+            kept.absorb(note);
+            kept_span[1] = span[1];
         } else {
-            out.push(ex);
+            out.push((note, span));
         }
     }
-    // Text is derived from the (possibly extended) span in one pass — the
-    // gate guaranteed every input text was a verbatim slice, so this is a
-    // no-op for unmerged passages.
-    for ex in &mut out {
-        ex.text = transcript.text[ex.span[0]..ex.span[1]].to_string();
+    // Text is re-derived from the (possibly extended) span in one pass. The
+    // gate guaranteed every input text was already a verbatim slice, so this
+    // is a no-op for anything that did not merge.
+    for (note, [s, e]) in &mut out {
+        note.text = transcript.text[*s..*e].to_string();
     }
     out
 }
@@ -39,14 +50,16 @@ pub fn coalesce(excerpts: Vec<Excerpt>, transcript: &Transcript) -> Vec<Excerpt>
 mod tests {
     use super::*;
 
-    fn ex(id: usize, span: [usize; 2], tags: &[&str]) -> Excerpt {
-        Excerpt {
-            id: format!("x{id}"),
-            time: String::new(),
+    fn ex(id: usize, span: [usize; 2], tags: &[&str]) -> (Note, [usize; 2]) {
+        (
+            Note {
+                id: format!("x{id}"),
+                at: None,
+                text: String::new(), // set from the transcript by coalesce
+                tags: tags.iter().map(|s| s.to_string()).collect(),
+            },
             span,
-            text: String::new(), // set from the transcript by callers/coalesce
-            tags: tags.iter().map(|s| s.to_string()).collect(),
-        }
+        )
     }
 
     #[test]
@@ -57,9 +70,9 @@ mod tests {
             &t,
         );
         assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].text, "The sun is bright. It was noon. The sun set slowly.");
-        assert_eq!(merged[0].span, [0, 51]);
-        assert_eq!(merged[0].tags, vec!["planet:sun"]);
+        assert_eq!(merged[0].0.text, "The sun is bright. It was noon. The sun set slowly.");
+        assert_eq!(merged[0].1, [0, 51]);
+        assert_eq!(merged[0].0.tags, vec!["planet:sun"]);
     }
 
     #[test]
@@ -76,16 +89,16 @@ mod tests {
             &t,
         );
         assert_eq!(merged.len(), 2);
-        assert_eq!(merged[0].tags, vec!["planet:sun", "sign:cancer"]);
-        assert_eq!(merged[1].tags, vec!["sign:cancer"]);
+        assert_eq!(merged[0].0.tags, vec!["planet:sun", "sign:cancer"]);
+        assert_eq!(merged[1].0.tags, vec!["sign:cancer"]);
         // Ids are not this stage's business — merging is why nothing upstream
-        // can know how many passages there will be, so the filing step numbers
+        // can know how many notes there will be, so the filing step numbers
         // them. Whatever came in is left alone here.
-        assert_eq!(merged[1].id, "x3");
+        assert_eq!(merged[1].0.id, "x3");
     }
 
     #[test]
-    fn disjoint_passages_pass_through() {
+    fn disjoint_notes_pass_through() {
         let t = Transcript::load("Aaaa. Bbbb.");
         let out = coalesce(
             vec![ex(1, [0, 5], &["planet:sun"]), ex(2, [6, 11], &["planet:moon"])],

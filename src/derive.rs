@@ -283,7 +283,7 @@ mod tests {
                 { "id": "planet:sun", "glyph": "x", "name": "Sun", "lon": 107.5, "house": 4 },
                 { "id": "planet:moon", "glyph": "x", "name": "Moon", "lon": 119.9999, "house": 4 }
               ],
-              "signs": [], "houses": [], "aspects": [], "excerpts": []
+              "signs": [], "houses": [], "aspects": []
             }"#,
         )
         .expect("legacy chart should still deserialize")

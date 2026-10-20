@@ -29,8 +29,7 @@
 //! test without a microphone: production passes `record::start`, the tests pass
 //! a fake that yields a known duration.
 
-use astro::contract::{ChartData, Segment};
-use astro::route::{Filing, route_into};
+use astro::contract::{ChartData, Note, Segment};
 use std::path::PathBuf;
 
 /// The one refusal, in one place. Every command that needs a reading and has
@@ -48,20 +47,21 @@ pub trait Capture: Send {
     fn stop(self: Box<Self>) -> Result<(PathBuf, f64), String>;
 }
 
-/// The reading a session is working on, and everything the session accumulates
-/// onto it.
+/// The reading a session is working on.
+///
+/// It used to own the notes: the chart's list was "authoritative", takes
+/// appended to it and curation edited it in place. The session is the wrong
+/// owner for anything durable — it is the *open window*, and a note outlives
+/// the window it was typed in. Notes live in the store now, and a reading
+/// holds only the chart they are filed against.
 #[derive(Debug)]
 pub struct Reading {
-    /// The chart's excerpt list is authoritative — takes append to it and
-    /// curation (merge/correct) edits it in place.
     pub chart: ChartData,
-    /// `{readings_dir}/{name}_{date}/` when a readings folder is configured —
-    /// chart.json and transcriptions auto-save here through the session.
-    pub dir: Option<PathBuf>,
-    /// Suggested export name, `{name}_{date}.html`.
-    pub artifact_name: String,
-    /// Highest `take-{n}.jsonl` ordinal so far — seeded from the folder on
-    /// reopen so a new take never overwrites one already on disk.
+    /// The store record this chart is. Notes name it, which is how "the notes
+    /// in this reading" is asked.
+    pub chart_id: String,
+    /// Highest `take-{n}.jsonl` ordinal so far — seeded on reopen so a new
+    /// take never overwrites one already on disk.
     takes: usize,
     /// Total seconds recorded into this reading. Offsets each new take's
     /// timestamps so folio anchors run continuously across takes.
@@ -70,19 +70,13 @@ pub struct Reading {
 
 impl Reading {
     /// A freshly built reading: nothing recorded into it yet.
-    pub fn new(chart: ChartData, dir: Option<PathBuf>, artifact_name: String) -> Reading {
-        Reading { chart, dir, artifact_name, takes: 0, secs: 0.0 }
+    pub fn new(chart: ChartData, chart_id: String) -> Reading {
+        Reading { chart, chart_id, takes: 0, secs: 0.0 }
     }
 
-    /// A reading reopened from the library, continuing past the takes already
-    /// in its folder.
-    pub fn reopened(
-        chart: ChartData,
-        dir: Option<PathBuf>,
-        artifact_name: String,
-        takes: usize,
-    ) -> Reading {
-        Reading { chart, dir, artifact_name, takes, secs: 0.0 }
+    /// A reading reopened, continuing past the takes already recorded.
+    pub fn reopened(chart: ChartData, chart_id: String, takes: usize) -> Reading {
+        Reading { chart, chart_id, takes, secs: 0.0 }
     }
 }
 
@@ -113,14 +107,18 @@ pub struct PendingTake {
     secs: f64,
 }
 
-/// A take that landed: what to persist, and anything to surface.
+/// A take that landed: what it produced, and anything to surface.
 #[derive(Debug, PartialEq)]
 pub struct LandedTake {
-    /// The take's segments as JSONL, already session-offset so the file matches
-    /// the folio anchors.
+    /// The take's segments as JSONL, already session-offset so the file
+    /// matches the folio anchors.
     pub jsonl: String,
     /// The name to write it under, `take-{n}.jsonl`.
     pub filename: String,
+    /// What the take said, routed and gated — unnumbered, for the caller to
+    /// file. The session hands these back rather than filing them because it
+    /// does not own notes; the store does, and the store mints their ids.
+    pub notes: Vec<Note>,
     /// Verify-gate rejections from routing this take.
     pub warnings: Vec<String>,
 }
@@ -250,11 +248,13 @@ impl Session {
     }
 
     /// Land a transcribed take: shift its segments onto the session clock,
-    /// route them into the chart *after* the passages already there, and count
-    /// the take.
+    /// route them, and count the take.
     ///
-    /// Routing appends rather than re-indexing, so earlier curation (merges,
-    /// corrections) survives every take.
+    /// The notes come back rather than going anywhere. Appending used to be a
+    /// choice here — `Filing::Append`, so a second take would not wipe the
+    /// first and earlier curation would survive. Notes are their own records
+    /// now, so a take can only ever add to what is there; there is nothing
+    /// left to overwrite and no choice left to make.
     pub fn land_take(
         &mut self,
         pending: PendingTake,
@@ -272,20 +272,18 @@ impl Session {
         let Session::Transcribing { mut reading } = std::mem::take(self) else {
             unreachable!("checked Transcribing above");
         };
-        // Append, not replace, so earlier curation survives every take.
-        let warnings = route_into(&mut reading.chart, &take, Filing::Append).warnings;
+        let (notes, report) = astro::route::route(&take, pending.locale);
         reading.secs = pending.offset + pending.secs;
         reading.takes += 1;
         let filename = format!("take-{}.jsonl", reading.takes);
         *self = Session::Open(reading);
-        Ok(LandedTake { jsonl, filename, warnings })
+        Ok(LandedTake { jsonl, filename, notes, warnings: report.warnings })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use astro::contract::Excerpt;
 
     /// The second adapter behind [`Capture`]: no device, a duration we choose.
     struct FakeCapture {
@@ -310,7 +308,7 @@ mod tests {
 
     fn open() -> Session {
         let mut s = Session::default();
-        s.open(Reading::new(chart(), None, "t.html".into())).unwrap();
+        s.open(Reading::new(chart(), "c1".into())).unwrap();
         s
     }
 
@@ -418,32 +416,32 @@ mod tests {
     #[test]
     fn a_reopened_reading_numbers_takes_past_the_ones_on_disk() {
         let mut s = Session::default();
-        s.open(Reading::reopened(chart(), None, "t.html".into(), 3)).unwrap();
+        s.open(Reading::reopened(chart(), "c1".into(), 3)).unwrap();
         s.begin_take("m.bin".into(), capture(1.0)).unwrap();
         let pending = s.end_take().unwrap();
         let landed = s.land_take(pending, vec![seg(0.0, "More words.")]).unwrap();
         assert_eq!(landed.filename, "take-4.jsonl");
     }
 
+    /// A landed take hands its notes back rather than filing them, so there
+    /// is nothing here for it to overwrite. Earlier curation surviving a take
+    /// used to be a property of `Filing::Append`; it is now a property of
+    /// notes being their own records, and the test for it lives with the
+    /// store that holds them.
     #[test]
-    fn landing_a_take_appends_to_the_passages_already_there() {
+    fn a_landed_take_hands_back_what_it_heard() {
         let mut s = open();
-        s.reading_mut().unwrap().chart.excerpts.push(Excerpt {
-            id: "x1".into(),
-            time: String::new(),
-            span: [0, 0],
-            text: "Curated by hand.".into(),
-            tags: vec![],
-        });
-
         s.begin_take("m.bin".into(), capture(10.0)).unwrap();
         let pending = s.end_take().unwrap();
-        s.land_take(pending, vec![seg(0.0, "The sun is in cancer.")]).unwrap();
+        let landed = s.land_take(pending, vec![seg(0.0, "The sun is in cancer.")]).unwrap();
 
-        let excerpts = &s.reading().unwrap().chart.excerpts;
-        assert!(excerpts.len() > 1, "the take appended rather than replacing");
-        assert_eq!(excerpts[0].id, "x1", "earlier curation survives the take");
-        assert_eq!(excerpts[0].text, "Curated by hand.");
+        assert_eq!(landed.notes.len(), 1);
+        assert!(landed.notes[0].tags.contains(&"planet:sun".to_string()));
+        assert!(landed.notes[0].id.is_empty(), "the store names it");
+        assert!(
+            s.reading().unwrap().chart_id == "c1",
+            "and the reading still points at the chart it was recorded into"
+        );
     }
 
     #[test]
@@ -502,19 +500,19 @@ mod tests {
         s.begin_take("m.bin".into(), capture(5.0)).unwrap();
 
         assert_eq!(
-            s.open(Reading::new(chart(), None, "other.html".into())).unwrap_err(),
+            s.open(Reading::new(chart(), "c2".into())).unwrap_err(),
             "stop recording first"
         );
         assert_eq!(s.resettle(chart()).unwrap_err(), "stop recording first");
 
         let pending = s.end_take().unwrap();
         assert_eq!(
-            s.open(Reading::new(chart(), None, "other.html".into())).unwrap_err(),
+            s.open(Reading::new(chart(), "c2".into())).unwrap_err(),
             "wait for the take to finish transcribing"
         );
         s.land_take(pending, vec![seg(0.0, "Words.")]).unwrap();
         // Open again once nothing is in flight.
-        s.open(Reading::new(chart(), None, "other.html".into())).unwrap();
+        s.open(Reading::new(chart(), "c2".into())).unwrap();
     }
 
     /// A reproject keeps everything the session accumulated — only the geometry
@@ -522,7 +520,7 @@ mod tests {
     #[test]
     fn resettling_keeps_the_session_bookkeeping() {
         let mut s = Session::default();
-        s.open(Reading::reopened(chart(), Some("/lib/mira".into()), "mira.html".into(), 2))
+        s.open(Reading::reopened(chart(), "c1".into(), 2))
             .unwrap();
         s.begin_take("m.bin".into(), capture(10.0)).unwrap();
         let pending = s.end_take().unwrap();
@@ -530,14 +528,11 @@ mod tests {
 
         let mut recomputed = chart();
         recomputed.meta.system = "Placidus".into();
-        recomputed.excerpts = s.reading().unwrap().chart.excerpts.clone();
         s.resettle(recomputed).unwrap();
 
         let r = s.reading().unwrap();
         assert_eq!(r.chart.meta.system, "Placidus");
-        assert_eq!(r.dir.as_deref(), Some(std::path::Path::new("/lib/mira")));
-        assert_eq!(r.artifact_name, "mira.html");
-        assert!(!r.chart.excerpts.is_empty());
+        assert_eq!(r.chart_id, "c1", "the notes filed against it stay filed against it");
         // The clock and the take count are the session's, not the chart's.
         s.begin_take("m.bin".into(), capture(1.0)).unwrap();
         let pending = s.end_take().unwrap();

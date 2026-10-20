@@ -73,21 +73,24 @@ webview only renders.
 **Live session recording:** when the form's model field points at a ggml
 file, the reading page shows *begin transcribing* — the microphone records
 natively (cpal) while the reading happens; *stop* transcribes the take and
-routes its passages into the index and commentary, appending across takes
-with running time anchors (a transcript loaded at build time keeps its
-passages). macOS asks for microphone permission on first use
+files its notes under the open chart, accumulating across takes with running
+time anchors. macOS asks for microphone permission on first use
 (`NSMicrophoneUsageDescription` ships in the bundle's Info.plist).
 
+**The journal** collects every note you have written, over every chart,
+newest first — searchable by a word, a person or an element. Narrow it to one
+person and keep that question under a name, and it stays a question: reopen
+it later and it shows what has been written since.
+
 **Preferences** (the quiet link under the birth form): a models folder with a
-default whisper model that prefills the form; a readings folder — once set,
-every built chart auto-saves to `{name}_{date}/` there as `chart.json` with
-its transcriptions alongside (`transcript.*` from the build, `take-N.jsonl`
-per live take; recorded audio itself is not kept), staying current through
-recording and curation; and practitioner branding — your name and logo are
-engraved on every exported artifact's title plate ("prepared by …", the logo
-embedded as a data URI so artifacts stay self-contained). Exports propose a
-generated `{name}_{date}.html` filename. Preferences live in the OS app-config
-dir; everything is optional and off until set.
+default whisper model that prefills the form; a notes folder — once set, the
+app keeps four folders of one-file records there (`notes/`, `charts/`,
+`people/`, `views/`), plain JSON you can read, back up and keep for a decade;
+and practitioner branding — your name and logo are engraved on every exported
+artifact's title plate ("prepared by …", the logo embedded as a data URI so
+artifacts stay self-contained). Exports propose a generated
+`{name}_{date}.html` filename. Preferences live in the OS app-config dir;
+everything is optional and off until set.
 
 **PDF export**: beside the HTML artifact, *export PDF* provides a more printer-friendly
 verion: a title plate (with your branding), the wheel as vector paths, an

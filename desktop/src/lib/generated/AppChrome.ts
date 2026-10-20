@@ -23,20 +23,20 @@ export type AppChrome = { indexOfElements: string,
 /**
  * Column heads of the index, in order: planets, signs, houses, aspects.
  */
-bands: [string, string, string, string], commentary: string, passagesTouching: string, any: string, all: string, anyTitle: string, allTitle: string, ofSelection: string, clear: string, 
+bands: [string, string, string, string, string], commentary: string, notesTouching: string, any: string, all: string, anyTitle: string, allTitle: string, ofSelection: string, clear: string, 
 /**
- * `{shown}` of `{total}` passages.
+ * `{shown}` of `{total}` notes.
  */
 count: string, 
 /**
- * A bare count of passages — the hub read-out, the density bar, the
+ * A bare count of notes — the hub read-out, the density bar, the
  * library's rows.
  */
-passages: Plural, fewer: string, 
+notes: Plural, fewer: string, 
 /**
  * `{n}` more.
  */
-more: string, wheelAria: string, emptyNoneRouted: string, 
+more: string, wheelAria: string, emptyNoneFiled: string, 
 /**
  * `{word}` is [`any`](Self::any) or [`all`](Self::all).
  */

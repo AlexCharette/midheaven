@@ -1,10 +1,14 @@
-//! The `ChartData` contract between pipeline stages, mirroring the TS
-//! interface in `docs/natal-reading-indexer.md`. The chart stage produces it,
-//! the routing stage fills `excerpts`, and the emit stage serializes it into
-//! the HTML artifact as `const DATA = {...}`. No stage owns it.
+//! The `ChartData` contract between pipeline stages: a computed sky and
+//! nothing else. The chart stage produces it and the emit stage serializes it
+//! into the HTML artifact. No stage owns it.
+//!
+//! It used to carry the notes filed under it, which made the chart the thing
+//! that owned them — a note could not exist without one, and "every note I
+//! have written about this planet" could only ever be asked of a single
+//! reading. Notes live in their own store now and are handed to the renderers
+//! beside the chart rather than inside it.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
@@ -22,23 +26,17 @@ pub struct ChartData {
     pub signs: Vec<Ref>,
     pub houses: Vec<HouseRef>,
     pub aspects: Vec<Aspect>,
-    pub excerpts: Vec<Excerpt>,
+    /// The five aspect kinds, as the `kind:` category renders them.
+    ///
+    /// Global, like the signs and the houses beside it — every chart has the
+    /// same five — and here for the same reason those are: a viewer needs the
+    /// glyph and the localized word to draw a tag, and nothing else in the
+    /// artifact carries them.
+    #[serde(default)]
+    pub kinds: Vec<KindRef>,
 }
 
 impl ChartData {
-    /// The closed tag vocabulary derived from the computed chart:
-    /// `planet:*`, `sign:*`, `house:*`, `aspect:*`. This is the only set of
-    /// tags a router may emit and the Verify gate accepts.
-    pub fn vocab(&self) -> BTreeSet<String> {
-        self.planets
-            .iter()
-            .map(|p| p.id.clone())
-            .chain(self.signs.iter().map(|s| s.id.clone()))
-            .chain(self.houses.iter().map(|h| h.id.clone()))
-            .chain(self.aspects.iter().map(|a| a.id.clone()))
-            .collect()
-    }
-
     /// Look up a planet body (including the Ascendant point) by tag-id.
     pub fn planet(&self, id: &str) -> Option<&Body> {
         self.planets.iter().find(|p| p.id == id)
@@ -88,13 +86,8 @@ impl ChartData {
         for a in &self.aspects {
             check_id(&a.id, "aspect")?;
         }
-        let vocab = self.vocab();
-        for ex in &self.excerpts {
-            for tag in &ex.tags {
-                if !vocab.contains(tag) {
-                    return Err(format!("excerpt {:?} references unknown tag {tag:?}", ex.id));
-                }
-            }
+        for k in &self.kinds {
+            check_id(&k.id, "kind")?;
         }
         if self.meta.logo.as_deref().is_some_and(|l| !l.starts_with("data:")) {
             return Err("meta.logo must be an embedded data: URI".to_string());
@@ -131,22 +124,43 @@ pub struct Segment {
     pub text: String,
 }
 
-// The excerpt filter mode and `Excerpt::matches` used to live here, documented
+// The note filter mode and `Note::matches` used to live here, documented
 // as "shared by every viewer". They were shared by none: both viewers are
 // JavaScript and implement it themselves — `desktop/src/lib/focus.ts`'s
 // `matching` for the app, and `templates/reading.html`'s `matches` for the
-// artifact — and nothing in Rust ever filtered a passage, because the PDF prints
+// artifact — and nothing in Rust ever filtered a note, because the PDF prints
 // them all. A third statement of a rule, in the module whose job is to be the
 // shared contract, that no caller could reach. Deleting it concentrated nothing,
 // which is what made it safe to delete.
 
-impl Excerpt {
-    /// Merge a later passage into this one: the span extends to cover both,
-    /// tags become the sorted union, this passage's time anchor is kept.
-    /// The merged `text` is the caller's decision (verbatim transcript slice
-    /// when one is at hand, joined parts otherwise).
-    pub fn absorb(&mut self, other: Excerpt) {
-        self.span[1] = other.span[1];
+impl Note {
+    /// Every tag is in the vocabulary, and the words are not only whitespace.
+    ///
+    /// `ChartData::validate` used to check a note's tags, back when notes rode
+    /// on the chart. They arrive from their own store now, and from the same
+    /// untrusted direction a chart does, so the check moved with them.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.text.trim().is_empty() {
+            return Err(format!("note {:?} has no words", self.id));
+        }
+        for tag in &self.tags {
+            if !crate::vocab::contains(tag) {
+                return Err(format!("note {:?} references unknown tag {tag:?}", self.id));
+            }
+        }
+        Ok(())
+    }
+
+    /// Merge a later note into this one: tags become the sorted union, this
+    /// note's `at` anchor is kept, and the merged `text` is the caller's
+    /// decision.
+    ///
+    /// Merging used to extend a span as well, which is why the caller could
+    /// leave `text` alone and have it re-derived. Nothing stores a span now,
+    /// so a caller that is merging two notes owns the result's words: see
+    /// `route::coalesce`, which still has the transcript at hand and takes the
+    /// verbatim slice across both.
+    pub fn absorb(&mut self, other: Note) {
         let mut tags: Vec<String> = self.tags.drain(..).chain(other.tags).collect();
         tags.sort();
         tags.dedup();
@@ -163,6 +177,18 @@ fn default_locale() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct Meta {
+    /// Stable identity for this reading, minted once when it is first saved.
+    ///
+    /// A reading's other names are all derived from things that move: its
+    /// folder is `{slug}_{date}` from a name the astrologer can correct, and
+    /// its path is under a library root the user can relocate. Nothing outside
+    /// the chart could point at it and still be pointing a month later.
+    ///
+    /// Absent on charts saved before this existed and on CLI output; a
+    /// migration stamps the library's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub id: Option<String>,
     pub name: String,
     pub born: String,
     pub place: String,
@@ -207,7 +233,10 @@ pub struct Meta {
 /// recalculation: the gazetteer place id (re-resolves lat/lon/tz) plus the raw
 /// birth date and time. Name, locale, and the calculation codes come from the
 /// rest of `Meta`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Compared by value, so two notes written over the same moment can be
+/// recognised as being about the same sky.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct BirthSeed {
     pub place_id: u32,
@@ -262,6 +291,15 @@ pub struct Ref {
     pub element: String,
 }
 
+/// One aspect kind — `kind:trine` and the glyph and word that render it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
+pub struct KindRef {
+    pub id: String,
+    pub glyph: String,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 pub struct HouseRef {
@@ -295,20 +333,42 @@ pub struct Aspect {
     pub kind: &'static str,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+/// One note, filed under the vocabulary tags it refers to.
+///
+/// Notes used to come in two kinds. A **spoken** one carried byte offsets into
+/// its transcript and a `text` that had to equal that slice exactly; a
+/// **written** one was authored by hand and carried no offsets. The distinction
+/// was real at routing time and inert everywhere after it: both kinds filed
+/// under the same vocabulary, filtered through the same rules and rendered
+/// alike, and nothing in the codebase ever read a stored span back.
+///
+/// What made it worth removing is what it cost to keep. The absent span had to
+/// be spelled `[0, 0]` on the wire, the sentinel had to be unambiguous, so an
+/// empty span had to be an error, so `validate` and the Verify gate both
+/// carried a rule about a case that could not arise. Provenance is still
+/// enforced — `route::verify_gate` is the thing that enforces it — it is just
+/// no longer carried around by every note for the rest of its life.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
-pub struct Excerpt {
-    /// Unique among the chart's excerpts (the `x{n}` scheme is convention;
-    /// uniqueness is the invariant consumers rely on).
+pub struct Note {
+    /// Unique among the notes it is filed beside. The `x{n}` scheme is
+    /// convention; uniqueness is the invariant consumers rely on.
     pub id: String,
-    /// "HH:MM:SS" anchor into the recording; empty when the transcript
-    /// carries no timestamps.
-    pub time: String,
-    /// Byte offsets into the transcript — provenance.
-    pub span: [usize; 2],
-    /// VERBATIM; must equal `transcript[span.0..span.1]`.
+    /// "HH:MM:SS" into the recording this note was spoken in.
+    ///
+    /// `None` for a note written by hand, and for a spoken one whose
+    /// transcript carried no timestamps. It was a `String` whose emptiness
+    /// meant absence — the same sentinel shape as the span's `[0, 0]`, and
+    /// removed for the same reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub at: Option<String>,
+    /// The words. Verbatim from the transcript for a spoken note — the Verify
+    /// gate refuses anything else — and whatever was typed for a written one.
     pub text: String,
-    /// Tag-ids; each must exist in the chart vocabulary.
+    /// Tag-ids, each of which must be in [`crate::vocab`]. May be empty: a
+    /// note nothing could be filed under is shown whenever no filter is
+    /// active.
     pub tags: Vec<String>,
 }
 
@@ -316,12 +376,8 @@ pub struct Excerpt {
 mod tests {
     use super::*;
 
-    /// The shared minimal chart plus one passage, so the vocabulary check has
-    /// something to check. Every assertion below mutates a copy of it.
     fn valid_chart() -> ChartData {
-        let mut chart = crate::fixtures::minimal_chart();
-        chart.excerpts = vec![crate::fixtures::excerpt("x1", "hi", &["planet:sun"])];
-        chart
+        crate::fixtures::minimal_chart()
     }
 
     #[test]
@@ -345,11 +401,6 @@ mod tests {
         c.aspects[0].id = "aspect:".into();
         assert!(c.validate().is_err());
 
-        // a tag outside the vocabulary
-        let mut c = valid_chart();
-        c.excerpts[0].tags = vec!["planet:pluto".into()];
-        assert!(c.validate().is_err());
-
         // fewer than twelve signs → PDF/wheel index panic
         let mut c = valid_chart();
         c.signs.pop();
@@ -364,5 +415,73 @@ mod tests {
         let mut c = valid_chart();
         c.planets[0].house = 0;
         assert!(c.validate().is_err());
+    }
+
+    /// A note arrives from its own store, from the same untrusted direction a
+    /// chart does, so it checks itself. `planet:pluto` would not do as the bad
+    /// tag here: the vocabulary is global, so Pluto is real whether or not any
+    /// particular chart carries the body.
+    #[test]
+    fn a_note_refuses_an_unknown_tag_and_empty_words() {
+        let ok = crate::fixtures::note("x1", "hi", &["planet:sun", "kind:trine"]);
+        assert!(ok.validate().is_ok());
+
+        let bad = crate::fixtures::note("x1", "hi", &["planet:vulcan"]);
+        assert!(bad.validate().is_err());
+
+        let empty = crate::fixtures::note("x1", "   ", &["planet:sun"]);
+        assert!(empty.validate().is_err());
+    }
+
+    /// An absent time anchor is absent from the JSON, not an empty string.
+    ///
+    /// This is the shape the span sentinel did not have. `span: [0, 0]` meant
+    /// "no span" and `time: ""` meant "no time", and in both cases the reader
+    /// had to know the convention to get the right answer back. One `Option`
+    /// says it in the type, and a note with nothing to say about when simply
+    /// does not mention it.
+    #[test]
+    fn an_absent_time_anchor_is_absent_from_the_wire() {
+        let written = Note {
+            id: "x1".into(),
+            at: None,
+            text: "authored".into(),
+            tags: vec!["planet:sun".into()],
+        };
+        let json = serde_json::to_string(&written).unwrap();
+        assert!(!json.contains("\"at\""), "no key at all when unset: {json}");
+        assert_eq!(serde_json::from_str::<Note>(&json).unwrap(), written);
+
+        let spoken = Note { at: Some("00:04:12".into()), ..written.clone() };
+        let json = serde_json::to_string(&spoken).unwrap();
+        assert!(json.contains("\"at\":\"00:04:12\""), "{json}");
+        assert_eq!(serde_json::from_str::<Note>(&json).unwrap(), spoken);
+    }
+
+    /// A chart is a sky and nothing else. `excerpts` was the wire name of the
+    /// note list it used to carry, kept for compatibility with saved files
+    /// that no longer need keeping.
+    #[test]
+    fn a_chart_carries_no_notes_under_any_name() {
+        let json = serde_json::to_string(&valid_chart()).unwrap();
+        for gone in ["\"excerpts\"", "\"notes\""] {
+            assert!(!json.contains(gone), "{gone} is still on the wire: {json}");
+        }
+    }
+
+    /// Absent on everything written before it existed, and absent from the
+    /// JSON when unset — a chart without an id must stay byte-identical.
+    #[test]
+    fn a_reading_id_is_optional_and_omitted_when_unset() {
+        let mut c = valid_chart();
+        assert_eq!(c.meta.id, None, "the fixture mints none");
+        // scoped to `meta` — every element in the chart carries an `id` of its own
+        let meta = serde_json::to_string(&c.meta).unwrap();
+        assert!(!meta.contains("\"id\":"), "no id key when unset: {meta}");
+
+        c.meta.id = Some("r-1".into());
+        let json = serde_json::to_string(&c).unwrap();
+        let back: ChartData = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.meta.id.as_deref(), Some("r-1"));
     }
 }

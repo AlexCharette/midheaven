@@ -12,7 +12,7 @@
 //! turns on in its dev-dependencies and neither ships.
 
 use crate::chart::BirthInput;
-use crate::contract::{Aspect, Axes, Body, ChartData, Excerpt, HouseRef, Meta, Ref};
+use crate::contract::{Aspect, Axes, Body, ChartData, HouseRef, Meta, Note, Ref};
 
 /// 13 July 1990, 14:30 in Berlin — tropical, Whole Sign. The birth nine tests
 /// were each spelling out.
@@ -42,16 +42,23 @@ pub fn berlin_chart() -> ChartData {
     crate::chart::compute_chart(&berlin()).expect("the fixture birth computes")
 }
 
-/// A structurally valid chart with no astronomy behind it: twelve signs, houses
-/// and cusps, one body, one aspect, no passages.
+/// A structurally valid chart with no astronomy behind it: twelve signs,
+/// houses and cusps, one body, one aspect.
 ///
-/// Deliberately the *fullest* minimal chart — `validate` requires twelve of each
-/// and a closed vocabulary, and a test that wants less can clear what it does
-/// not need. Element ids are placeholders (`sign:s0`), not real slugs, so a test
-/// asserting on real names is using the wrong fixture.
+/// Deliberately the *fullest* minimal chart — `validate` requires twelve of
+/// each, and a test that wants less can clear what it does not need.
+///
+/// The element ids are the real slugs. They used to be placeholders
+/// (`sign:s0`), which worked while the vocabulary was whatever a given chart
+/// contained; now that it is global and closed, an invented sign is simply not
+/// a sign, and a fixture built from invented ids would have its own notes
+/// rejected by the gate. Only the *astronomy* is fake here — the names,
+/// glyphs and elements are placeholders, so a test asserting on those is still
+/// using the wrong fixture.
 pub fn minimal_chart() -> ChartData {
     let mut chart = ChartData {
         meta: Meta {
+            id: None, // an unsaved chart; the library mints one
             name: "T".into(),
             born: "b".into(),
             place: "p".into(),
@@ -75,9 +82,10 @@ pub fn minimal_chart() -> ChartData {
             house: 1,
             ..Default::default()
         }],
-        signs: (0..12)
-            .map(|i| Ref {
-                id: format!("sign:s{i}"),
+        signs: crate::chart::catalog::SIGNS_ALL
+            .iter()
+            .map(|&(slug, ..)| Ref {
+                id: format!("sign:{slug}"),
                 glyph: "x".into(),
                 name: "S".into(),
                 element: "fire".into(),
@@ -96,7 +104,14 @@ pub fn minimal_chart() -> ChartData {
             orb: 0.0,
             kind: "",
         }],
-        excerpts: Vec::new(),
+        kinds: crate::chart::catalog::ASPECT_TYPES
+            .iter()
+            .map(|&(kind, glyph, ..)| crate::contract::KindRef {
+                id: format!("kind:{kind}"),
+                glyph: glyph.to_string(),
+                name: kind.to_string(),
+            })
+            .collect(),
     };
     // The same filling the compute stage does, so the fixture is a chart the
     // renderers could actually be handed.
@@ -104,13 +119,15 @@ pub fn minimal_chart() -> ChartData {
     chart
 }
 
-/// A passage, tagged. `span` is `[0, text.len()]`, which is the provenance
-/// invariant for a passage authored rather than routed.
-pub fn excerpt(id: &str, text: &str, tags: &[&str]) -> Excerpt {
-    Excerpt {
+/// A note, tagged, with no time anchor.
+///
+/// There were two of these — `note` for a spoken one and `written_note` for a
+/// hand-authored one — differing only in whether a span was set. Nothing tells
+/// the two apart any more, so nothing needs two fixtures to build them.
+pub fn note(id: &str, text: &str, tags: &[&str]) -> Note {
+    Note {
         id: id.into(),
-        time: String::new(),
-        span: [0, text.len()],
+        at: None,
         text: text.into(),
         tags: tags.iter().map(|t| t.to_string()).collect(),
     }
@@ -127,7 +144,6 @@ mod tests {
         let chart = minimal_chart();
         assert!(chart.validate().is_ok(), "{:?}", chart.validate());
         assert_eq!(chart.house_sweeps.len(), 12, "derive::fill ran");
-        assert!(chart.excerpts.is_empty(), "a caller adds the passages it wants");
     }
 
     #[test]
@@ -147,9 +163,10 @@ mod tests {
     }
 
     #[test]
-    fn an_excerpt_spans_its_own_text() {
-        let ex = excerpt("x1", "The sun.", &["planet:sun"]);
-        assert_eq!(ex.span, [0, "The sun.".len()]);
-        assert_eq!(ex.tags, vec!["planet:sun"]);
+    fn a_fixture_note_is_tagged_and_unanchored() {
+        let n = note("x1", "The sun.", &["planet:sun"]);
+        assert_eq!(n.text, "The sun.");
+        assert_eq!(n.tags, vec!["planet:sun"]);
+        assert_eq!(n.at, None, "a fixture note was not spoken in a recording");
     }
 }

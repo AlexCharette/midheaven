@@ -1,8 +1,9 @@
 <script lang="ts">
   // The house-system / zodiac / ayanamsa selector trio — one home for the
   // "sidereal opts into an ayanamsa" rule, previously duplicated between the
-  // birth form and the reading view's caption. Two skins: the form's italic
-  // gutter grid and the cartouche's small-caps line.
+  // birth form and the reading view's caption. Three skins: the birth form's
+  // labelled fields, the calculator's and the plate's compact controls, and
+  // the older small-caps caption line.
   import { ayanamsas, defaults, houseSystems } from "$lib/options.svelte";
   import { SIDEREAL, TROPICAL } from "$lib/types";
 
@@ -18,7 +19,7 @@
     zodiac?: string;
     ayanamsa?: string;
     disabled?: boolean;
-    variant?: "form" | "caption";
+    variant?: "form" | "caption" | "control";
     /** The whole trio as it now stands, so a parent that owns the choices
      * elsewhere can take them without two-way binding. */
     onchange?: (next: { houseSystem: string; zodiac: string; ayanamsa: string }) => void;
@@ -30,29 +31,49 @@
 </script>
 
 {#if variant === "form"}
-  <div class="pair">
-    <label class="lbl" for="{uid}-house">house system</label>
-    <select id="{uid}-house" class="lang" bind:value={houseSystem} {disabled} onchange={report}>
+  <!-- Bare fields with no wrapper of their own: the host's `.form .row` lays
+       them out beside whatever else shares the line (the birth form puts the
+       reading language there). -->
+  <label class="fld">
+    <span class="lbl">House system</span>
+    <select bind:value={houseSystem} {disabled} onchange={report}>
       {#each houseSystems as h (h.code)}
         <option value={h.code}>{h.label}</option>
       {/each}
     </select>
-    <label class="lbl" for="{uid}-zodiac">zodiac</label>
-    <select id="{uid}-zodiac" class="lang" bind:value={zodiac} {disabled} onchange={report}>
+  </label>
+  <label class="fld">
+    <span class="lbl">Zodiac</span>
+    <select bind:value={zodiac} {disabled} onchange={report}>
       <option value={TROPICAL}>Tropical</option>
       <option value={SIDEREAL}>Sidereal</option>
     </select>
-  </div>
+  </label>
   {#if zodiac === SIDEREAL}
-    <label class="aya">
-      <span>ayanamsa</span>
-      <select class="lang" bind:value={ayanamsa} {disabled} onchange={report}>
+    <label class="fld">
+      <span class="lbl">Ayanamsa</span>
+      <select bind:value={ayanamsa} {disabled} onchange={report}>
         {#each ayanamsas as a (a.code)}
           <option value={a.code}>{a.label}</option>
         {/each}
       </select>
     </label>
   {/if}
+{:else if variant === "control"}
+  <div class="ctl">
+    <select aria-label="house system" bind:value={houseSystem} {disabled} onchange={report}>
+      {#each houseSystems as h (h.code)}<option value={h.code}>{h.label}</option>{/each}
+    </select>
+    <select aria-label="zodiac" bind:value={zodiac} {disabled} onchange={report}>
+      <option value={TROPICAL}>Tropical</option>
+      <option value={SIDEREAL}>Sidereal</option>
+    </select>
+    {#if zodiac === SIDEREAL}
+      <select aria-label="ayanamsa" bind:value={ayanamsa} {disabled} onchange={report}>
+        {#each ayanamsas as a (a.code)}<option value={a.code}>{a.label}</option>{/each}
+      </select>
+    {/if}
+  </div>
 {:else}
   <div class="calc">
     <select class="calc-sel" aria-label="house system" bind:value={houseSystem} {disabled} onchange={report}>
@@ -72,46 +93,49 @@
 {/if}
 
 <style>
-  /* --- form variant: mirrors the birth form's field grammar --- */
-  /* house system + zodiac share a row, packed to the left: the first label
-     keeps the shared 7.5rem gutter (aligning with every other field), each
-     select sizes to its content, and "zodiac" sits snug after the first
-     select rather than drifting to the plate edge. */
-  .pair {
-    display: grid;
-    grid-template-columns: 7.5rem auto 4.5rem auto;
-    justify-content: start;
-    gap: 0 1rem;
-    align-items: baseline;
-    margin-bottom: 0.7rem;
+  /* --- control variant: the calculator's apparatus — the choices as quiet
+     filled controls in the sans voice, each its own native menu (the platform
+     menu is the right affordance for a pick-one list; only the closed control
+     is ours), with a drawn chevron in place of the platform's --- */
+  .ctl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
   }
-  .pair .lbl {
-    font-style: italic;
-    color: var(--ink-3);
-    text-align: right;
+  .ctl select {
+    appearance: none;
+    -webkit-appearance: none;
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    font-weight: 450;
+    color: var(--ink-2);
+    background-color: var(--surface);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 3.8L9 1' fill='none' stroke='%239a957f' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 0.32rem 1.7rem 0.32rem 0.65rem;
+    cursor: pointer;
+    transition:
+      color var(--dur-fast) var(--ease-out-quint),
+      background-color var(--dur-fast) var(--ease-out-quint),
+      border-color var(--dur-fast) var(--ease-out-quint);
   }
-  .aya {
-    display: grid;
-    grid-template-columns: 7.5rem 1fr auto;
-    gap: 0 1rem;
-    align-items: baseline;
-    margin-bottom: 0.7rem;
-  }
-  .aya span {
-    font-style: italic;
-    color: var(--ink-3);
-    text-align: right;
-  }
-  .lang {
-    justify-self: start;
-    background: transparent;
+  .ctl select:hover:not(:disabled) {
     color: var(--ink);
-    border: none;
-    border-bottom: 1px solid var(--line);
-    padding: 0.1rem 0.2rem;
-    font: inherit;
+    background-color: var(--surface-hover);
+    border-color: var(--hairline);
   }
-  .lang option {
+  .ctl select:focus-visible {
+    outline: 2px solid var(--brass-halo);
+    outline-offset: 1px;
+  }
+  .ctl select:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .ctl option {
     background: var(--bg-deep);
     color: var(--ink);
   }

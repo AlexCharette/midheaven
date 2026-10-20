@@ -56,6 +56,15 @@ export type Outcome =
       /** The instant this chart was computed for — not necessarily the draft's
        * current value, which may have moved on. */
       minutes: number;
+      /** The request that produced this chart, carried back out.
+       *
+       * A note written from the calculator has to record the sky it was written
+       * over, and the draft is the wrong place to read that from: it moves while
+       * a request is in flight, so by the time a chart lands the draft may
+       * describe a different moment. Pairing the chart with the request that
+       * asked for it is what makes "this chart, and what it is a chart of" a
+       * single value that cannot disagree with itself. */
+      input: PreviewInput;
       /** True for the very first chart of the session. It appears in place; the
        * wheel's own entrance choreography is its arrival. Everything after
        * glides. */
@@ -107,7 +116,7 @@ export function createPump(ports: Ports): Pump {
         const { input, minutes } = asked;
         try {
           const { chart, warnings } = await ports.send(input);
-          ports.settle({ ok: true, chart, warnings, minutes, first, source: src });
+          ports.settle({ ok: true, chart, warnings, minutes, input, first, source: src });
           first = false;
         } catch (e) {
           ports.settle({ ok: false, reason: reason(e), minutes, source: src });

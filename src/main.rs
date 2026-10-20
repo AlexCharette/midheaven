@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
 /// An offline astrology workspace — birth-chart computation plus routing of
-/// verbatim reading-transcript excerpts to chart elements, emitted as one
+/// verbatim reading-transcript notes to chart elements, emitted as one
 /// self-contained HTML artifact.
 #[derive(Parser)]
 #[command(name = "astro", version)]
@@ -311,20 +311,20 @@ fn run(cli: Cli) -> Result<Report, String> {
             } else {
                 unreachable!("clap requires --transcript or --audio")
             };
-            let (chart, report) = build_reading(&input, source, cli_progress)?;
-            emit::write_artifact(&chart, &out)?;
+            let (chart, notes, report) = build_reading(&input, source, cli_progress)?;
+            emit::write_artifact(&chart, &notes, &out)?;
             let mut wrote = Vec::new();
             if let Some(pdf_out) = pdf {
-                astro::pdf::write_pdf(&chart, page_size, &pdf_out)?;
+                astro::pdf::write_pdf(&chart, &notes, page_size, &pdf_out)?;
                 wrote.push(pdf_out);
             }
             wrote.push(out);
             let summary = format!(
-                "chart: {} planets, {} aspects · router: {} spans → {} excerpts past verify gate",
+                "chart: {} planets, {} aspects · router: {} spans → {} notes past verify gate",
                 chart.planets.len(),
                 chart.aspects.len(),
                 report.n_routed,
-                chart.excerpts.len()
+                notes.len()
             );
             Ok(Report::Built { notice, warnings: report.warnings, summary, wrote })
         }

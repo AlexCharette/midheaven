@@ -3,7 +3,7 @@ import { fmt, plural } from "./chrome.svelte";
 
 describe("filling a chrome format string", () => {
   it("replaces each placeholder by name", () => {
-    expect(fmt("{shown} of {total} passages", { shown: 3, total: 5 })).toBe("3 of 5 passages");
+    expect(fmt("{shown} of {total} notes", { shown: 3, total: 5 })).toBe("3 of 5 notes");
     expect(fmt("· {n} more", { n: 4 })).toBe("· 4 more");
   });
 
@@ -13,15 +13,15 @@ describe("filling a chrome format string", () => {
 });
 
 describe("a count takes the form its number calls for", () => {
-  const en = { one: "{n} passage", other: "{n} passages" };
+  const en = { one: "{n} note", other: "{n} notes" };
 
   /// The regression this exists to prevent: collapsing four `n === 1` ternaries
-  /// onto a single un-inflected string made the hub read-out say "1 passages".
+  /// onto a single un-inflected string made the hub read-out say "1 notes".
   it("one is singular, everything else is plural", () => {
-    expect(plural(en, 1)).toBe("1 passage");
-    expect(plural(en, 2)).toBe("2 passages");
-    expect(plural(en, 0)).toBe("0 passages");
-    expect(plural(en, 11)).toBe("11 passages");
+    expect(plural(en, 1)).toBe("1 note");
+    expect(plural(en, 2)).toBe("2 notes");
+    expect(plural(en, 0)).toBe("0 notes");
+    expect(plural(en, 11)).toBe("11 notes");
   });
 
   it("a language that does not inflect says so by giving both forms alike", () => {

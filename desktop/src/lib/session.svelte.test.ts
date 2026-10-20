@@ -11,7 +11,7 @@ async function fresh() {
   return { session, toasts: toastModule.toasts };
 }
 
-const chart = (name: string) => ({ meta: { name }, excerpts: [] }) as unknown as ChartData;
+const chart = (name: string) => ({ meta: { name } }) as unknown as ChartData;
 
 describe("the reactive session starts empty", () => {
   it("has no reading and is not recording", async () => {

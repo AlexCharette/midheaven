@@ -177,7 +177,8 @@
   .entry[data-cat="planet"] .g { color: var(--brass); }
   .entry[data-cat="sign"]   .g { color: var(--verdigris); }
   .entry[data-cat="house"]  .g { color: var(--steel); font-size: .8em; letter-spacing: .06em; width: 2.6em; text-align: right; }
-  .entry[data-cat="aspect"] .g { color: var(--oxblood); }
+  .entry[data-cat="aspect"] .g,
+  .entry[data-cat="kind"]   .g { color: var(--oxblood); }
   .entry[data-cat="aspect"] { font-size: .88rem; }
   .entry[data-cat="aspect"] .nm { white-space: nowrap; }
   .entry .nm { border-bottom: 1px solid transparent; }
@@ -209,23 +210,23 @@
   #clear:hover { color: var(--ink); border-bottom-color: var(--hairline); }
   .count { margin-left: auto; font-style: italic; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 
-  /* ---- commentary passages ---- */
-  .passage {
+  /* ---- commentary notes ---- */
+  .note {
     display: grid; grid-template-columns: 5.2rem 1fr; gap: 0 1.3rem;
     padding: 1.15rem 0;
   }
-  .passage + .passage { border-top: 1px solid var(--line); }
-  .passage .folio {
+  .note + .note { border-top: 1px solid var(--line); }
+  .note .folio {
     color: var(--ink-3); font-size: .8rem; font-variant-numeric: tabular-nums;
     letter-spacing: .06em; padding-top: .35rem; text-align: right;
   }
-  .passage blockquote {
+  .note blockquote {
     margin: 0; grid-column: 2; font-size: 1.04rem; line-height: 1.75;
     max-width: 62ch; text-wrap: pretty; text-indent: -.45em; /* hanging quote */
   }
-  .passage blockquote::before { content: "“"; color: var(--ink-3); }
-  .passage blockquote::after { content: "”"; color: var(--ink-3); }
-  .passage .refs {
+  .note blockquote::before { content: "“"; color: var(--ink-3); }
+  .note blockquote::after { content: "”"; color: var(--ink-3); }
+  .note .refs {
     grid-column: 2; margin-top: .45rem; font-size: .85rem; color: var(--ink-3); font-style: italic;
   }
   .ref { font-style: normal; color: var(--ink-2); white-space: nowrap; }
@@ -233,16 +234,17 @@
   .ref[data-cat="planet"] .g { color: var(--brass); }
   .ref[data-cat="sign"]   .g { color: var(--verdigris); }
   .ref[data-cat="house"]  .g { color: var(--steel); font-size: .85em; }
-  .ref[data-cat="aspect"] .g { color: var(--oxblood); }
+  .ref[data-cat="aspect"] .g,
+  .ref[data-cat="kind"]   .g { color: var(--oxblood); }
   .ref .nm { border-bottom: 1px dotted var(--line); }
   .ref:hover .nm { border-bottom: 1px solid var(--hairline); color: var(--ink); }
   .ref[aria-pressed="true"] .nm { border-bottom: 1px solid var(--ink-2); color: var(--ink); }
   .sep { color: var(--ink-3); font-style: normal; }
   .empty { color: var(--ink-3); font-style: italic; padding: 2.2rem 0; text-align: center; }
   @media (max-width: 560px) {
-    .passage { grid-template-columns: 1fr; }
-    .passage .folio { text-align: left; padding: 0 0 .2rem; }
-    .passage blockquote, .passage .refs { grid-column: 1; }
+    .note { grid-template-columns: 1fr; }
+    .note .folio { text-align: left; padding: 0 0 .2rem; }
+    .note blockquote, .note .refs { grid-column: 1; }
   }
 
   /* ---- plate choreography (skipped under reduced motion) ---- */
@@ -277,7 +279,7 @@
     .plate-frame { background: none; }
     .plate { position: static; }
     .apparatus { display: none; }
-    .passage { break-inside: avoid; }
+    .note { break-inside: avoid; }
   }
 </style>
 </head>
@@ -315,14 +317,15 @@
         <div><h3>signs</h3><div id="band-signs"></div></div>
         <div><h3>houses</h3><div id="band-houses"></div></div>
         <div><h3>aspects</h3><div id="band-aspects"></div></div>
+        <div><h3>kinds</h3><div id="band-kinds"></div></div>
         </div>
       </details>
 
       <div class="apparatus">
-        <span class="lbl">passages touching</span>
+        <span class="lbl">notes touching</span>
         <div class="segmented" role="group" aria-label="Match mode">
-          <button id="mode-any" aria-pressed="true" title="Passages touching any selected element">any</button>
-          <button id="mode-all" aria-pressed="false" title="Only passages touching every selected element">all</button>
+          <button id="mode-any" aria-pressed="true" title="Notes touching any selected element">any</button>
+          <button id="mode-all" aria-pressed="false" title="Only notes touching every selected element">all</button>
         </div>
         <span class="lbl">of the selection ·</span>
         <button id="clear">clear</button>
@@ -330,7 +333,7 @@
       </div>
 
       <h2 class="rubric">Commentary</h2>
-      <div id="excerpts"></div>
+      <div id="notes"></div>
     </section>
   </main>
 </div>
@@ -416,7 +419,7 @@ const CHROME = /*__CHROME__*/null;
   setText('.index-label', T.indexOfElements);
   document.querySelectorAll('.index h3').forEach((h, i) => { if (T.bands[i]) h.textContent = T.bands[i]; });
   document.querySelectorAll('.apparatus .lbl').forEach((el, i) => {
-    el.textContent = i === 0 ? T.passagesTouching : T.ofSelection;
+    el.textContent = i === 0 ? T.notesTouching : T.ofSelection;
   });
   const modeAnyBtn = document.getElementById('mode-any');
   const modeAllBtn = document.getElementById('mode-all');
@@ -602,8 +605,25 @@ const CHROME = /*__CHROME__*/null;
     entries.push(b);
   };
   const lookup = {};
-  [...DATA.planets, ...DATA.signs, ...DATA.houses, ...DATA.aspects].forEach(x => { lookup[x.id] = x; });
+  [...DATA.planets, ...DATA.signs, ...DATA.houses, ...DATA.aspects, ...DATA.kinds]
+    .forEach(x => { lookup[x.id] = x; });
   const shortName = id => (lookup[id] ? lookup[id].name : id);
+  // A tag resolves to something renderable, or to nothing at all — and a note
+  // carrying a tag that resolved to nothing used to lose the chip in silence.
+  //
+  // Pairs are why this needs more than the table. The vocabulary is global, so
+  // the router files "the sun squares pluto" under `aspect:sun-pluto` whether
+  // or not this chart has them square; `DATA.aspects` holds only the ones it
+  // detected, because that list draws the wheel's chords. A pair this sky did
+  // not make therefore has to be composed from its two bodies.
+  const resolve = tag => {
+    if (lookup[tag]) return lookup[tag];
+    const pair = /^aspect:([a-z]+)-([a-z]+)$/.exec(tag);
+    if (!pair) return null;
+    const a = lookup['planet:' + pair[1]], b = lookup['planet:' + pair[2]];
+    if (!a || !b) return null;
+    return { id: tag, glyph: a.glyph + ' \u2013 ' + b.glyph, name: a.name + ' \u2013 ' + b.name };
+  };
 
   const bandP = document.getElementById('band-planets');
   DATA.planets.forEach(p => {
@@ -617,6 +637,8 @@ const CHROME = /*__CHROME__*/null;
   const bandA = document.getElementById('band-aspects');
   DATA.aspects.forEach(a =>
     makeEntry(bandA, a.id, 'aspect', a.glyph, `${shortName(a.a)} – ${shortName(a.b)}`, '', a.name));
+  const bandK = document.getElementById('band-kinds');
+  DATA.kinds.forEach(k => makeEntry(bandK, k.id, 'kind', k.glyph, k.name, '', k.name));
 
   // Relevance rule (canonical home — the desktop IndexOfElements mirrors it):
   // a sign/house entry is visible when OCCUPIED (some body stands in it),
@@ -660,9 +682,9 @@ const CHROME = /*__CHROME__*/null;
 
   // ---------- commentary ----------
   const catOf = tag => tag.split(':')[0];
-  const excerptsHost = document.getElementById('excerpts');
+  const notesHost = document.getElementById('notes');
 
-  // The passage filter. The app states the same rule in
+  // The note filter. The app states the same rule in
   // `desktop/src/lib/focus.ts` as `matching`; this artifact is a standalone
   // file and cannot import it, so the two are deliberate mirrors — keep them in
   // step. Same semantics: an empty selection shows everything, `any` is an
@@ -676,32 +698,32 @@ const CHROME = /*__CHROME__*/null;
   };
 
   const renderExcerpts = () => {
-    const visible = DATA.excerpts.filter(matches);
+    const visible = DATA.notes.filter(matches);
     document.getElementById('count').textContent =
-      DATA.excerpts.length === 0 ? T.noPassagesRouted
-        : fmt(T.count, { shown: visible.length, total: DATA.excerpts.length });
-    excerptsHost.innerHTML = visible.length === 0
-      ? `<p class="empty">${DATA.excerpts.length === 0
-          ? T.emptyNoneRouted
+      DATA.notes.length === 0 ? T.noNotesFiled
+        : fmt(T.count, { shown: visible.length, total: DATA.notes.length });
+    notesHost.innerHTML = visible.length === 0
+      ? `<p class="empty">${DATA.notes.length === 0
+          ? T.emptyNoneFiled
           : fmt(T.emptyNoMatch, { word: mode === 'all' ? T.all : T.any })}</p>`
       : '';
     for (const ex of visible) {
       const art = document.createElement('article');
-      art.className = 'passage';
+      art.className = 'note';
       art.id = ex.id;
       const refsHtml = ex.tags.map(t => {
-        const ref = lookup[t]; if (!ref) return '';
+        const ref = resolve(t); if (!ref) return '';
         const glyph = glyphOf(ref);
         return `<button class="ref" data-cat="${esc(catOf(t))}" data-tag="${esc(t)}" aria-pressed="${selected.has(t)}">` +
                `<span class="g">${esc(textGlyph(glyph))}</span><span class="nm">${esc(ref.name)}</span></button>`;
       }).filter(Boolean).join('<span class="sep"> · </span>');
       art.innerHTML =
-        `<div class="folio">${ex.time ? esc(ex.time) : ''}</div>` +
+        `<div class="folio">${ex.at ? esc(ex.at) : ''}</div>` +
         `<blockquote>${esc(ex.text)}</blockquote>` +
         `<div class="refs">vide ${refsHtml}</div>`;
       art.querySelectorAll('.ref').forEach(b =>
         b.addEventListener('click', () => toggle(b.dataset.tag)));
-      excerptsHost.appendChild(art);
+      notesHost.appendChild(art);
     }
   };
 

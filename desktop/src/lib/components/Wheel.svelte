@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChartData } from "$lib/types";
+  import type { ChartData, Note } from "$lib/types";
   import { catOf, planetById, textGlyph } from "$lib/types";
   import { norm360 } from "$lib/derive";
   import { PLATE } from "$lib/generated/plate";
@@ -18,9 +18,15 @@
   // aspect chords) while a ring is being dragged.
   let {
     chart,
+    notes = [],
     interactive = true,
     scrubbing = false,
-  }: { chart: ChartData; interactive?: boolean; scrubbing?: boolean } = $props();
+  }: {
+    chart: ChartData;
+    notes?: Note[];
+    interactive?: boolean;
+    scrubbing?: boolean;
+  } = $props();
 
   // Once the entrance choreography has played, late-mounting elements (an
   // aspect chord entering orb mid-scrub) must not replay its long delays —
@@ -61,7 +67,7 @@
     ...PLATE.radii,
     // Tracks the other two renditions do not have at all.
     drift: 398, // decorative idle-drift ring (outermost)
-    passOut: 382, // passage-density bars grow toward here
+    passOut: 382, // note-density bars grow toward here
     passIn: 356, // density baseline ring
     hubInner: 8, // cusp spokes and axes converge here, at the compass centre
     // DEPARTURE: the roman numerals sit in the house band rather than at the
@@ -110,8 +116,8 @@
     }),
   );
 
-  // Passage-density track — how much the reading dwelt on each sign.
-  const density = $derived(signDensity(chart));
+  // Note-density track — how much the reading dwelt on each sign.
+  const density = $derived(signDensity(chart, notes));
   const maxDensity = $derived(Math.max(1, ...density));
 
   // element washes (canonical treatment lives in templates/reading.html);
@@ -201,8 +207,11 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (role and tabindex are
          set together: both "button"/0 when interactive, both absent when not) -->
+    <!-- `data-tag` lets a host find an element on the plate — the journal
+         zooms the plate toward the one it is showing notes for -->
     <g
       class={cls}
+      data-tag={id}
       class:sel={interactive && isPinned(id)}
       class:focus={focusTag === id}
       class:rel={related.has(id)}
@@ -245,7 +254,7 @@
       <path d={band.d} class="wash wash-{band.s.element}" />
       <path d={band.d} class="sign-band"><title>{band.s.name} — {band.s.element}</title></path>
       {#if band.bar}
-        <path d={band.bar} class="dens-bar"><title>{plural(t().passages, band.w)} · {band.s.name}</title></path>
+        <path d={band.bar} class="dens-bar"><title>{plural(t().notes, band.w)} · {band.s.name}</title></path>
       {/if}
       <text x={band.gx} y={band.gy} class="sign-glyph" text-anchor="middle" dominant-baseline="central"
         >{textGlyph(band.s.glyph)}</text
@@ -318,7 +327,7 @@
   .grad {
     stroke: var(--line);
   }
-  /* --- passage-density track --- */
+  /* --- note-density track --- */
   .dens-ring {
     stroke: var(--line);
     fill: none;

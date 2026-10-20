@@ -19,6 +19,10 @@
 
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
 
+  // The chrome's "· 6 more" carries the separator the artifact sets it after;
+  // here it stands as its own control and the dot is noise.
+  const bare = (s: string) => s.replace(/^\s*·\s*/, "");
+
   // House entries show the ordinal without the trailing "house" word; the
   // suffix to strip is language-specific and comes from the backend (i18n),
   // so the mapping lives in one place. Empty until the locale list loads.
@@ -34,7 +38,10 @@
   // This fold is nobody else's business, so it is local state rather than a
   // field on a shared object. Folded by default so the orrery leads; opening
   // it reveals the full keyboard-accessible mirror.
-  let open = $state(false);
+  // Open by default: as a panel competing with the commentary this was
+  // noise and shut was right, but it hangs off the plate now as that
+  // figure's key — and a key that starts closed is a key nobody reads.
+  let open = $state(true);
 
   interface Entry {
     tag: string;
@@ -87,13 +94,23 @@
         detail: "",
       })),
     },
+    {
+      head: "kinds",
+      label: t().bands[4],
+      entries: chart.kinds.map((k) => ({
+        tag: k.id,
+        glyph: k.glyph,
+        name: k.name,
+        detail: "",
+      })),
+    },
   ]);
 </script>
 
 <div class="index-fold">
   <button
     type="button"
-    class="rubric index-summary"
+    class="section-head index-summary"
     class:open={open}
     aria-expanded={open}
     aria-controls="index-body"
@@ -137,9 +154,9 @@
             </button>
           {/each}
           {#if filtering && hidden > 0}
-            <button class="more" onclick={() => (expanded[col.head] = true)}>{fmt(t().more, { n: hidden })}</button>
+            <button class="more" onclick={() => (expanded[col.head] = true)}>{bare(fmt(t().more, { n: hidden }))}</button>
           {:else if col.filterable && expanded[col.head]}
-            <button class="more" onclick={() => (expanded[col.head] = false)}>{t().fewer}</button>
+            <button class="more" onclick={() => (expanded[col.head] = false)}>{bare(t().fewer)}</button>
           {/if}
         </div>
       </div>
@@ -149,20 +166,22 @@
 </div>
 
 <style>
-  /* the whole index folds away to hand the commentary the full panel.
-     minimal button reset — the .rubric class still supplies the flanking
-     rules, small-caps, letter-spacing, size, colour and bottom margin. */
+  /* the whole index folds away to hand the commentary the full panel; its
+     head is the section head, made a toggle */
   .index-summary {
-    width: 100%;
-    padding: 0;
+    display: flex;
+    padding: 0.2rem 0;
     border: 0;
     background: none;
-    font-family: inherit;
     cursor: pointer;
   }
+  .index-summary:hover {
+    color: var(--ink-2);
+  }
   .index-summary:focus-visible {
-    outline: 1px dashed var(--hairline);
-    outline-offset: 3px;
+    outline: 2px solid var(--brass-halo);
+    outline-offset: 2px;
+    border-radius: 3px;
   }
   .head-group {
     display: inline-flex;
@@ -189,38 +208,56 @@
   .index {
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
+    gap: 0.9rem;
     margin-bottom: 1.4rem;
   }
+  /* A band reads as a labelled row: the category in a narrow gutter, its
+     entries flowing beside it, so five bands scan as one table rather than
+     five headed lists. */
   .band {
+    display: grid;
+    grid-template-columns: 4.6rem 1fr;
     min-width: 0;
+    gap: 0 0.6rem;
+    align-items: baseline;
   }
   .entries {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.1rem 0.9rem;
+    gap: 0.15rem 0.15rem;
     min-width: 0;
+    margin-left: -0.45rem;
   }
   h3 {
-    font-weight: 400;
-    font-style: italic;
-    font-size: 0.98rem;
+    margin: 0;
+    padding-top: 0.2rem;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 500;
     color: var(--ink-3);
-    margin: 0 0 0.4rem;
-    padding-bottom: 0.25rem;
-    border-bottom: 1px solid var(--line);
   }
   .entry {
     display: inline-flex;
     align-items: baseline;
     gap: 0.4em;
     text-align: left;
-    padding: 0.12rem 0.35rem;
-    border-radius: 3px;
-    font-size: 0.92rem;
+    padding: 0.18rem 0.45rem;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-sans);
+    font-size: 0.82rem;
+    color: var(--ink-2);
+    transition:
+      background var(--dur-fast) var(--ease-out-quint),
+      color var(--dur-fast) var(--ease-out-quint);
+  }
+  .entry:hover {
+    background: var(--surface-hover);
     color: var(--ink);
-    transition: background var(--dur-fast) var(--ease-out-quint);
+  }
+  .entry:focus-visible {
+    outline: 2px solid var(--brass-halo);
+    outline-offset: 1px;
   }
   .entry .g {
     flex: none;
@@ -237,26 +274,20 @@
   }
   .entry .nm {
     white-space: nowrap;
-    border-bottom: 1px solid transparent;
-    transition: border-color var(--dur-fast) var(--ease-out-quint);
   }
-  .entry:hover .nm,
-  .entry.rel .nm {
-    border-bottom-color: var(--hairline);
-  }
-  .entry[aria-pressed="true"] {
-    background: var(--ink-a04);
-  }
-  .entry[aria-pressed="true"] .nm {
-    border-bottom-color: var(--ink-2);
-  }
-  /* cross-lit from the wheel: the focused row brightens, its relations mark */
-  .entry.focus {
-    background: var(--ink-a04);
+  /* cross-lit from the wheel: the focused entry brightens, its relations
+     lift to full ink; a pinned one holds the brass selection */
+  .entry.rel {
     color: var(--ink);
   }
-  .entry.focus .nm {
-    border-bottom-color: var(--ink);
+  .entry.focus {
+    background: var(--surface-hover);
+    color: var(--ink);
+  }
+  .entry[aria-pressed="true"] {
+    background: var(--brass-wash);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--brass-halo);
   }
   .entry .dt {
     flex: none;
@@ -265,13 +296,13 @@
     font-variant-numeric: tabular-nums;
   }
   .more {
-    padding: 0.12rem 0.35rem;
-    font-size: 0.82rem;
-    font-style: italic;
-    color: var(--ink-3);
+    padding: 0.18rem 0.45rem;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    color: var(--brass);
   }
   .more:hover {
-    color: var(--ink);
-    text-decoration: underline;
+    background: var(--surface-hover);
   }
 </style>

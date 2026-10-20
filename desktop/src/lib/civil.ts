@@ -183,3 +183,22 @@ export const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
+
+/** A chart's `meta.born` ("YYYY-MM-DD HH:MM") as it reads to a person, in the
+ * chart's own language: "17 April 1988, 06:42". The time stays 24-hour —
+ * birth times are recorded that way whatever the reader's clock. Anything
+ * that does not parse is returned as it came. */
+export function formatBorn(born: string, locale = "en"): string {
+  const [date, time] = born.trim().split(/\s+/);
+  const d = parseDate(date ?? "");
+  if (!d) return born;
+  // Day-first, matching how a person's birth date reads everywhere else here
+  // ("17 April 1988"); bare `en` would format it the US way.
+  const day = new Intl.DateTimeFormat(locale === "en" ? "en-GB" : locale, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(d.y, d.m - 1, d.d)));
+  return time ? `${day}, ${time}` : day;
+}

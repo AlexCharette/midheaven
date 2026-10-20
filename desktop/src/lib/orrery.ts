@@ -47,10 +47,10 @@ export function crowdedRadii(longitudes: number[]): number[] {
   });
 }
 
-/** How far a sign's density bar grows, for a passage weight against the busiest
+/** How far a sign's density bar grows, for a note weight against the busiest
  * sign's.
  *
- * Square-rooted: a sign with four times the passages reads as twice the bar, so
+ * Square-rooted: a sign with four times the notes reads as twice the bar, so
  * one talkative placement does not flatten the rest of the ring. */
 export function densityLength(weight: number, busiest: number, span: number): number {
   if (weight <= 0) return 0;

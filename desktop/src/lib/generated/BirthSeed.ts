@@ -5,6 +5,9 @@
  * recalculation: the gazetteer place id (re-resolves lat/lon/tz) plus the raw
  * birth date and time. Name, locale, and the calculation codes come from the
  * rest of `Meta`.
+ *
+ * Compared by value, so two notes written over the same moment can be
+ * recognised as being about the same sky.
  */
 export type BirthSeed = { place_id: number, 
 /**

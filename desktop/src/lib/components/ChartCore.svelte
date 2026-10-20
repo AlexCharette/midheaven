@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { ChartData } from "$lib/types";
+  import type { ChartData, Note } from "$lib/types";
   import { SIDEREAL, calculationOf, catOf, planetById, signOf, textGlyph } from "$lib/types";
   // A cusp is a longitude the chart carries, not a body, so it has no derived
   // position to read — the one case in this file that still derives.
   import { positionOf } from "$lib/derive";
-  import { passageCount } from "$lib/focus";
+  import { noteCount } from "$lib/focus";
   import { focusedTag } from "$lib/focus.svelte";
   import { defaults } from "$lib/options.svelte";
   import { notify } from "$lib/toasts.svelte";
@@ -17,7 +17,18 @@
   import { fade } from "svelte/transition";
   import { reason } from "$lib/failure";
 
-  let { chart }: { chart: ChartData } = $props();
+  let {
+    chart,
+    notes,
+    bare = false,
+  }: {
+    chart: ChartData;
+    notes: Note[];
+    /** The plate alone, its calculation controls put away — how it is shown
+     * to a client. The hub read-out stays: it is what pointing at the chart
+     * is for. */
+    bare?: boolean;
+  } = $props();
 
   const coreSwap = { duration: swapDuration() };
 
@@ -54,9 +65,9 @@
   const focusTag = $derived(focusedTag());
   const cat = $derived(focusTag ? catOf(focusTag) : "");
   const count = $derived(
-    focusTag ? passageCount(chart, focusTag) : 0,
+    focusTag ? noteCount(notes, focusTag) : 0,
   );
-  const passages = (n: number) => plural(t().passages, n);
+  const notesWord = (n: number) => plural(t().notes, n);
 
   const planetName = (id: string) => planetById(chart, id)?.name ?? id;
   const planetGlyph = (id: string) => planetById(chart, id)?.glyph ?? "";
@@ -73,16 +84,14 @@
   const planetsInHouse = (n: number) => chart.planets.filter((p) => p.house === n);
 </script>
 
-<!-- the plate's title cartouche, tucked in the corner like an atlas figure -->
-<div class="plate-caption">
-  <p class="who">{chart.meta.name}</p>
-  <p class="vitals">{chart.meta.born}</p>
-  <p class="vitals">{chart.meta.place}</p>
-  <span class="double-rule" aria-hidden="true"></span>
+<!-- The calculation, set in the plate's empty top-left corner where it can be
+     changed in place. Who and when moved to the head of the screen: said in
+     the corner as well, they were said twice. -->
+<div class="plate-caption" class:away={bare} inert={bare}>
   {#if chart.meta.birth}
     <div class="calc-line" title={whyCannotRecalculate() ?? undefined}>
       <CalcOptions
-        variant="caption"
+        variant="control"
         houseSystem={shown.houseSystem}
         zodiac={shown.zodiac}
         ayanamsa={shown.ayanamsa}
@@ -98,7 +107,7 @@
 <!-- the hub read-out appears only while an element is focused; at rest the
      centre stays clear so the aspect web reads uninterrupted -->
 {#if focusTag}
-  <div class="core">
+  <div class="core" class:bare>
     {#key focusTag}
       <div class="core-body" in:fade={coreSwap}>
       {#if cat === "planet"}
@@ -122,7 +131,7 @@
               {/each}
             </p>
           {/if}
-          <p class="count">{passages(count)}</p>
+          <p class="count">{notesWord(count)}</p>
         {/if}
       {:else if cat === "sign"}
         {@const s = chart.signs.find((x) => x.id === focusTag)}
@@ -136,7 +145,7 @@
               {#each occ as p (p.id)}<span class="astro g-planet" title={p.name}>{textGlyph(p.glyph)}</span>{/each}
             {:else}<span class="empty">no bodies here</span>{/if}
           </p>
-          <p class="count">{passages(count)}</p>
+          <p class="count">{notesWord(count)}</p>
         {/if}
       {:else if cat === "house"}
         {@const h = chart.houses.find((x) => x.id === focusTag)}
@@ -153,7 +162,7 @@
               {#each occ as p (p.id)}<span class="astro g-planet" title={p.name}>{textGlyph(p.glyph)}</span>{/each}
             {:else}<span class="empty">no bodies here</span>{/if}
           </p>
-          <p class="count">{passages(count)}</p>
+          <p class="count">{notesWord(count)}</p>
         {/if}
       {:else if cat === "aspect"}
         {@const a = chart.aspects.find((x) => x.id === focusTag)}
@@ -162,7 +171,7 @@
           <p class="name">{planetName(a.a)} – {planetName(a.b)}</p>
           <p class="pos sub nature-{a.nature}">{a.name} · {a.nature}</p>
           <p class="pos sub">{fmtOrb(a.orb)}</p>
-          <p class="count">{passages(count)}</p>
+          <p class="count">{notesWord(count)}</p>
         {/if}
       {/if}
       </div>
@@ -204,44 +213,23 @@
   p {
     margin: 0;
   }
-  /* --- title cartouche: chart identity, in the plate's top-left corner --- */
+  /* --- the calculation, in the plate's corner --- */
   .plate-caption {
     position: absolute;
-    top: 0.7rem;
-    left: 0.85rem;
-    max-width: 13.5rem;
+    top: 0;
+    left: 0;
+    max-width: 40%;
     z-index: 1;
+    transition: opacity 320ms var(--ease-out-quint);
+  }
+  .plate-caption.away {
+    opacity: 0;
     pointer-events: none;
   }
-  .plate-caption .who {
-    font-size: 0.98rem;
-    color: var(--ink);
-    line-height: 1.25;
-    text-wrap: balance;
-  }
-  .plate-caption .vitals {
-    font-size: 0.72rem;
-    font-style: italic;
-    color: var(--ink-3);
-    line-height: 1.4;
-  }
-  .plate-caption .double-rule {
-    display: block;
-    width: 3.4rem;
-    margin: 0.45rem 0;
-  }
   .plate-caption .system {
-    font-size: 0.64rem;
-    font-variant: small-caps;
-    letter-spacing: 0.12em;
-    color: var(--ink-2);
-  }
-  /* the calc line is a live control: re-enable pointer events (the caption is
-     a pointer-transparent overlay) and size the shared selector trio to the
-     tight cartouche — the selects themselves live in CalcOptions. */
-  .plate-caption .calc-line {
-    pointer-events: auto;
-    font-size: 0.64rem;
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    color: var(--ink-3);
   }
   /* --- focused element dossier --- */
   .glyph {
@@ -308,6 +296,10 @@
   }
   .nature-challenging {
     color: var(--oxblood);
+  }
+  /* how much the astrologer has written is theirs, not the client's */
+  .core.bare .count {
+    display: none;
   }
   .count {
     margin-top: 0.3rem;

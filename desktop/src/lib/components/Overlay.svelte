@@ -12,11 +12,16 @@
   let {
     onclose,
     label,
+    title,
     variant = "plate",
     children,
   }: {
     onclose: () => void;
     label: string;
+    /** The sheet's visible head. With one, the overlay draws the head and its
+     * close control itself, so every sheet opens the same way and none has to
+     * end in a "← back" line to be leavable. */
+    title?: string;
     variant?: "plate" | "panel";
     children: Snippet;
   } = $props();
@@ -46,7 +51,17 @@
       easing: expoOut,
     }}
   >
-    {@render children()}
+    {#if title}
+      <header class="sheet-head">
+        <h2>{title}</h2>
+        <button type="button" class="btn bare icon" aria-label="close" title="close (Esc)" onclick={onclose}>
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+        </button>
+      </header>
+    {/if}
+    <div class="sheet-body">
+      {@render children()}
+    </div>
   </div>
 </div>
 
@@ -66,28 +81,61 @@
   .scrim {
     position: absolute;
     inset: 0;
-    background: rgba(13, 16, 38, 0.6);
+    background: rgba(9, 11, 28, 0.62);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
     border: none;
     cursor: default;
   }
+  /* A sheet lifted off the sky: one step lighter than the ground, rounded,
+     and held up by a soft shadow rather than a drawn frame. */
   .surface {
     position: relative;
+    display: flex;
+    flex-direction: column;
     outline: none;
-    background: var(--bg-deep);
-    border: 1px solid var(--hairline);
-    max-height: min(92vh, 100%);
-    overflow-y: auto;
-    width: min(38rem, 94vw);
-    padding: 1.2rem 1.5rem;
+    background: var(--surface-raised);
+    border-radius: 12px;
+    box-shadow:
+      inset 0 0 0 1px var(--line),
+      0 24px 64px -16px rgba(0, 0, 0, 0.7),
+      0 2px 8px rgba(0, 0, 0, 0.3);
+    max-height: min(88vh, 100%);
+    width: min(40rem, 94vw);
+    overflow: hidden;
   }
-  /* the fly-out: a full-height leaf hinged on the right edge, wide enough
-     for the birth form's label gutter + field grid */
+  .sheet-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1rem 0.4rem 1.5rem;
+  }
+  .sheet-head h2 {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 1.2rem;
+    font-weight: 400;
+    color: var(--ink);
+  }
+  .sheet-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.6rem 1.5rem 1.5rem;
+  }
+  /* the fly-out: a full-height sheet hinged on the right edge */
   .panel .surface {
-    width: min(36rem, 94vw);
+    width: min(32rem, 94vw);
     max-height: none;
     height: 100%;
-    border: none;
-    border-left: 1px solid var(--hairline);
-    padding: 1.4rem 1.6rem 2rem;
+    border-radius: 0;
+    box-shadow:
+      inset 1px 0 0 var(--line),
+      -24px 0 64px -16px rgba(0, 0, 0, 0.7);
+  }
+  .panel .sheet-head {
+    padding-top: 1.1rem;
   }
 </style>

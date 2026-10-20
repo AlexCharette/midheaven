@@ -92,7 +92,6 @@ function chart(): ChartData {
       { id: "planet:moon", glyph: "☽", name: "Moon", lon: 350, house: 12, sign: 11, deg: 20, min: 0 },
     ],
     aspects: [],
-    excerpts: [],
   } as unknown as ChartData;
 }
 

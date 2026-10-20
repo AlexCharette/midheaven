@@ -7,7 +7,7 @@ use super::fonts::{Face, Fonts, glyph_face};
 use super::palette::*;
 use super::primitives::hline;
 use super::text::{draw_str, draw_tracked, wrap};
-use crate::contract::{Body, ChartData, Excerpt};
+use crate::contract::{Body, ChartData, Note};
 use crate::i18n::Locale;
 use krilla::surface::Surface;
 use std::ops::Range;
@@ -40,7 +40,7 @@ impl FlowLine<'_> {
 /// Everything pagination needs to know about a line, and nothing else.
 ///
 /// Separate from [`FlowLine`] because a `FlowLine` borrows the chart it paints
-/// (`&'c str` into names and passage text), so a test could not build one
+/// (`&'c str` into names and note text), so a test could not build one
 /// without running the ephemeris. A `Measure` is two `Copy` fields, which is
 /// what makes [`slices`] testable at all.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -55,7 +55,7 @@ pub(crate) struct Measure {
 ///
 ///  1. **Fit.** Take lines while they fit in `room`.
 ///  2. **Pull back.** Give back any trailing keep-with-next run, so a rubric or
-///     a passage's folio line never sits alone above a break.
+///     a note's folio line never sits alone above a break.
 ///
 /// Progress wins over rule 2: if pulling back would empty the page, one line
 /// stays and its keep is broken — a page that took nothing would loop forever.
@@ -142,17 +142,41 @@ fn tag_chip(chart: &ChartData, tag: &str) -> Option<(String, Face, (u8, u8, u8))
     if let Some(h) = chart.houses.iter().find(|x| x.id == tag) {
         return Some((h.label.clone(), Face::Regular, STEEL));
     }
-    if let Some(a) = chart.aspects.iter().find(|x| x.id == tag) {
-        let (pa, pb) = (chart.planet(&a.a)?, chart.planet(&a.b)?);
-        return Some((format!("{} {} {}", pa.glyph, a.glyph, pb.glyph), Face::Symbols, OXBLOOD));
+    // A pair resolves from its two bodies, not from a detected aspect.
+    //
+    // It used to need one: the tag only existed when this chart brought those
+    // two together, so finding it in `chart.aspects` was the same question as
+    // parsing it. The vocabulary is global now — the router files "the sun
+    // squares pluto" under the pair whether or not this sky has them square —
+    // so looking only at the detected list drops the chip without a word.
+    if let Some(slug) = tag.strip_prefix("aspect:") {
+        let (a, b) = slug.split_once('-')?;
+        let (pa, pb) = (chart.planet(&format!("planet:{a}"))?, chart.planet(&format!("planet:{b}"))?);
+        // The aspect's own glyph when this chart detected it, a plain tie when
+        // the note is about the pair rather than about a hit.
+        let between = chart
+            .aspects
+            .iter()
+            .find(|x| x.id == tag)
+            .map(|x| x.glyph.clone())
+            .unwrap_or_else(|| "\u{2013}".to_string());
+        return Some((format!("{} {} {}", pa.glyph, between, pb.glyph), Face::Symbols, OXBLOOD));
+    }
+    if let Some(k) = chart.kinds.iter().find(|x| x.id == tag) {
+        return Some((k.glyph.clone(), Face::Symbols, OXBLOOD));
     }
     None
 }
 
-/// The passage block: folio line (time anchor + tag chips) and wrapped text.
-fn passage<'c>(
+/// A note's block: folio line (time anchor + tag chips) and wrapped text.
+///
+/// Spoken and written notes take the same treatment — the paper says nothing
+/// about which is which. A written note simply has no time anchor, so the
+/// folio's left slot stays empty, exactly as it does for a spoken note whose
+/// transcript carried no timestamps.
+fn note_block<'c>(
     chart: &'c ChartData,
-    ex: &'c Excerpt,
+    note: &'c Note,
     fonts: &Fonts,
     frame: &Frame,
 ) -> Vec<FlowLine<'c>> {
@@ -162,7 +186,7 @@ fn passage<'c>(
 
     // folio: chips laid out right-to-left from the right edge, time on the left
     let chips: Vec<(String, Face, (u8, u8, u8))> =
-        ex.tags.iter().filter_map(|t| tag_chip(chart, t)).collect();
+        note.tags.iter().filter_map(|t| tag_chip(chart, t)).collect();
     let chip_size = 10.0;
     let mut positions = Vec::new();
     let mut right = margin + cw;
@@ -172,14 +196,14 @@ fn passage<'c>(
         positions.push((right, text, face, color));
         right -= 10.0;
     }
-    let time: &'c str = &ex.time;
+    let at: Option<&'c str> = note.at.as_deref();
     out.push(FlowLine {
         h: 16.0,
         keep: true,
         draw: Box::new(move |s, fonts, y| {
             let baseline = y + 11.0;
-            if !time.is_empty() {
-                draw_str(s, fonts, Face::Italic, 9.0, INK3, margin, baseline, time);
+            if let Some(at) = at {
+                draw_str(s, fonts, Face::Italic, 9.0, INK3, margin, baseline, at);
             }
             for (x, text, face, color) in &positions {
                 draw_str(s, fonts, *face, chip_size, *color, *x, baseline, text);
@@ -189,7 +213,7 @@ fn passage<'c>(
 
     let size = 10.5;
     let leading = 16.0;
-    for (i, line) in wrap(fonts, Face::Regular, size, cw, &ex.text).into_iter().enumerate() {
+    for (i, line) in wrap(fonts, Face::Regular, size, cw, &note.text).into_iter().enumerate() {
         out.push(FlowLine {
             h: leading,
             keep: i == 0, // the folio must not sit alone above a page break
@@ -203,7 +227,12 @@ fn passage<'c>(
 }
 
 /// Everything that flows on pages 2+ — index of elements, then commentary.
-pub(crate) fn build_flow<'c>(chart: &'c ChartData, fonts: &Fonts, frame: &Frame) -> Vec<FlowLine<'c>> {
+pub(crate) fn build_flow<'c>(
+    chart: &'c ChartData,
+    notes: &'c [Note],
+    fonts: &Fonts,
+    frame: &Frame,
+) -> Vec<FlowLine<'c>> {
     let margin = frame.margin;
     let cw = frame.content_w();
     let loc = Locale::parse(&chart.meta.locale);
@@ -246,12 +275,12 @@ pub(crate) fn build_flow<'c>(chart: &'c ChartData, fonts: &Fonts, frame: &Frame)
         }
     }
 
-    if !chart.excerpts.is_empty() {
+    if !notes.is_empty() {
         flow.push(spacer(20.0));
         flow.push(rubric(frame, loc.pdf().commentary));
         flow.push(spacer(4.0));
-        for ex in &chart.excerpts {
-            flow.extend(passage(chart, ex, fonts, frame));
+        for note in notes {
+            flow.extend(note_block(chart, note, fonts, frame));
         }
     }
     flow
@@ -261,11 +290,28 @@ pub(crate) fn build_flow<'c>(chart: &'c ChartData, fonts: &Fonts, frame: &Frame)
 mod tests {
     use super::*;
 
+    /// Chips are collected through `filter_map`, so a tag that resolves
+    /// against nothing does not error — it disappears from the page. Every
+    /// category the vocabulary admits has to resolve.
+    #[test]
+    fn every_vocabulary_category_resolves_to_a_chip() {
+        let chart = crate::fixtures::berlin_chart();
+        for tag in ["planet:sun", "sign:aries", "house:1", "kind:trine", "aspect:sun-moon"] {
+            assert!(tag_chip(&chart, tag).is_some(), "{tag} would vanish from the PDF");
+        }
+        // Every pair in the vocabulary, aspecting here or not: the router
+        // files a pair from the words, and this sky need not agree.
+        for (a, b) in crate::vocab::PAIRS.iter() {
+            let tag = format!("aspect:{a}-{b}");
+            assert!(tag_chip(&chart, &tag).is_some(), "{tag} would vanish from the PDF");
+        }
+    }
+
     /// A line of height `h` that does not hold onto the next one.
     fn line(h: f32) -> Measure {
         Measure { h, keep: false }
     }
-    /// A line that must not be the last on its page — a rubric, or a passage's
+    /// A line that must not be the last on its page — a rubric, or a note's
     /// folio line.
     fn kept(h: f32) -> Measure {
         Measure { h, keep: true }

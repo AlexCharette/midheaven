@@ -92,7 +92,7 @@ pub fn compute_chart_reporting(input: &BirthInput) -> Result<(ChartData, Vec<Str
         signs: sign_refs(loc),
         houses: house_refs(loc),
         aspects,
-        excerpts: Vec::new(),
+        kinds: kind_refs(loc),
     };
     // Derived fields last: they read the measured longitudes and cusps above,
     // and every renderer reads them instead of re-deriving.
@@ -227,6 +227,19 @@ fn detect_aspects(planets: &[Body], loc: Locale) -> Vec<Aspect> {
     aspects
 }
 
+/// The five aspect kinds as the `kind:` category's display table — the same
+/// shape `signs` and `houses` take, and global for the same reason they are.
+fn kind_refs(loc: Locale) -> Vec<crate::contract::KindRef> {
+    ASPECT_TYPES
+        .iter()
+        .map(|&(kind, glyph, ..)| crate::contract::KindRef {
+            id: format!("kind:{kind}"),
+            glyph: glyph.to_string(),
+            name: loc.aspect_word(kind).to_string(),
+        })
+        .collect()
+}
+
 /// The Ascendant rendered as a chart point, per the contract.
 fn ascendant_point(asc_deg: f64, loc: Locale) -> Body {
     Body {
@@ -269,6 +282,10 @@ fn birth_meta(input: &BirthInput) -> Meta {
     let loc = input.locale;
     let house_code = systems::house_code(input.house_system);
     Meta {
+        // Identity belongs to a *saved* reading, and the compute stage does not
+        // save — the library mints one when the folder is created, so a chart
+        // that is only ever previewed never acquires one it doesn't need.
+        id: None,
         name: input.name.clone(),
         // The zone/offset stays out of `born`: it drives the local→UT
         // conversion but is noise to the reader.
@@ -402,10 +419,10 @@ mod tests {
     }
 
     #[test]
-    fn excerpts_survive_a_house_system_reproject() {
-        // A live reproject recomputes geometry and carries the routed passages
+    fn notes_survive_a_house_system_reproject() {
+        // A live reproject recomputes geometry and carries the routed notes
         // onto the new chart. The cusps change, but the vocabulary (sign/house/
-        // aspect ids) is stable, so pre-existing excerpt tags stay valid.
+        // aspect ids) is stable, so pre-existing note tags stay valid.
         let mut input = birth("1990-07-13", "14:30:00", 52.52, 13.405, "Europe/Berlin");
         let whole = compute_chart(&input).unwrap();
         input.house_system = HouseSystem::Placidus;
@@ -417,16 +434,13 @@ mod tests {
             "house:5".to_string(),
             whole.aspects.first().map(|a| a.id.clone()).unwrap_or_else(|| whole.signs[1].id.clone()),
         ];
-        let carried = crate::contract::Excerpt {
-            id: "x1".into(),
-            time: String::new(),
-            span: [0, 0],
-            text: "t".into(),
-            tags,
-        };
-        let mut reprojected = placidus;
-        reprojected.excerpts = vec![carried];
-        assert!(reprojected.validate().is_ok(), "carried excerpt must stay valid");
+        // Notes live off the chart, so what has to survive a reproject is not
+        // a carried list but the tags themselves: a note filed under the whole
+        // sign chart must still be filed under something the placidus one
+        // admits, or changing house system would silently unfile it.
+        let carried = crate::contract::Note { id: "x1".into(), at: None, text: "t".into(), tags };
+        assert!(carried.validate().is_ok(), "the tags stay in vocabulary");
+        assert!(placidus.validate().is_ok(), "and the reprojected chart stays valid");
     }
 
     #[test]
@@ -464,15 +478,11 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("DST fold")), "{warnings:?}");
     }
 
-    #[test]
-    fn vocab_contains_all_categories() {
-        let input = birth("1990-07-13", "14:30:00", 52.52, 13.405, "Europe/Berlin");
-        let chart = compute_chart(&input).unwrap();
-        let vocab = chart.vocab();
-        assert!(vocab.contains("planet:sun"));
-        assert!(vocab.contains("planet:ascendant"));
-        assert!(vocab.contains("sign:leo"));
-        assert!(vocab.contains("house:5"));
-        assert!(vocab.iter().any(|t| t.starts_with("aspect:")));
-    }
+    // `vocab_contains_all_categories` lived here, asserting that a computed
+    // chart's element ids covered every category. The vocabulary is no longer
+    // derived from a chart, so the question moved with it — `vocab::tests`
+    // states the categories, and
+    // `a_computed_charts_aspect_ids_are_all_in_the_vocabulary` keeps this
+    // module's end of the bargain: whatever `compute_chart` mints must be a
+    // tag the gate will accept.
 }

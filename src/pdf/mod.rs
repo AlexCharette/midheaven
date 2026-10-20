@@ -17,7 +17,7 @@ mod primitives;
 mod text;
 mod wheel;
 
-use crate::contract::ChartData;
+use crate::contract::{ChartData, Note};
 use crate::i18n::Locale;
 use base64::Engine;
 use flow::{Frame, build_flow};
@@ -175,7 +175,7 @@ fn logo_image(meta_logo: &Option<String>) -> Option<(krilla::image::Image, f32)>
 }
 
 /// Render the reading as PDF bytes.
-pub fn render(chart: &ChartData, size: PageSize) -> Result<Vec<u8>, String> {
+pub fn render(chart: &ChartData, notes: &[Note], size: PageSize) -> Result<Vec<u8>, String> {
     let loc = Locale::parse(&chart.meta.locale);
     let fonts = Fonts::new(loc)?;
     let (w, h) = size.dims();
@@ -183,7 +183,7 @@ pub fn render(chart: &ChartData, size: PageSize) -> Result<Vec<u8>, String> {
     let mut doc = Document::new();
 
     render_title_page(&mut doc, chart, &fonts, loc, &frame, h)?;
-    paginate(&mut doc, chart, &fonts, &frame, h)?;
+    paginate(&mut doc, chart, notes, &fonts, &frame, h)?;
 
     doc.finish().map_err(|e| format!("cannot assemble the PDF: {e:?}"))
 }
@@ -337,13 +337,14 @@ fn flow_room(frame: &Frame, h: f32) -> f32 {
 fn paginate(
     doc: &mut Document,
     chart: &ChartData,
+    notes: &[Note],
     fonts: &Fonts,
     frame: &Frame,
     h: f32,
 ) -> Result<(), String> {
     let w = frame.w;
     let cx = w / 2.0;
-    let flow = build_flow(chart, fonts, frame);
+    let flow = build_flow(chart, notes, fonts, frame);
     let measures: Vec<flow::Measure> = flow.iter().map(flow::FlowLine::measure).collect();
 
     for (n, page_lines) in flow::slices(&measures, flow_room(frame, h))?.into_iter().enumerate() {
@@ -364,8 +365,13 @@ fn paginate(
 }
 
 /// Render and write — the one entry point frontends call.
-pub fn write_pdf(chart: &ChartData, size: PageSize, path: &Path) -> Result<(), String> {
-    let bytes = render(chart, size)?;
+pub fn write_pdf(
+    chart: &ChartData,
+    notes: &[Note],
+    size: PageSize,
+    path: &Path,
+) -> Result<(), String> {
+    let bytes = render(chart, notes, size)?;
     std::fs::write(path, bytes).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
@@ -373,20 +379,20 @@ pub fn write_pdf(chart: &ChartData, size: PageSize, path: &Path) -> Result<(), S
 mod tests {
     use super::*;
     use crate::chart::catalog::{ASPECT_TYPES, PLANETS, SIGNS_ALL};
-    use crate::contract::Excerpt;
 
     fn chart_fixture() -> ChartData {
-        let mut chart = crate::fixtures::berlin_chart();
-        chart.excerpts.push(Excerpt {
+        crate::fixtures::berlin_chart()
+    }
+
+    fn notes_fixture() -> Vec<Note> {
+        vec![Note {
             id: "x1".into(),
-            time: "00:00:12".into(),
-            span: [0, 24],
+            at: Some("00:00:12".into()),
             text: "The sun rules this chart and it keeps returning to the tenth house, \
                    again and again, whenever the year turns."
                 .into(),
             tags: vec!["planet:sun".into(), "house:10".into()],
-        });
-        chart
+        }]
     }
 
     #[test]
@@ -421,8 +427,9 @@ mod tests {
     #[test]
     fn renders_a_wellformed_pdf_at_both_sizes() {
         let chart = chart_fixture();
+        let notes = notes_fixture();
         for size in [PageSize::A4, PageSize::Letter] {
-            let bytes = render(&chart, size).unwrap();
+            let bytes = render(&chart, &notes, size).unwrap();
             assert!(bytes.starts_with(b"%PDF-"), "{size:?} magic");
             let tail = String::from_utf8_lossy(&bytes[bytes.len().saturating_sub(64)..]).to_string();
             assert!(tail.contains("%%EOF"), "{size:?} trailer");
@@ -436,15 +443,14 @@ mod tests {
         let mut input = crate::fixtures::named("Мира Холт");
         input.place = "Берлин, Германия".into();
         input.locale = Locale::Ru;
-        let mut chart = crate::chart::compute_chart(&input).unwrap();
-        chart.excerpts.push(Excerpt {
+        let chart = crate::chart::compute_chart(&input).unwrap();
+        let notes = vec![Note {
             id: "x1".into(),
-            time: "00:00:12".into(),
-            span: [0, 10],
+            at: Some("00:00:12".into()),
             text: "Ваше солнце в раке освещает десятый дом.".into(),
             tags: vec!["planet:sun".into(), "house:10".into()],
-        });
-        let bytes = render(&chart, PageSize::A4).unwrap();
+        }];
+        let bytes = render(&chart, &notes, PageSize::A4).unwrap();
         assert!(bytes.starts_with(b"%PDF-"));
         assert!(bytes.len() > 20_000);
     }
@@ -507,7 +513,8 @@ mod tests {
         let frame = Frame { w, margin: MARGIN };
         let room = flow_room(&frame, h);
 
-        let flow = flow::build_flow(&chart, &fonts, &frame);
+        let notes = notes_fixture();
+        let flow = flow::build_flow(&chart, &notes, &fonts, &frame);
         let measures: Vec<flow::Measure> = flow.iter().map(flow::FlowLine::measure).collect();
         assert!(!measures.is_empty(), "an eleven-body chart flows an index at least");
         assert!(

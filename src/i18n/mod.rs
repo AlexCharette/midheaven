@@ -351,12 +351,12 @@ pub struct PdfChrome {
 
 /// A count and its noun, in the form the count calls for.
 ///
-/// English inflects: one passage, two passages. The Russian that ships does not
+/// English inflects: one note, two notes. The Russian that ships does not
 /// — the artifact has always rendered one fixed genitive form for every count
 /// (`"{shown} из {total} фрагментов"`), so both entries here are the same
 /// string. Russian really has three categories, and wiring them up is a
 /// separate job from moving these words; what this shape buys is that English
-/// stops saying "1 passages", which it did when this was one string.
+/// stops saying "1 notes", which it did when this was one string.
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "generated/"))]
 #[serde(rename_all = "camelCase")]
@@ -389,25 +389,25 @@ pub struct Plural {
 pub struct AppChrome {
     pub index_of_elements: &'static str,
     /// Column heads of the index, in order: planets, signs, houses, aspects.
-    pub bands: [&'static str; 4],
+    pub bands: [&'static str; 5],
     pub commentary: &'static str,
-    pub passages_touching: &'static str,
+    pub notes_touching: &'static str,
     pub any: &'static str,
     pub all: &'static str,
     pub any_title: &'static str,
     pub all_title: &'static str,
     pub of_selection: &'static str,
     pub clear: &'static str,
-    /// `{shown}` of `{total}` passages.
+    /// `{shown}` of `{total}` notes.
     pub count: &'static str,
-    /// A bare count of passages — the hub read-out, the density bar, the
+    /// A bare count of notes — the hub read-out, the density bar, the
     /// library's rows.
-    pub passages: Plural,
+    pub notes: Plural,
     pub fewer: &'static str,
     /// `{n}` more.
     pub more: &'static str,
     pub wheel_aria: &'static str,
-    pub empty_none_routed: &'static str,
+    pub empty_none_filed: &'static str,
     /// `{word}` is [`any`](Self::any) or [`all`](Self::all).
     pub empty_no_match: &'static str,
 }
@@ -430,8 +430,8 @@ pub struct ArtifactChrome {
     pub natal_reading: &'static str,
     pub index_of_elements: &'static str,
     /// Column heads of the index, in order: planets, signs, houses, aspects.
-    pub bands: [&'static str; 4],
-    pub passages_touching: &'static str,
+    pub bands: [&'static str; 5],
+    pub notes_touching: &'static str,
     pub any: &'static str,
     pub all: &'static str,
     pub any_title: &'static str,
@@ -441,10 +441,10 @@ pub struct ArtifactChrome {
     pub commentary: &'static str,
     pub prepared_by: &'static str,
     pub wheel_aria: &'static str,
-    /// `{shown}` of `{total}` passages.
+    /// `{shown}` of `{total}` notes.
     pub count: &'static str,
-    pub no_passages_routed: &'static str,
-    pub empty_none_routed: &'static str,
+    pub no_notes_filed: &'static str,
+    pub empty_none_filed: &'static str,
     /// `{word}` is [`any`](Self::any) or [`all`](Self::all).
     pub empty_no_match: &'static str,
     pub fewer: &'static str,
@@ -480,7 +480,7 @@ mod tests {
             let singles = [
                 ("natalReading", a.natal_reading),
                 ("indexOfElements", a.index_of_elements),
-                ("passagesTouching", a.passages_touching),
+                ("notesTouching", a.notes_touching),
                 ("any", a.any),
                 ("all", a.all),
                 ("anyTitle", a.any_title),
@@ -491,8 +491,8 @@ mod tests {
                 ("preparedBy", a.prepared_by),
                 ("wheelAria", a.wheel_aria),
                 ("count", a.count),
-                ("noPassagesRouted", a.no_passages_routed),
-                ("emptyNoneRouted", a.empty_none_routed),
+                ("noNotesFiled", a.no_notes_filed),
+                ("emptyNoneFiled", a.empty_none_filed),
                 ("emptyNoMatch", a.empty_no_match),
                 ("fewer", a.fewer),
                 ("more", a.more),
@@ -551,18 +551,18 @@ mod tests {
         assert_eq!(beneath, Some("Мира Холт"));
     }
 
-    /// English must not say "1 passages" — which it did when a bare count was one
+    /// English must not say "1 notes" — which it did when a bare count was one
     /// string. A language that does not inflect says so by giving both forms the
     /// same words, which is what the shipped Russian does.
     #[test]
     fn a_count_takes_the_form_its_number_calls_for() {
-        let en = Locale::En.app().passages;
-        assert_eq!(en.one.replace("{n}", "1"), "1 passage");
-        assert_eq!(en.other.replace("{n}", "2"), "2 passages");
-        assert_eq!(en.other.replace("{n}", "0"), "0 passages", "zero takes the plural");
+        let en = Locale::En.app().notes;
+        assert_eq!(en.one.replace("{n}", "1"), "1 note");
+        assert_eq!(en.other.replace("{n}", "2"), "2 notes");
+        assert_eq!(en.other.replace("{n}", "0"), "0 notes", "zero takes the plural");
         assert_ne!(en.one, en.other, "English inflects");
 
-        let ru = Locale::Ru.app().passages;
+        let ru = Locale::Ru.app().notes;
         assert_eq!(ru.one, ru.other, "the shipped Russian uses one fixed form");
     }
 
@@ -576,7 +576,7 @@ mod tests {
             for (field, value) in [
                 ("indexOfElements", a.index_of_elements),
                 ("commentary", a.commentary),
-                ("passagesTouching", a.passages_touching),
+                ("notesTouching", a.notes_touching),
                 ("any", a.any),
                 ("all", a.all),
                 ("anyTitle", a.any_title),
@@ -584,20 +584,20 @@ mod tests {
                 ("ofSelection", a.of_selection),
                 ("clear", a.clear),
                 ("count", a.count),
-                ("passages.one", a.passages.one),
-                ("passages.other", a.passages.other),
+                ("notes.one", a.notes.one),
+                ("notes.other", a.notes.other),
                 ("fewer", a.fewer),
                 ("more", a.more),
                 ("wheelAria", a.wheel_aria),
-                ("emptyNoneRouted", a.empty_none_routed),
+                ("emptyNoneFiled", a.empty_none_filed),
                 ("emptyNoMatch", a.empty_no_match),
             ] {
                 assert!(!value.trim().is_empty(), "{code}: blank {field}");
             }
             assert!(a.bands.iter().all(|b| !b.trim().is_empty()), "{code}: blank band head");
             assert!(a.count.contains("{shown}") && a.count.contains("{total}"), "{code}: count");
-            assert!(a.passages.one.contains("{n}"), "{code}: passages.one");
-            assert!(a.passages.other.contains("{n}"), "{code}: passages.other");
+            assert!(a.notes.one.contains("{n}"), "{code}: notes.one");
+            assert!(a.notes.other.contains("{n}"), "{code}: notes.other");
             assert!(a.more.contains("{n}"), "{code}: more");
             assert!(a.empty_no_match.contains("{word}"), "{code}: emptyNoMatch");
         }
@@ -613,7 +613,7 @@ mod tests {
             for (field, a, b) in [
                 ("indexOfElements", app.index_of_elements, art.index_of_elements),
                 ("commentary", app.commentary, art.commentary),
-                ("passagesTouching", app.passages_touching, art.passages_touching),
+                ("notesTouching", app.notes_touching, art.notes_touching),
                 ("any", app.any, art.any),
                 ("all", app.all, art.all),
                 ("ofSelection", app.of_selection, art.of_selection),

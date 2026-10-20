@@ -158,7 +158,7 @@ describe("recording transitions", () => {
 });
 
 describe("curation during a take", () => {
-  // Curation is not one of the refused paths: merging or amending a passage
+  // Curation is not one of the refused paths: merging or amending a note
   // mid-take returns an updated chart and must not end the recording.
   it("keeps the phase while replacing the chart", () => {
     const s = must(chartReplaced(recordingWith("A"), chart("curated")));

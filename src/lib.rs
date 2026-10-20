@@ -2,7 +2,8 @@
 //! offline HTML artifact where the astrologer's *verbatim* words are filed
 //! under the chart elements they refer to.
 //!
-//! Four-stage pipeline (build brief: `docs/natal-reading-indexer.md`):
+//! Four-stage pipeline (the original brief, now historical, is
+//! `docs/natal-reading-indexer.md`; `CONTEXT.md` is the current account):
 //! 1. **Transcribe** — [`transcribe`]: local whisper.cpp over a WAV file
 //!    (cross-platform, user-supplied ggml model); external transcripts are
 //!    equally welcome as plain text or timestamped JSONL via
@@ -33,6 +34,7 @@ pub mod pdf;
 pub mod plate;
 pub mod route;
 pub mod transcribe;
+pub mod vocab;
 
 /// Where a reading's transcript comes from. `Audio` encodes the
 /// "a recording needs a model" invariant in the type; [`TranscriptSource::classify`]
@@ -140,83 +142,84 @@ pub fn birth_at_place(
     }
 }
 
-/// The words a build routed from, in the form they should be archived: a
-/// filename following the source's kind (`transcript.jsonl` for a recording,
-/// `transcript.{ext}` for a file) and their verbatim contents.
+/// What a full build produced besides the chart and its notes: the span count
+/// the router emitted before gating, and any non-fatal warnings (a
+/// DST-ambiguous birth time, Verify-gate rejections) for the caller to
+/// surface.
 ///
-/// A library that saves a reading has to save these too — a passage is verbatim
-/// by definition, and without the transcript its span points at nothing, so
-/// provenance can no longer be re-checked. [`build_reading`] therefore hands the
-/// transcript back rather than consuming it: the desktop used to fork the whole
-/// transcript-acquisition match for want of this one value.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ArchivedTranscript {
-    pub filename: String,
-    pub contents: String,
-}
-
-/// What a full build produced besides the chart: the span count the router
-/// emitted before gating, any non-fatal warnings (a DST-ambiguous birth
-/// time, Verify-gate rejections) for the caller to surface, and the transcript
-/// it routed from, for callers that persist the reading.
+/// It used to hand the transcript back too, as an `ArchivedTranscript` with a
+/// filename, because a saved reading had to keep the words its notes' spans
+/// pointed into — without them provenance could not be re-checked. Notes do
+/// not carry spans and readings are not folders, so there is nothing left for
+/// a stored transcript to be checked against.
 #[derive(Debug, Default)]
 pub struct BuildReport {
     pub n_routed: usize,
     pub warnings: Vec<String>,
-    /// `None` when the build had no transcript at all.
-    pub transcript: Option<ArchivedTranscript>,
 }
 
 /// The whole pipeline in one call: obtain the transcript (reading a file, or
 /// transcribing audio while reporting whole-percent `progress`), compute the
-/// chart, route + verify passages into `excerpts`. Returns the chart and a
+/// chart, route + verify the notes. Returns the chart, the notes, and a
 /// [`BuildReport`]. This is the single entry point every frontend shares.
+///
+/// The notes come back *beside* the chart rather than on it, numbered `x1`,
+/// `x2`, … — see [`numbered`] for why this call does that when `route` does
+/// not.
 pub fn build_reading(
     input: &chart::BirthInput,
     source: TranscriptSource,
     progress: impl FnMut(i32) + Send + 'static,
-) -> Result<(contract::ChartData, BuildReport), String> {
+) -> Result<(contract::ChartData, Vec<contract::Note>, BuildReport), String> {
     // `progress` is only consumed by the audio arm; without the feature that
     // arm is gone, so drop the callback to keep it from reading as unused.
     #[cfg(not(feature = "transcribe"))]
     let _ = progress;
-    let (transcript, archived) = match source {
-        TranscriptSource::None => (None, None),
+    let transcript = match source {
+        TranscriptSource::None => None,
         TranscriptSource::File(path) => {
             let contents = std::fs::read_to_string(&path)
                 .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("txt");
-            let archived =
-                ArchivedTranscript { filename: format!("transcript.{ext}"), contents };
-            (Some(route::Transcript::load(&archived.contents)), Some(archived))
+            Some(route::Transcript::load(&contents))
         }
         #[cfg(feature = "transcribe")]
         TranscriptSource::Audio { wav, model } => {
             let lang = input.locale.whisper_lang();
             let segments = transcribe::transcribe(&wav, &model, Some(lang), progress)?;
-            let archived = ArchivedTranscript {
-                filename: "transcript.jsonl".to_string(),
-                contents: transcribe::to_jsonl(&segments),
-            };
             // Straight from the segments, skipping the JSONL round trip.
-            (Some(route::Transcript::from_segments(segments)), Some(archived))
+            Some(route::Transcript::from_segments(segments))
         }
     };
-    let (chart, mut report) = route_into_chart(input, transcript)?;
-    report.transcript = archived;
-    Ok((chart, report))
+    compute_and_route(input, transcript)
 }
 
-fn route_into_chart(
+/// Give unnumbered notes the conventional `x{n}` ids, in order.
+///
+/// `route` deliberately leaves `id` empty: a store mints its own, and
+/// numbering there would be a name immediately thrown away. But
+/// `build_reading` is the whole pipeline for callers that have no store — the
+/// CLI emits an artifact straight from it — and the artifact uses a note's id
+/// as a DOM id. An empty one is not an error anywhere; it is a page of
+/// elements all sharing the id `""`.
+fn numbered(mut notes: Vec<contract::Note>) -> Vec<contract::Note> {
+    for (i, note) in notes.iter_mut().enumerate() {
+        note.id = format!("x{}", i + 1);
+    }
+    notes
+}
+
+fn compute_and_route(
     input: &chart::BirthInput,
     transcript: Option<route::Transcript>,
-) -> Result<(contract::ChartData, BuildReport), String> {
-    let (mut chart, mut warnings) = chart::compute_chart_reporting(input)?;
+) -> Result<(contract::ChartData, Vec<contract::Note>, BuildReport), String> {
+    let (chart, mut warnings) = chart::compute_chart_reporting(input)?;
+    let mut notes = Vec::new();
     let mut n_routed = 0;
     if let Some(transcript) = transcript {
-        let report = route::route_into(&mut chart, &transcript, route::Filing::Fresh);
+        let (routed, report) = route::route(&transcript, input.locale);
+        notes = routed;
         n_routed = report.n_routed;
         warnings.extend(report.warnings);
     }
-    Ok((chart, BuildReport { n_routed, warnings, transcript: None }))
+    Ok((chart, numbered(notes), BuildReport { n_routed, warnings }))
 }

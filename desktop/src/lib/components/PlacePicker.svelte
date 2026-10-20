@@ -67,7 +67,11 @@
       pick(suggestions[sel]);
       e.preventDefault();
     } else if (e.key === "Escape") {
+      // Closes the suggestions, and only them: the overlays listen for
+      // Escape on the window, so letting it travel would shut the whole
+      // sheet the picker sits in.
       suggestions = [];
+      e.stopPropagation();
     }
   }
 </script>
@@ -85,7 +89,7 @@
       {#each suggestions as p, i (p.id)}
         <li>
           <button type="button" class:current={i === sel} onclick={() => pick(p)}>
-            <span class="marker">{i === sel ? "☞" : ""}</span>{p.label}
+            {p.label}
           </button>
         </li>
       {/each}
@@ -110,29 +114,29 @@
     right: 0;
     min-width: 14rem;
     z-index: var(--z-dropdown);
-    margin: 0.3rem 0 0;
-    padding: 0.3rem 0;
+    margin: 0.35rem 0 0;
+    padding: 0.3rem;
     list-style: none;
-    background: var(--bg-deep);
-    border: 1px solid var(--hairline);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+    font-family: var(--font-sans);
+    font-size: 0.86rem;
+    background: var(--surface-raised);
+    border-radius: var(--radius);
+    box-shadow:
+      inset 0 0 0 1px var(--line),
+      0 12px 32px -8px rgba(0, 0, 0, 0.6);
   }
   .dropdown button {
     display: block;
     width: 100%;
     text-align: left;
-    padding: 0.15rem 0.7rem;
-    color: var(--ink-2);
-  }
-  .dropdown button .marker {
-    display: inline-block;
-    width: 1.2em;
+    padding: 0.42rem 0.6rem;
+    border-radius: var(--radius-sm);
     color: var(--ink-2);
   }
   .dropdown button.current,
   .dropdown button:hover {
     color: var(--ink);
-    text-decoration: underline;
+    background: var(--surface-hover);
   }
   /* caption variant: small-caps apparatus text, filling its line so long
      place labels never truncate */
@@ -146,9 +150,7 @@
     letter-spacing: 0.12em;
   }
   .compact .dropdown {
-    font-size: 0.82rem;
     font-variant: normal;
     letter-spacing: normal;
-    text-align: left;
   }
 </style>

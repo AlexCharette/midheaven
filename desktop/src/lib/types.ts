@@ -13,10 +13,10 @@ export type { Body } from "./generated/Body";
 export type { Ref } from "./generated/Ref";
 export type { HouseRef } from "./generated/HouseRef";
 export type { Aspect } from "./generated/Aspect";
-export type { Excerpt } from "./generated/Excerpt";
+export type { KindRef } from "./generated/KindRef";
+export type { Note } from "./generated/Note";
 export type { PlaceDto } from "./generated/PlaceDto";
 export type { Preferences } from "./generated/Preferences";
-export type { ReadingEntry } from "./generated/ReadingEntry";
 export type { AppChrome } from "./generated/AppChrome";
 export type { BirthForm } from "./generated/BirthForm";
 export type { CalculationDefaults } from "./generated/CalculationDefaults";
@@ -24,6 +24,18 @@ export type { LocaleDto } from "./generated/LocaleDto";
 export type { OptionDto } from "./generated/OptionDto";
 export type { PreviewInput } from "./generated/PreviewInput";
 export type { PreviewDto } from "./generated/PreviewDto";
+export type { Chart } from "./generated/Chart";
+export type { Person } from "./generated/Person";
+export type { StoredNote } from "./generated/StoredNote";
+export type { JournalRow } from "./generated/JournalRow";
+export type { ChartRow } from "./generated/ChartRow";
+export type { Query } from "./generated/Query";
+export type { Mode as QueryMode } from "./generated/Mode";
+export type { View } from "./generated/View";
+export type { Anchor } from "./generated/Anchor";
+export type { AnchorKind } from "./generated/AnchorKind";
+export type { ElementDto } from "./generated/ElementDto";
+export type { Beside } from "./generated/Beside";
 
 import type { Body } from "./generated/Body";
 import type { ChartData } from "./generated/ChartData";
@@ -77,6 +89,7 @@ export function elementsOf(chart: ChartData): { tag: string; glyph: string; name
     ...chart.signs.map((x) => ({ tag: x.id, glyph: x.glyph, name: x.name })),
     ...chart.houses.map((x) => ({ tag: x.id, glyph: x.label, name: x.name })),
     ...chart.aspects.map((x) => ({ tag: x.id, glyph: x.glyph, name: x.name })),
+    ...chart.kinds.map((x) => ({ tag: x.id, glyph: x.glyph, name: x.name })),
   ];
 }
 

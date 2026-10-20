@@ -1,22 +1,22 @@
 <script lang="ts">
   import { ask } from "@tauri-apps/plugin-dialog";
-  import { addExcerpt, correctExcerpt, deleteExcerpt, mergeUp } from "$lib/api";
+  import { deleteNote, mergeUp, writeNote } from "$lib/api";
   import { SvelteSet } from "svelte/reactivity";
-  import type { ChartData, Excerpt } from "$lib/types";
+  import type { ChartData, Note } from "$lib/types";
   import { catOf, elementsOf, textGlyph } from "$lib/types";
-  import { updateChart } from "$lib/session.svelte";
+  import { notes, refreshNotes, setNotes } from "$lib/notes.svelte";
   import { isBusy } from "$lib/busy.svelte";
   import { hoveredTag, isPinned, mode, pinCount, toggle, touchesPins } from "$lib/focus.svelte";
   import { notify } from "$lib/toasts.svelte";
   import { fmt, t } from "$lib/chrome.svelte";
   import { reason } from "$lib/failure";
 
-  let { chart, visible }: { chart: ChartData; visible: Excerpt[] } = $props();
+  let { chart, visible }: { chart: ChartData; visible: Note[] } = $props();
 
   const elements = $derived(elementsOf(chart));
   const lookup = $derived(new Map(elements.map((e) => [e.tag, e])));
 
-  // merge ↑ joins into the previous *visible* passage, so it's only
+  // merge ↑ joins into the previous *visible* note, so it's only
   // unambiguous when nothing filters the list — no selection and no hover
   // preview. amend/remove/add are id-based and safe under any filter, so they
   // stay available whenever the app isn't busy.
@@ -29,14 +29,14 @@
 
   async function join(id: string) {
     try {
-      updateChart(await mergeUp(id));
-      notify("two passages joined");
+      setNotes(await mergeUp(id));
+      notify("two notes joined");
     } catch (e) {
       notify(reason(e), "error");
     }
   }
 
-  function beginAmend(ex: Excerpt) {
+  function beginAmend(ex: Note) {
     editing = ex.id;
     draft = ex.text;
     original = ex.text;
@@ -48,8 +48,8 @@
     editing = null;
     if (draft.trim() === original) return;
     try {
-      updateChart(await correctExcerpt(id, draft));
-      notify("passage amended — re-sectioned");
+      setNotes(await writeNote(draft, [], id));
+      notify("note amended — re-sectioned");
     } catch (e) {
       notify(reason(e), "error");
     }
@@ -69,20 +69,21 @@
   const rowsFor = (t: string) => Math.max(2, Math.ceil(t.length / 70));
 
   async function remove(exId: string, preview: string) {
-    const sure = await ask(`Remove this passage?\n\n“${preview}”\n\nIts words are not recoverable.`, {
+    const sure = await ask(`Remove this note?\n\n“${preview}”\n\nIts words are not recoverable.`, {
       title: "Midheaven",
       kind: "warning",
     });
     if (!sure) return;
     try {
-      updateChart(await deleteExcerpt(exId));
-      notify("passage removed");
+      await deleteNote(exId);
+      await refreshNotes();
+      notify("note removed");
     } catch (e) {
       notify(reason(e), "error");
     }
   }
 
-  // ---- manual passage composer ----
+  // ---- manual note composer ----
   let composing = $state(false);
   let draftText = $state("");
   const draftTags = new SvelteSet<string>();
@@ -97,8 +98,8 @@
     if (!draftText.trim()) return;
     composing = false;
     try {
-      updateChart(await addExcerpt(draftText, [...draftTags]));
-      notify("passage added");
+      setNotes(await writeNote(draftText, [...draftTags]));
+      notify("note added");
     } catch (e) {
       notify(reason(e), "error");
     }
@@ -107,7 +108,7 @@
   const composerKeys = escCommit(() => (composing = false), fileIt);
 </script>
 
-<!-- the reference chip shared by passage refs and the composer's tag picker:
+<!-- the reference chip shared by note refs and the composer's tag picker:
      a glyph + name toggle, its category coloring keyed off the tag -->
 {#snippet refButton(tag: string, glyph: string, name: string, pressed: boolean, onToggle: () => void)}
   <button class="ref" aria-pressed={pressed} onclick={onToggle}>
@@ -116,12 +117,12 @@
   </button>
 {/snippet}
 
-<h2 class="rubric">{t().commentary}</h2>
+<h2 class="section-head">{t().commentary}</h2>
 {#if visible.length === 0}
   <div class="empty-plate">
     <span class="mark" aria-hidden="true">✶</span>
-    {#if chart.excerpts.length === 0}
-      <p class="caption">{t().emptyNoneRouted}</p>
+    {#if notes().length === 0}
+      <p class="caption">{t().emptyNoneFiled}</p>
       <p class="sub">Transcribe a session or add one by hand to begin the commentary.</p>
     {:else}
       <p class="caption">{fmt(t().emptyNoMatch, { word: mode() === "all" ? t().all : t().any })}</p>
@@ -131,19 +132,19 @@
 {/if}
 {#each visible as ex, i (ex.id)}
   {@const pinned = touchesPins(ex)}
-  <article class="passage" class:pinned>
+  <article class="note" class:pinned>
     <div class="folio">
       {#if pinned}<span class="pin-mark astro" title="tied to the pinned selection">☞</span>{/if}
-      {ex.time || "—"}
+      {ex.at || "—"}
       {#if mergeable && i > 0}
-        <button class="curate" title="join this passage to the previous one" onclick={() => join(ex.id)}
+        <button class="curate" title="join this note to the previous one" onclick={() => join(ex.id)}
           >merge ↑</button
         >
       {/if}
       {#if editable}
         <button
           class="curate destructive"
-          title="remove this passage (asks first)"
+          title="remove this note (asks first)"
           onclick={() => remove(ex.id, ex.text.length > 80 ? ex.text.slice(0, 80) + "…" : ex.text)}
           >remove</button
         >
@@ -170,10 +171,8 @@
       </blockquote>
     {/if}
     <div class="refs">
-      <span class="apparatus-text">vide</span>
-      {#each ex.tags as tag, i (tag)}
+      {#each ex.tags as tag (tag)}
         {@const el = lookup.get(tag)}
-        {#if i > 0}<span class="sep"> · </span>{/if}
         {@render refButton(tag, el?.glyph ?? "", el?.name ?? tag, isPinned(tag), () => toggle(tag))}
       {/each}
     </div>
@@ -199,50 +198,77 @@
         {/each}
       </div>
       <div class="composer-actions">
-        <span class="apparatus-text">
+        <span class="hint">
           {draftTags.size === 0 ? "no tags picked — the router will file it from the words" : `${draftTags.size} tags picked`}
         </span>
-        <button class="ghost" onclick={() => (composing = false)}>discard</button>
-        <button class="frame-btn" onclick={fileIt} disabled={!draftText.trim()}>file it</button>
+        <button class="btn bare small" onclick={() => (composing = false)}>Discard</button>
+        <button class="btn primary small" onclick={fileIt} disabled={!draftText.trim()}>File it</button>
       </div>
     {:else}
-      <button class="ghost open-composer" onclick={openComposer}>✎ add a passage</button>
+      <button class="btn quiet small open-composer" onclick={openComposer}>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"
+          ><path d="M3 13h2.4L12.6 5.8a1.7 1.7 0 0 0-2.4-2.4L3 10.6V13Z" /><path d="m9.3 4.3 2.4 2.4" /></svg
+        >
+        Add a note
+      </button>
     {/if}
   </div>
 {/if}
 
 <style>
-  .passage {
+  .note {
     display: grid;
     grid-template-columns: 5.2rem 1fr;
     gap: 0 1.3rem;
-    padding: 1.05rem 0;
+    padding: 1.05rem 0.9rem;
+    margin: 0 -0.9rem;
+    border-radius: var(--radius);
     user-select: text;
     cursor: text;
   }
-  .passage + .passage {
-    border-top: 1px solid var(--line);
+  .note + .note {
+    box-shadow: 0 -1px 0 var(--line);
   }
-  /* a pinned passage is lit like the wheel element it answers to: a faint
-     brass wash bleeding from the margin and a manicule in the folio, the same
-     ☞ the index uses for a selected element. */
-  .passage.pinned {
-    background: linear-gradient(90deg, var(--brass-wash) 0%, transparent 42%);
+  /* a pinned note is lit like the index entry it answers to: the same faint
+     brass ground, and a manicule in the folio */
+  .note.pinned {
+    background: rgba(196, 154, 48, 0.07);
+  }
+  .note.pinned + .note,
+  .note + .note.pinned {
+    box-shadow: none;
   }
   @media (prefers-reduced-motion: no-preference) {
-    .passage {
+    .note {
       transition: background var(--dur-base) var(--ease-out-quint);
+    }
+  }
+  /* Narrow widths cannot afford a fixed margin column: 5.2rem of folio out
+     of 390 leaves the words about thirty characters, which is not a measure.
+     The anchor goes above the line instead, where it costs nothing. */
+  @media (max-width: 560px) {
+    .note {
+      grid-template-columns: 1fr;
+      gap: 0.2rem;
+    }
+    .folio {
+      text-align: left;
+      padding-top: 0;
+    }
+    blockquote,
+    .refs {
+      grid-column: 1;
     }
   }
   .folio {
     color: var(--ink-3);
-    font-size: 0.8rem;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.06em;
-    padding-top: 0.35rem;
+    padding-top: 0.38rem;
     text-align: right;
   }
-  .passage.pinned .folio {
+  .note.pinned .folio {
     color: var(--ink-2);
   }
   .pin-mark {
@@ -253,14 +279,14 @@
   }
   .curate {
     display: block;
-    margin-left: auto;
-    font-size: 0.78rem;
-    font-style: italic;
+    margin: 0.3rem 0 0 auto;
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
     color: var(--ink-3);
     opacity: 0;
     transition: opacity 0.15s ease-out;
   }
-  .passage:hover .curate {
+  .note:hover .curate {
     opacity: 1;
   }
   @media (prefers-reduced-motion: reduce) {
@@ -270,7 +296,6 @@
   }
   .curate:hover {
     color: var(--ink);
-    text-decoration: underline;
   }
   blockquote .curate.amend {
     display: inline;
@@ -283,12 +308,14 @@
     font-size: 1.04rem;
     line-height: 1.75;
     color: var(--ink);
-    background: transparent;
+    background: var(--surface);
     border: none;
-    border-bottom: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    box-shadow: inset 0 0 0 1px var(--line);
     resize: vertical;
     max-width: 62ch;
-    padding: 0;
+    padding: 0.55rem 0.8rem;
+    transition: box-shadow var(--dur-fast) var(--ease-out-quint);
   }
   .amend-box {
     grid-column: 2;
@@ -299,36 +326,32 @@
   .amend-box:focus,
   .compose-box:focus {
     outline: none;
-    border-bottom-color: var(--brass);
+    box-shadow: inset 0 0 0 1px var(--brass), 0 0 0 3px var(--brass-wash);
   }
   .curate.destructive:hover {
     color: var(--oxblood);
   }
   .composer {
     margin-top: 1rem;
-    padding-top: 0.8rem;
+    padding-top: 1rem;
     border-top: 1px solid var(--line);
-  }
-  .open-composer {
-    display: block;
-    margin: 0 auto;
-    font-size: 0.88rem;
   }
   .tag-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem 0.8rem;
-    margin: 0.6rem 0;
-    font-size: 0.85rem;
+    gap: 0.25rem;
+    margin: 0.7rem 0;
   }
   .composer-actions {
     display: flex;
-    align-items: baseline;
-    gap: 1.2rem;
-    font-size: 0.88rem;
+    align-items: center;
+    gap: 0.4rem;
   }
-  .composer-actions .apparatus-text {
+  .hint {
     margin-right: auto;
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    color: var(--ink-3);
   }
   blockquote {
     margin: 0;
@@ -338,33 +361,51 @@
     max-width: 62ch;
     text-indent: -0.45em;
   }
+  /* What a note is filed under, as the same marks the index uses: a coloured
+     glyph and a word, no box. Each is a toggle — click one to see every note
+     it shares. */
   .refs {
     grid-column: 2;
-    margin-top: 0.45rem;
-    font-size: 0.85rem;
-    color: var(--ink-3);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.2rem;
+    margin: 0.5rem 0 0 -0.45rem;
     user-select: none;
     cursor: default;
   }
   .ref {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35em;
+    padding: 0.16rem 0.45rem;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
     color: var(--ink-2);
     white-space: nowrap;
+    transition:
+      background var(--dur-fast) var(--ease-out-quint),
+      color var(--dur-fast) var(--ease-out-quint);
   }
   .ref .g {
-    margin-right: 0.3em;
+    font-family: var(--font-astro);
+    font-size: 1.05em;
   }
-  .ref .nm {
-    border-bottom: 1px dotted var(--line);
+  .ref .g.g-house {
+    font-family: var(--font-serif);
+    font-size: 0.9em;
   }
-  .ref:hover .nm {
-    border-bottom: 1px solid var(--hairline);
+  .ref:hover {
+    background: var(--surface-hover);
     color: var(--ink);
   }
-  .ref[aria-pressed="true"] .nm {
-    border-bottom: 1px solid var(--ink-2);
+  .ref[aria-pressed="true"] {
+    background: var(--brass-wash);
     color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--brass-halo);
   }
-  .sep {
-    color: var(--ink-3);
+  .ref:focus-visible {
+    outline: 2px solid var(--brass-halo);
+    outline-offset: 1px;
   }
 </style>

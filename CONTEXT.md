@@ -7,42 +7,184 @@ Seeded while introducing `src/derive.rs`; extend it rather than coining synonyms
 
 ## Reading
 
-A recorded birth-chart consultation: the astrologer's spoken words plus the
-chart they were speaking about. The unit the whole app works on — a reading is
-what gets built, curated, saved to the library, and exported.
+A birth-chart consultation: the words spoken or written about a chart, and the
+chart they are about. Not a stored thing — there is no reading record. A
+reading is a **chart** plus the **notes** that name it, and "open a reading"
+means open that chart and read back its notes.
+
+It used to be a folder: `{slug}_{date}/` holding a `chart.json` and its
+transcripts, listed by walking the library. That made a note's home a path
+that moves, and made "every note about this person" unanswerable without
+opening every folder.
 
 ## Chart
 
-The computed natal chart — `contract::ChartData`. Positions, houses, aspects and
-the localized names for them, plus any passages filed against them.
+Two things wear this name, deliberately, because they are the same sky said
+twice.
 
-## Passage · Excerpt
+`contract::ChartData` is the **computed** chart: positions, houses, aspects,
+the five aspect kinds, and the localized names for all of them. It is derived,
+never stored, and it carries no notes.
 
-**The same thing.** A verbatim span of the transcript filed under the chart
-elements it refers to. The type is `contract::Excerpt`; the UI, the PDF and most
-comments say "passage". Prefer *passage* in prose and user-facing text, *excerpt*
-only when naming the type or its field.
+`store::Chart` is the **record**: a `BirthSeed` plus the calculation codes —
+everything needed to recompute the first — and the person whose sky it is. It
+has an id, and that id is what a note names. Ten notes about one transit share
+one record rather than ten copies of one sky.
 
-Passages are always verbatim: the text must equal the transcript slice its span
-points at. That is provenance, not a formatting preference.
+A chart's birth moment is part of its identity. Change it and you have a
+different sky, so you get a new record; notes stay with the one they were
+written about. A **person's** name is not: correct it and every chart of
+theirs reads the correction, because none of them copied it.
+
+## Person
+
+Someone a chart is of — `store::Person`. Separate from the chart because one
+person has several: a natal chart, the transits over it, a progression.
+
+## Note
+
+One piece of writing filed under the chart elements it refers to. The type is
+`contract::Note`. Say *note* everywhere — prose, UI, comments, code. It replaced
+two words for one thing: the type was `Excerpt`, the UI and the PDF said
+"passage", and the doc that told you which to use where was this entry.
+
+Some notes were spoken into a recording and some were typed by hand. The app
+does not distinguish them: both file under the same vocabulary, filter through
+the same rules, and render alike in the app, the PDF and the artifact. A note
+may carry no tags at all, in which case it shows whenever no filter is active.
+
+A note spoken in a recording carries `at`, the "HH:MM:SS" it was said at.
+Nothing else marks where a note came from.
+
+The type used to carry a `span` as well — byte offsets into the transcript,
+proving the text was a verbatim slice of it. Provenance is still established,
+by the **Verify gate**, at the moment of routing; it is simply no longer
+carried by every note for the rest of its life, because nothing ever read one
+back. Removing it took a sentinel with it: an absent span had been spelled
+`[0, 0]` on the wire, which meant an empty span had to be an error, which put
+a rule about an impossible case into two separate validators.
+
+A note is a record of its own — `store::StoredNote`, one file per note, named
+by its id. Nothing contains it; it names what it is about. That is what makes
+"every note I have written about this planet" a question with an answer, and
+it is the single change this vocabulary turns on.
+
+## Anchor
+
+What a note is about — `store::Anchor`, a closed three.
+
+**`Chart`** — said in a reading, about that sky.
+**`Person`** — about someone, not about a moment. "She keeps deflecting about
+her father."
+**`Standing`** — see below.
+
+Two optional fields would have been four states for three real ones, which is
+the mistake `session.rs` already carries a comment about.
+
+## Standing note
+
+Craft knowledge: what the astrologer knows about Saturn, about Leo, about a
+trine. About the elements and about nothing else.
+
+Its tags say what it is about — the vocabulary is global, so `sign:leo` needs
+no chart. What marks it as craft is that it has **no anchor**: a tag cannot
+tell a considered note about Leo from a transcript sentence where someone
+happened to say the word, but the absence of an anchor can, because nothing
+routed into a standing note.
+
+Written from the journal, against a plate with no sky in it (see **Chartless
+plate**). It cannot carry an `aspect:` pair: a pair names two specific bodies,
+which is a fact about a chart rather than about the craft. `kind:trine` is the
+standing concept.
+
+## Chartless plate
+
+The vocabulary as something to click, with no chart behind it —
+`list_elements` and `ElementPlate`. Eleven bodies, twelve signs, twelve
+houses, five kinds.
+
+It exists to keep a rule `Composer.svelte` states: the plate is how you say
+what a note is about, and giving standing notes their own tag picker would
+have been a second way to name elements in an app that has one. The bands were
+never chart-shaped; only the wheel and the pairs were.
+
+## Export boundary
+
+Only chart-anchored notes leave the building. `save_artifact` and `save_pdf`
+render through `notes::under`, which filters to one chart, and that is the
+whole of the rule.
+
+It is a privacy boundary rather than a default. The artifact is the
+recipient's keepsake; standing notes are the practitioner's private craft, and
+person-anchored notes are observations *about* the recipient that they may
+never have been meant to read. Sharing one is an explicit act — copying it
+into the reading as a chart-anchored note.
 
 ## Tag id
 
 An element identifier in the closed form `{category}:{slug}` — `planet:sun`,
-`sign:leo`, `house:5`, `aspect:sun-moon`. Language-neutral, so a reading's
-language never changes its tags. The four categories are fixed.
+`sign:leo`, `house:5`, `aspect:sun-moon`, `kind:trine`. Language-neutral, so a
+reading's language never changes its tags. The five categories are fixed.
+
+`aspect:` names a *pair of bodies* — "this note is about the Sun and the Moon".
+`kind:` names the relation — "this note is about a trine". They are separate
+because only the second can be said without naming anyone, and the first has to
+mean something even in a sky where those two bodies are nowhere near each other.
 
 ## Vocabulary
 
-The set of tag ids a particular chart admits, derived from the chart itself
-(`ChartData::vocab`). Closed: a router may only emit tags from it, and the Verify
-gate rejects anything outside it.
+Every tag id that exists, in `vocab::ALL`: eleven planets, twelve signs, twelve
+houses, all forty-five pairs of the ten bodies, and the five aspect kinds.
+Global and closed — a router may only emit tags from it, and the Verify gate
+rejects anything outside it.
+
+It used to be derived per chart, from the elements that chart contained
+(`ChartData::vocab`). That made a note untaggable without a chart to tag it
+against, which is the thing that kept this app from being a journal.
 
 ## Verify gate
 
-The provenance check between a router's output and a chart's passages: the span
-must be a real slice of the transcript, and every tag must be in the chart's
-vocabulary. Rejections surface as warnings rather than failing the build.
+The provenance check between a router's output and the notes it becomes: the
+span must be a real, non-empty slice of the transcript, and every tag must be
+in the vocabulary. Rejections surface as warnings rather than failing the
+build.
+
+This is the only place provenance is enforced, and the only place a span
+exists. The gate hands each accepted note back *beside* its span rather than
+carrying one: `coalesce` needs the spans to take a verbatim slice across a
+merge, and `route::file` drops them on the way to storage.
+
+## View
+
+A saved question — `query::View`: a name and a `Query`. A question, not an
+answer: reopening one runs it again, so a view written last month shows what
+was written since.
+
+`Query` is closed on purpose. Six dimensions (tags with any/all, person,
+chart, anchor kind, date range, free text), combining with AND, and an empty
+query is every note — so a view is always a refinement of "all my notes" and
+cannot be written to mean nothing.
+
+`person` means **both** senses: anchored to them, or said in a reading of one
+of their charts. "Everything about Mira" is one question, and splitting it
+would make the common case take two.
+
+## Store
+
+Where everything lives — `store::Store`, four sibling folders of one-file
+records under the folder the astrologer chose: `notes/`, `charts/`,
+`people/`, `views/`.
+
+Removing a **chart** takes its notes: one level, and a confirmation can say
+what goes. Removing a **person** is refused while any chart or note still
+refers to them, because that cascade is three levels deep and a click should
+not be able to do it.
+
+One file per record is load-bearing: writing is create-and-amend rather than a
+read-modify-write of a shared log, and a file that will not parse costs one
+record rather than the folder. Every id is checked before it becomes a
+filename, because the webview hands back ids it was given and `../../x` is a
+filename too.
 
 ## Artifact
 
@@ -52,10 +194,14 @@ forever. Distinct from the PDF, which is a separate rendering of the same chart.
 
 ## Session
 
-The open working state: a reading the app currently holds, and possibly a live
-recorder capturing a take into it. Ten of the twenty-five backend commands
-require a session; all ten refuse through one guard with one message
-(`session::NO_READING`, "no chart has been built yet").
+The open working state: the chart the app currently has open, and possibly a
+live recorder capturing a take into it. Commands that need one refuse through
+a single guard with a single message (`session::NO_READING`, "no chart has
+been built yet").
+
+A session holds no notes. It is the open *window*, and a note outlives the
+window it was typed in — so the session holds the chart's id, and the notes
+are read from the store.
 
 A session is never recording without a reading. It is modelled as one value on
 **both** sides precisely so that cannot drift —
@@ -70,8 +216,13 @@ take is in flight rather than reconciled.
 
 ## Take
 
-One recording appended to a live session. Takes accumulate — each is transcribed
-and routed on its own, then appended, so earlier curation survives.
+One recording into a live session. Takes accumulate — each is transcribed and
+routed on its own, and its notes are filed under the open chart.
+
+"Appended" used to be a choice: routing could replace the chart's note list or
+add to it, and adding was what let earlier curation survive a second take.
+Notes are their own records now, so a take can only add; there is nothing left
+to overwrite.
 
 A take is **in flight** from the moment recording starts until its words land in
 the chart, which spans two phases: **recording**, while the capture runs, and
@@ -83,9 +234,9 @@ the same stretch of the recording. A take that fails to transcribe is
 
 ## Reproject
 
-Recompute a chart's geometry for a different house system or zodiac, carrying its
-passages onto the result. Only the geometry changes; the vocabulary is stable
-enough that existing tags stay valid.
+Recompute a chart's geometry for a different house system or zodiac. Only the
+geometry changes — the record keeps its id, so the notes filed against it stay
+filed against it, and the vocabulary is global, so their tags stay valid.
 
 ## Derivation · Derived field
 
